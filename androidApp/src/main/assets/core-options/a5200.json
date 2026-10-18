@@ -1,0 +1,448 @@
+{
+ "core": "a5200",
+ "emulator": "a5200",
+ "sections": [
+  {
+   "key": "",
+   "label": "",
+   "info": "",
+   "items": [
+    {
+     "key": "a5200_bios",
+     "label": "BIOS (Restart)",
+     "labelCategorized": "",
+     "info": "Set BIOS image. 'Official' loads an original console dump provided by the user, named '5200.rom' and placed in the frontend 'System' directory. 'Internal (Altirra OS)' uses an inbuilt open-source alternative with reduced compatibility. The 'Official' BIOS is recommended for correct operation.",
+     "values": [
+      "official",
+      "internal"
+     ],
+     "labels": [
+      "Official",
+      "Internal (Altirra OS)"
+     ],
+     "default": "official"
+    },
+    {
+     "key": "a5200_mix_frames",
+     "label": "Interframe Blending",
+     "labelCategorized": "",
+     "info": "Simulate CRT phosphor ghosting effects. 'Simple' performs a 50:50 mix of the current and previous frames. 'Ghosting' accumulates pixels from multiple successive frames. May be used to alleviate screen flicker.",
+     "values": [
+      "disabled",
+      "mix",
+      "ghost_65",
+      "ghost_75",
+      "ghost_85",
+      "ghost_95"
+     ],
+     "labels": [
+      "",
+      "Simple",
+      "Ghosting (65%)",
+      "Ghosting (75%)",
+      "Ghosting (85%)",
+      "Ghosting (95%)"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "a5200_artifacting_mode",
+     "label": "Hi-Res Artifacting Mode",
+     "labelCategorized": "",
+     "info": "Set Hi-Res Artifacting mode used.  Typically dependant on the actual emulated system.  Pick the color combination that pleases you.  None disables artifacting.  Good for games like A.E., Backgammon, Miniature Golf and several Atari 800 to Atari 5200 conversions ",
+     "values": [
+      "none",
+      "blue/brown 1",
+      "blue/brown 2",
+      "GTIA",
+      "CTIA"
+     ],
+     "labels": [
+      "None",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "none"
+    }
+   ]
+  },
+  {
+   "key": "audio",
+   "label": "Audio",
+   "info": "Configure pokey driver used and filter settings.",
+   "items": [
+    {
+     "key": "a5200_enable_new_pokey",
+     "label": "High Fidelity POKEY (Restart)",
+     "labelCategorized": "",
+     "info": "Enable High Fidelity Pokey for better quality sound.  Disable for games that use digital sound (Berzerk)",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "a5200_low_pass_filter",
+     "label": "Audio Filter",
+     "labelCategorized": "",
+     "info": "Enable a low pass audio filter to soften the 'harsh' sound produced by the Atari 5200's POKEY chip.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "a5200_low_pass_range",
+     "label": "Audio Filter Level",
+     "labelCategorized": "",
+     "info": "Specify the cut-off frequency of the low pass audio filter. A higher value increases the perceived 'strength' of the filter, since a wider range of the high frequency spectrum is attenuated.",
+     "values": [
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95"
+     ],
+     "labels": [
+      "5%",
+      "10%",
+      "15%",
+      "20%",
+      "25%",
+      "30%",
+      "35%",
+      "40%",
+      "45%",
+      "50%",
+      "55%",
+      "60%",
+      "65%",
+      "70%",
+      "75%",
+      "80%",
+      "85%",
+      "90%",
+      "95%"
+     ],
+     "default": "60"
+    }
+   ]
+  },
+  {
+   "key": "input",
+   "label": "Input",
+   "info": "Configure controller hack, Digital and Analog Joystick settings.",
+   "items": [
+    {
+     "key": "a5200_input_hack",
+     "label": "Controller Hacks",
+     "labelCategorized": "",
+     "info": "Apply gamepad input hacks required for specific games. 'Dual Stick' maps Player 2's joystick to the right analog stick of Player 1's RetroPad, enabling dual stick control in 'Robotron 2084' and 'Space Dungeon'. 'Swap Ports' maps Player 1 to port 2 and Player 2 to port 1 of the emulated console, correcting the swapped inputs of 'Wizard of Wor'.",
+     "values": [
+      "disabled",
+      "dual_stick",
+      "swap_ports"
+     ],
+     "labels": [
+      "",
+      "Dual Stick",
+      "Swap Ports"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "a5200_pause_is_reset",
+     "label": "Pause acts as Reset",
+     "labelCategorized": "",
+     "info": "Pressing the button assigned to Pause will send a reset instead.  Some games like Kangaroo and Pole Position need this in order to change game difficulty or number of players.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "Disabled",
+      "Enabled"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "a5200_digital_sensitivity",
+     "label": "Digital Joystick Sensitivity",
+     "labelCategorized": "",
+     "info": "Set the effective range of the emulated analog joystick when using the gamepad's digital D-Pad for movement. Lower values equate to slower speeds. 'Auto' sets value based on cartridge checksum (requires good ROM dumps).",
+     "values": [
+      "auto",
+      "5",
+      "7",
+      "10",
+      "12",
+      "15",
+      "17",
+      "20",
+      "22",
+      "25",
+      "27",
+      "30",
+      "32",
+      "35",
+      "37",
+      "40",
+      "42",
+      "45",
+      "47",
+      "50",
+      "52",
+      "55",
+      "57",
+      "60",
+      "62",
+      "65",
+      "67",
+      "70",
+      "72",
+      "75",
+      "77",
+      "80",
+      "82",
+      "85",
+      "87",
+      "90",
+      "92",
+      "95",
+      "97",
+      "100"
+     ],
+     "labels": [
+      "Auto",
+      "5%",
+      "7%",
+      "10%",
+      "12%",
+      "15%",
+      "17%",
+      "20%",
+      "22%",
+      "25%",
+      "27%",
+      "30%",
+      "32%",
+      "35%",
+      "37%",
+      "40%",
+      "42%",
+      "45%",
+      "47%",
+      "50%",
+      "52%",
+      "55%",
+      "57%",
+      "60%",
+      "62%",
+      "65%",
+      "67%",
+      "70%",
+      "72%",
+      "75%",
+      "77%",
+      "80%",
+      "82%",
+      "85%",
+      "87%",
+      "90%",
+      "92%",
+      "95%",
+      "97%",
+      "100%"
+     ],
+     "default": "auto"
+    },
+    {
+     "key": "a5200_analog_sensitivity",
+     "label": "Analog Joystick Sensitivity",
+     "labelCategorized": "",
+     "info": "Set the effective range of the emulated analog joystick when using the gamepad's left analog stick for movement. Lower values equate to slower speeds. 'Auto' sets value based on cartridge checksum (requires good ROM dumps).",
+     "values": [
+      "auto",
+      "5",
+      "7",
+      "10",
+      "12",
+      "15",
+      "17",
+      "20",
+      "22",
+      "25",
+      "27",
+      "30",
+      "32",
+      "35",
+      "37",
+      "40",
+      "42",
+      "45",
+      "47",
+      "50",
+      "52",
+      "55",
+      "57",
+      "60",
+      "62",
+      "65",
+      "67",
+      "70",
+      "72",
+      "75",
+      "77",
+      "80",
+      "82",
+      "85",
+      "87",
+      "90",
+      "92",
+      "95",
+      "97",
+      "100"
+     ],
+     "labels": [
+      "Auto",
+      "5%",
+      "7%",
+      "10%",
+      "12%",
+      "15%",
+      "17%",
+      "20%",
+      "22%",
+      "25%",
+      "27%",
+      "30%",
+      "32%",
+      "35%",
+      "37%",
+      "40%",
+      "42%",
+      "45%",
+      "47%",
+      "50%",
+      "52%",
+      "55%",
+      "57%",
+      "60%",
+      "62%",
+      "65%",
+      "67%",
+      "70%",
+      "72%",
+      "75%",
+      "77%",
+      "80%",
+      "82%",
+      "85%",
+      "87%",
+      "90%",
+      "92%",
+      "95%",
+      "97%",
+      "100%"
+     ],
+     "default": "auto"
+    },
+    {
+     "key": "a5200_analog_response",
+     "label": "Analog Joystick Response",
+     "labelCategorized": "",
+     "info": "Configure movement speed response when tilting the gamepad's analog stick. 'Linear': Speed is directly proportional to stick displacement. 'Quadratic': Speed increases quadratically with stick displacement, enabling greater precision when making small movements without sacrificing maximum speed at full range.",
+     "values": [
+      "linear",
+      "quadratic"
+     ],
+     "labels": [
+      "Linear",
+      "Quadratic"
+     ],
+     "default": "linear"
+    },
+    {
+     "key": "a5200_analog_deadzone",
+     "label": "Analog Joystick Deadzone",
+     "labelCategorized": "",
+     "info": "Set the deadzone of the gamepad's analog sticks. May be used to eliminate controller drift.",
+     "values": [
+      "0",
+      "3",
+      "5",
+      "7",
+      "10",
+      "13",
+      "15",
+      "17",
+      "20",
+      "23",
+      "25",
+      "27",
+      "30"
+     ],
+     "labels": [
+      "0%",
+      "3%",
+      "5%",
+      "7%",
+      "10%",
+      "13%",
+      "15%",
+      "17%",
+      "20%",
+      "23%",
+      "25%",
+      "27%",
+      "30%"
+     ],
+     "default": "15"
+    },
+    {
+     "key": "a5200_analog_device",
+     "label": "Analog Device",
+     "labelCategorized": "",
+     "info": "Set the device used for analog input.",
+     "values": [
+      "analog_stick",
+      "mouse"
+     ],
+     "labels": [
+      "Analog Stick",
+      "Mouse"
+     ],
+     "default": "analog_stick"
+    }
+   ]
+  }
+ ],
+ "soSha256": "84e516741f68983196df91b2aa5c234ff205d4409d2f753aca318ff64a069441",
+ "probedAt": "2026-09-29"
+}

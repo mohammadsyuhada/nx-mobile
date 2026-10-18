@@ -1,0 +1,1030 @@
+{
+ "core": "fbneo",
+ "emulator": "FinalBurn Neo",
+ "sections": [
+  {
+   "key": "",
+   "label": "",
+   "info": "",
+   "items": [
+    {
+     "key": "fbneo-allow-depth-32",
+     "label": "Use 32-bits color depth when available",
+     "labelCategorized": "",
+     "info": "Change pixel format, some games require this to render properly, it could impact performances on some platforms",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "fbneo-vertical-mode",
+     "label": "Vertical mode",
+     "labelCategorized": "",
+     "info": "Rotate display for vertical screens",
+     "values": [
+      "disabled",
+      "enabled",
+      "alternate",
+      "TATE",
+      "TATE alternate"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-force-60hz",
+     "label": "Force 60Hz",
+     "labelCategorized": "",
+     "info": "Ignore game's original refresh rate and try to run it at 60hz instead. It will cause incorrect game speed and frame pacing. It will try to use your monitor's correct refresh rate instead of 60hz if this refresh rate is between 59hz and 61hz.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-allow-patched-romsets",
+     "label": "Allow patched romsets",
+     "labelCategorized": "",
+     "info": "Allow romsets from your system/fbneo/patched/ folder to override your romsets, crcs will be ignored but sizes and names must still match, in addition this is also the master switch for whether IPS Patch and RomData are executed or not, you need to close content for this setting to take effect",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "fbneo-analog-speed",
+     "label": "Analog Speed",
+     "labelCategorized": "",
+     "info": "Mitigate analog controls speed, some games might require low values to be playable",
+     "values": [
+      "25%",
+      "26%",
+      "27%",
+      "28%",
+      "29%",
+      "30%",
+      "31%",
+      "32%",
+      "33%",
+      "34%",
+      "35%",
+      "36%",
+      "37%",
+      "38%",
+      "39%",
+      "40%",
+      "41%",
+      "42%",
+      "43%",
+      "44%",
+      "45%",
+      "46%",
+      "47%",
+      "48%",
+      "49%",
+      "50%",
+      "51%",
+      "52%",
+      "53%",
+      "54%",
+      "55%",
+      "56%",
+      "57%",
+      "58%",
+      "59%",
+      "60%",
+      "61%",
+      "62%",
+      "63%",
+      "64%",
+      "65%",
+      "66%",
+      "67%",
+      "68%",
+      "69%",
+      "70%",
+      "71%",
+      "72%",
+      "73%",
+      "74%",
+      "75%",
+      "76%",
+      "77%",
+      "78%",
+      "79%",
+      "80%",
+      "81%",
+      "82%",
+      "83%",
+      "84%",
+      "85%",
+      "86%",
+      "87%",
+      "88%",
+      "89%",
+      "90%",
+      "91%",
+      "92%",
+      "93%",
+      "94%",
+      "95%",
+      "96%",
+      "97%",
+      "98%",
+      "99%",
+      "100%",
+      "105%",
+      "110%",
+      "115%",
+      "120%",
+      "125%",
+      "130%",
+      "135%",
+      "140%",
+      "145%",
+      "150%",
+      "155%",
+      "160%",
+      "165%",
+      "170%",
+      "175%",
+      "180%",
+      "185%",
+      "190%",
+      "195%",
+      "200%",
+      "210%",
+      "220%",
+      "230%",
+      "240%",
+      "250%",
+      "260%",
+      "270%",
+      "280%",
+      "290%",
+      "300%",
+      "310%",
+      "320%",
+      "330%",
+      "340%",
+      "350%",
+      "360%",
+      "370%",
+      "380%",
+      "390%",
+      "400%"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100%"
+    },
+    {
+     "key": "fbneo-socd",
+     "label": "SOCD Mode",
+     "labelCategorized": "",
+     "info": "Change ULDR priority handling",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6"
+     ],
+     "labels": [
+      "disabled",
+      "Simultaneous Neutral",
+      "Last Input Priority (4 Way)",
+      "Last Input Priority (8 Way)",
+      "First Input Priority",
+      "Up Priority (Up-override Down)",
+      "Down Priority (Left/Right Last Input Priority)"
+     ],
+     "default": "3"
+    },
+    {
+     "key": "fbneo-lightgun-crosshair-emulation",
+     "label": "Crosshair emulation",
+     "labelCategorized": "",
+     "info": "Change emulated crosshair behavior, \"hide with lightgun device\" will also hide it on touchscreen device",
+     "values": [
+      "hide with lightgun device",
+      "always hide",
+      "always show"
+     ],
+     "labels": [
+      "",
+      "",
+      ""
+     ],
+     "default": "hide with lightgun device"
+    },
+    {
+     "key": "fbneo-cpu-speed-adjust",
+     "label": "CPU clock",
+     "labelCategorized": "",
+     "info": "Change emulated cpu frequency for various systems, by increasing you can fix native slowdowns in some games, by decreasing you can help performance on low-end devices",
+     "values": [
+      "25%",
+      "26%",
+      "27%",
+      "28%",
+      "29%",
+      "30%",
+      "31%",
+      "32%",
+      "33%",
+      "34%",
+      "35%",
+      "36%",
+      "37%",
+      "38%",
+      "39%",
+      "40%",
+      "41%",
+      "42%",
+      "43%",
+      "44%",
+      "45%",
+      "46%",
+      "47%",
+      "48%",
+      "49%",
+      "50%",
+      "51%",
+      "52%",
+      "53%",
+      "54%",
+      "55%",
+      "56%",
+      "57%",
+      "58%",
+      "59%",
+      "60%",
+      "61%",
+      "62%",
+      "63%",
+      "64%",
+      "65%",
+      "66%",
+      "67%",
+      "68%",
+      "69%",
+      "70%",
+      "71%",
+      "72%",
+      "73%",
+      "74%",
+      "75%",
+      "76%",
+      "77%",
+      "78%",
+      "79%",
+      "80%",
+      "81%",
+      "82%",
+      "83%",
+      "84%",
+      "85%",
+      "86%",
+      "87%",
+      "88%",
+      "89%",
+      "90%",
+      "91%",
+      "92%",
+      "93%",
+      "94%",
+      "95%",
+      "96%",
+      "97%",
+      "98%",
+      "99%",
+      "100%",
+      "105%",
+      "110%",
+      "115%",
+      "120%",
+      "125%",
+      "130%",
+      "135%",
+      "140%",
+      "145%",
+      "150%",
+      "155%",
+      "160%",
+      "165%",
+      "170%",
+      "175%",
+      "180%",
+      "185%",
+      "190%",
+      "195%",
+      "200%",
+      "210%",
+      "220%",
+      "230%",
+      "240%",
+      "250%",
+      "260%",
+      "270%",
+      "280%",
+      "290%",
+      "300%",
+      "310%",
+      "320%",
+      "330%",
+      "340%",
+      "350%",
+      "360%",
+      "370%",
+      "380%",
+      "390%",
+      "400%"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100%"
+    },
+    {
+     "key": "fbneo-diagnostic-input",
+     "label": "Diagnostic Input",
+     "labelCategorized": "",
+     "info": "Configure button combination to enter cabinet service menu",
+     "values": [
+      "None",
+      "Hold Start",
+      "Start + A + B",
+      "Hold Start + A + B",
+      "Start + L + R",
+      "Hold Start + L + R",
+      "Hold Select",
+      "Select + A + B",
+      "Hold Select + A + B",
+      "Select + L + R",
+      "Hold Select + L + R"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "Hold Start"
+    }
+   ]
+  },
+  {
+   "key": "neogeo",
+   "label": "Neo-Geo Settings",
+   "info": "Configure Neo-Geo Settings",
+   "items": [
+    {
+     "key": "fbneo-neogeo-mode",
+     "label": "Neo-Geo mode",
+     "labelCategorized": "",
+     "info": "Load appropriate bios depending on your choice, under the condition such a bios is compatible with the running game",
+     "values": [
+      "DIPSWITCH",
+      "MVS_EUR",
+      "MVS_USA",
+      "MVS_JAP",
+      "AES_EUR",
+      "AES_JAP",
+      "UNIBIOS"
+     ],
+     "labels": [
+      "Use bios set in BIOS dipswitch",
+      "MVS Europe/Asia (English)",
+      "MVS USA (English - Censored)",
+      "MVS Japan (Japanese)",
+      "AES Europe/Asia (English)",
+      "AES Japan (Japanese)",
+      "UNIBIOS"
+     ],
+     "default": "DIPSWITCH"
+    },
+    {
+     "key": "fbneo-memcard-mode",
+     "label": "Memory card mode",
+     "labelCategorized": "",
+     "info": "Change the behavior for the memory card",
+     "values": [
+      "disabled",
+      "shared",
+      "per-game"
+     ],
+     "labels": [
+      "",
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-debug-dip-1-1",
+     "label": "Debug Dip 1_1",
+     "labelCategorized": "",
+     "info": "Enable Debug Dip 1_1",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-debug-dip-1-2",
+     "label": "Debug Dip 1_2",
+     "labelCategorized": "",
+     "info": "Enable Debug Dip 1_2",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-debug-dip-1-3",
+     "label": "Debug Dip 1_3",
+     "labelCategorized": "",
+     "info": "Enable Debug Dip 1_3",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-debug-dip-1-4",
+     "label": "Debug Dip 1_4",
+     "labelCategorized": "",
+     "info": "Enable Debug Dip 1_4",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-debug-dip-1-5",
+     "label": "Debug Dip 1_5",
+     "labelCategorized": "",
+     "info": "Enable Debug Dip 1_5",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-debug-dip-1-6",
+     "label": "Debug Dip 1_6",
+     "labelCategorized": "",
+     "info": "Enable Debug Dip 1_6",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-debug-dip-1-7",
+     "label": "Debug Dip 1_7",
+     "labelCategorized": "",
+     "info": "Enable Debug Dip 1_7",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-debug-dip-1-8",
+     "label": "Debug Dip 1_8",
+     "labelCategorized": "",
+     "info": "Enable Debug Dip 1_8",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-debug-dip-2-1",
+     "label": "Debug Dip 2_1",
+     "labelCategorized": "",
+     "info": "Enable Debug Dip 2_1",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-debug-dip-2-2",
+     "label": "Debug Dip 2_2",
+     "labelCategorized": "",
+     "info": "Enable Debug Dip 2_2",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-debug-dip-2-3",
+     "label": "Debug Dip 2_3",
+     "labelCategorized": "",
+     "info": "Enable Debug Dip 2_3",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-debug-dip-2-4",
+     "label": "Debug Dip 2_4",
+     "labelCategorized": "",
+     "info": "Enable Debug Dip 2_4",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-debug-dip-2-5",
+     "label": "Debug Dip 2_5",
+     "labelCategorized": "",
+     "info": "Enable Debug Dip 2_5",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-debug-dip-2-6",
+     "label": "Debug Dip 2_6",
+     "labelCategorized": "",
+     "info": "Enable Debug Dip 2_6",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-debug-dip-2-7",
+     "label": "Debug Dip 2_7",
+     "labelCategorized": "",
+     "info": "Enable Debug Dip 2_7",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fbneo-debug-dip-2-8",
+     "label": "Debug Dip 2_8",
+     "labelCategorized": "",
+     "info": "Enable Debug Dip 2_8",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "frameskip",
+   "label": "Frameskip Settings",
+   "info": "Configure Frameskip Settings",
+   "items": [
+    {
+     "key": "fbneo-fixed-frameskip",
+     "label": "Fixed Frameskip",
+     "labelCategorized": "",
+     "info": "When 'Frameskip' is set to 'Fixed', or if the frontend doesn't support the alternative 'Frameskip' mode, skip rendering at a fixed rate of X frames out of X+1",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+     ],
+     "labels": [
+      "No skipping",
+      "Skip rendering of 1 frames out of 2",
+      "Skip rendering of 2 frames out of 3",
+      "Skip rendering of 3 frames out of 4",
+      "Skip rendering of 4 frames out of 5",
+      "Skip rendering of 5 frames out of 6"
+     ],
+     "default": "0"
+    }
+   ]
+  },
+  {
+   "key": "audio",
+   "label": "Audio Settings",
+   "info": "Configure Audio Settings",
+   "items": [
+    {
+     "key": "fbneo-samplerate",
+     "label": "Samplerate",
+     "labelCategorized": "",
+     "info": "Configure samplerate, it could impact performances, closing & starting game again is required",
+     "values": [
+      "44100",
+      "48000"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "48000"
+    },
+    {
+     "key": "fbneo-sample-interpolation",
+     "label": "Sample Interpolation",
+     "labelCategorized": "",
+     "info": "Configure sample interpolation, it could impact performances",
+     "values": [
+      "disabled",
+      "2-point 1st order",
+      "4-point 3rd order"
+     ],
+     "labels": [
+      "",
+      "",
+      ""
+     ],
+     "default": "4-point 3rd order"
+    },
+    {
+     "key": "fbneo-fm-interpolation",
+     "label": "FM Interpolation",
+     "labelCategorized": "",
+     "info": "Configure FM interpolation, it could impact performances",
+     "values": [
+      "disabled",
+      "4-point 3rd order"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "4-point 3rd order"
+    },
+    {
+     "key": "fbneo-lowpass-filter",
+     "label": "LowPass Filter",
+     "labelCategorized": "",
+     "info": "Enable LowPass Filter",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  }
+ ],
+ "soSha256": "91ecbea8db46f4f9a5356d33a5d5c84920909a0e63f35c01c307da4e854394c8",
+ "probedAt": "2026-09-29"
+}

@@ -1,0 +1,143 @@
+# licence: modifies Flycast (https://github.com/flyinghead/flycast), GPL-2.0 or later (its LICENSE file; see
+# LICENSES/flycast.txt); this patch is distributed under the same licence.
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 19bdfee..435c6c5 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -933,6 +933,11 @@ target_link_libraries(${PROJECT_NAME} PRIVATE flycast::res)
+ 
+ if(LIBRETRO)
+ 	target_include_directories(${PROJECT_NAME} PRIVATE core/deps/libretro-common/include)
++	if(ANDROID)
++		# nx-mobile: ASharedMemory_create (weak in core/linux/posix_vmem.cpp) lives in libandroid; without it
++		# vmem falls back to /dev/ashmem, which targetSdk 29+ apps cannot open, and runs with fast-mem off.
++		target_link_libraries(${PROJECT_NAME} PRIVATE android)
++	endif()
+ 	target_sources(${PROJECT_NAME} PRIVATE
+ 		core/deps/libretro-common/memmap/memalign.c
+ 		core/deps/libretro-common/file/file_path.c
+diff --git a/core/hw/naomi/naomi_cart.cpp b/core/hw/naomi/naomi_cart.cpp
+index 85fda83..e2f7f19 100644
+--- a/core/hw/naomi/naomi_cart.cpp
++++ b/core/hw/naomi/naomi_cart.cpp
+@@ -115,6 +115,12 @@ static bool loadBios(const char *biosName, Archive *child_archive, Archive *pare
+ 			{
+ 				verify(bios->blobs[romid].offset + bios->blobs[romid].length <= BIOS_SIZE);
+ 				u32 read = file->Read(biosData + bios->blobs[romid].offset, bios->blobs[romid].length);
++				// Atomiswave BIOS from the modern MAME set (bios.ic23_l) is a
++				// 64KB image in a 128KB window: mirror it the way the
++				// hardware's address decoding does.
++				if (!strcmp(bios->name, "awbios") && bios->blobs[romid].length == 0x10000
++						&& bios->blobs[romid].offset == 0)
++					memcpy(biosData + 0x10000, biosData, 0x10000);
+ 				if (config::GGPOEnable)
+ 					md5.add(biosData + bios->blobs[romid].offset, bios->blobs[romid].length);
+ 				DEBUG_LOG(NAOMI, "Mapped %s: %x bytes at %07x", bios->blobs[romid].filename, read, bios->blobs[romid].offset);
+diff --git a/core/hw/naomi/naomi_roms.cpp b/core/hw/naomi/naomi_roms.cpp
+index 2e3aa05..1e1ef45 100644
+--- a/core/hw/naomi/naomi_roms.cpp
++++ b/core/hw/naomi/naomi_roms.cpp
+@@ -40,6 +40,9 @@ const BIOS_t BIOS[] =
+ 		{
+ 			// Sammy version
+ 			{ 0, "bios0.ic23", 0x000000, 0x020000, 0x719b2b0b },
++			// Modern MAME re-dump: 64KB image, mirrored into the 128KB
++			// window by loadBios (naomi_cart.cpp)
++			{ 0, "bios.ic23_l", 0x000000, 0x010000, 0xe5693ce3 },
+ 			//or
+ 			//{ 0, "bios1.ic23", 0x000000, 0x020000, 0xd3e80a9f },
+ 			// Sega version
+diff --git a/core/rend/gles/gles.h b/core/rend/gles/gles.h
+index 9082a5d..bdab06a 100755
+--- a/core/rend/gles/gles.h
++++ b/core/rend/gles/gles.h
+@@ -365,7 +365,10 @@ inline void GlVertexArray::unbind()
+ inline void GlVertexArray::term()
+ {
+ #ifndef GLES2
+-	if (gl.gl_major >= 3)
++	// nx-mobile: never delete name 0 (a vertex array that was never bound, e.g. the post-processor's on the blit path).
++	// The spec ignores it, but the Android emulator's GLES stack drops the default vertex array's client state, and
++	// every later draw with client-side arrays (the frontend's presentation quad) draws nothing.
++	if (gl.gl_major >= 3 && vertexArray != 0)
+ 		glDeleteVertexArrays(1, &vertexArray);
+ #endif
+ 	vertexArray = 0;
+diff --git a/core/rend/vulkan/vk_context_lr.cpp b/core/rend/vulkan/vk_context_lr.cpp
+index 1e8fbeb..e45eaab 100644
+--- a/core/rend/vulkan/vk_context_lr.cpp
++++ b/core/rend/vulkan/vk_context_lr.cpp
+@@ -24,6 +24,7 @@
+ #include "oslib/oslib.h"
+ #include "rend/transform_matrix.h"
+ #include "texture.h"
++#include <algorithm>
+ #include <set>
+ 
+ #if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1
+@@ -159,6 +160,15 @@ bool VkCreateDevice(retro_vulkan_context* context, VkInstance instance, VkPhysic
+ 	// Required swapchain extension
+ 	tryAddDeviceExtension(vk::KHRSwapchainExtensionName);
+ 
++	// nx-mobile: also the frontend's required extensions (libretro_vulkan.h asks a core to enable them): its bridge imports
++	// each frame into an AHardwareBuffer, which needs VK_ANDROID_external_memory_android_hardware_buffer and its deps.
++	for (unsigned i = 0; i < num_required_device_extensions; i++)
++	{
++		const std::string_view name = required_device_extensions[i];
++		if (std::none_of(enabledExtensions.begin(), enabledExtensions.end(), [&](const char* e) { return name == e; }))
++			tryAddDeviceExtension(name);
++	}
++
+ 	// Enable VK_KHR_dedicated_allocation if available
+ 	if (physicalDeviceProperties.apiVersion >= VK_API_VERSION_1_1) {
+ 		// Core in Vulkan 1.1
+diff --git a/shell/libretro/oslib.cpp b/shell/libretro/oslib.cpp
+index a32d109..329f671 100644
+--- a/shell/libretro/oslib.cpp
++++ b/shell/libretro/oslib.cpp
+@@ -42,28 +42,25 @@ std::string getVmuPath(const std::string& port, bool save)
+ 	if ((per_content_vmus == 1 && port == "A1")
+ 			|| per_content_vmus == 2)
+ 	{
++		// nx-mobile: name per-game VMUs after the content file (not the disc's game ID) so the frontend's
++		// saves mirror can tie <content>.A1.bin to its game. A game-ID file from an earlier run is read once, then
++		// rewritten as <content>.A1.bin and deleted (maple_devs.cpp OnSetup: the save path differs from the read one).
+ 		std::string vmuDir = vmu_dir_no_slash + std::string(PATH_DEFAULT_SLASH());
+-		if (settings.platform.isConsole() && !settings.content.gameId.empty())
+-		{
+-			constexpr std::string_view INVALID_CHARS { " /\\:*?|<>" };
+-			std::string vmuName = settings.content.gameId;
+-			for (char &c: vmuName)
+-				if (INVALID_CHARS.find(c) != INVALID_CHARS.npos)
+-					c = '_';
+-			vmuName += "." + port + ".bin";
+-			std::string wpath = vmuDir + vmuName;
+-			if (save || file_exists(wpath.c_str()))
+-				return wpath;
+-			// Legacy path with rom name
+-			std::string rpath = vmuDir + std::string(content_name) + "." + port + ".bin";
+-			if (file_exists(rpath.c_str()))
+-				return rpath;
+-			else
+-				return wpath;
+-		}
+-		return vmuDir + std::string(content_name) + "." + port + ".bin";
++		std::string byName = vmuDir + std::string(content_name) + "." + port + ".bin";
++		if (save || file_exists(byName.c_str()) || !settings.platform.isConsole() || settings.content.gameId.empty())
++			return byName;
++		constexpr std::string_view INVALID_CHARS { " /\\:*?|<>" };
++		std::string vmuName = settings.content.gameId;
++		for (char &c: vmuName)
++			if (INVALID_CHARS.find(c) != INVALID_CHARS.npos)
++				c = '_';
++		std::string byId = vmuDir + vmuName + "." + port + ".bin";
++		return file_exists(byId.c_str()) ? byId : byName;
+ 	}
+ 	else {
+-		return std::string(game_dir_no_slash) + std::string(PATH_DEFAULT_SLASH()) + "vmu_save_" + port + ".bin";
++		// nx-mobile: shared VMUs (every port with per_content_vmus Disabled, the ports other than A1 with "VMU A1") live
++		// in the save directory like the per-game ones, so the frontend syncs them as saves; dc_nvmem/flash stay in the
++		// system folder. Loaded and saved there only: a card left in the system folder is not read (no migration).
++		return std::string(vmu_dir_no_slash) + std::string(PATH_DEFAULT_SLASH()) + "vmu_save_" + port + ".bin";
+ 	}
+ }

@@ -1,0 +1,198 @@
+Licence: modifies melonDS DS (https://github.com/JesseTG/melonds-ds), GPL-3.0 (its LICENSE file); this patch is
+distributed under the same licence.
+melonDS DS on GLES 3.2: lets the GL renderer build against GLES3 (with patches/melonds.patch on the melonDS
+dependency), requests a GLES 3.2 context, ports the compositor shaders to GLSL ES 3.00, and keeps glsm and the
+frontend clear of melonDS VAO state. Applied to cores/src/melondsds.
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index e96d2f3..301a4a9 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -72,9 +72,7 @@ set(ENABLE_OGLRENDERER ${ENABLE_OPENGL})
+ set(OPENGL_PROFILE ${DEFAULT_OPENGL_PROFILE} CACHE STRING "OpenGL profile to use if OpenGL is enabled. Valid values are 'OpenGL', 'OpenGLES2', 'OpenGLES3', 'OpenGLES31', and 'OpenGLES32'.")
+ set_property(CACHE OPENGL_PROFILE PROPERTY STRINGS OpenGL OpenGLES2 OpenGLES3)
+ 
+-if (ENABLE_OPENGL AND (NOT OPENGL_PROFILE STREQUAL "OpenGL"))
+-    message(FATAL_ERROR "melonDS does not support OpenGL ES yet")
+-endif()
++# GLES: melonDS carries the melonDS-android-lib GLES port (cores/patches/melonds.patch)
+ 
+ if (ANDROID)
+     if (NOT ANDROID_PLATFORM)
+diff --git a/src/libretro/PlatformOGLPrivate.h b/src/libretro/PlatformOGLPrivate.h
+index a5e9d1a..05f1a8f 100644
+--- a/src/libretro/PlatformOGLPrivate.h
++++ b/src/libretro/PlatformOGLPrivate.h
+@@ -21,6 +21,10 @@
+ #define GL_SILENCE_DEPRECATION
+ #endif
+ 
++#if defined(HAVE_OPENGLES3)
++// glsym's ES3 headers lack the 3.1/3.2 symbols the melonDS GL code uses
++#include <GLES3/gl32.h>
++#endif
+ #if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES)
+ #include <glsym/glsym.h>
+ #endif
+diff --git a/src/libretro/format.cpp b/src/libretro/format.cpp
+index 3698a6b..e6498ac 100644
+--- a/src/libretro/format.cpp
++++ b/src/libretro/format.cpp
+@@ -61,12 +61,14 @@ auto fmt::formatter<MelonDsDs::FormattedGLEnum>::format(MelonDsDs::FormattedGLEn
+         case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT:
+             name = "GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT";
+             break;
++#ifndef HAVE_OPENGLES // desktop GL only; GLES has no such enums
+         case GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER:
+             name = "GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER";
+             break;
+         case GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER:
+             name = "GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER";
+             break;
++#endif
+         case GL_FRAMEBUFFER_UNSUPPORTED:
+             name = "GL_FRAMEBUFFER_UNSUPPORTED";
+             break;
+diff --git a/src/libretro/glsl/melondsds.frag b/src/libretro/glsl/melondsds.frag
+index ceb157c..cbe96c5 100644
+--- a/src/libretro/glsl/melondsds.frag
++++ b/src/libretro/glsl/melondsds.frag
+@@ -1,4 +1,6 @@
+-#version 140
++#version 300 es
++precision highp float;
++precision highp int;
+ layout(std140) uniform uConfig
+ {
+     vec2 uScreenSize;
+@@ -9,7 +11,7 @@ layout(std140) uniform uConfig
+ };
+ uniform sampler2D ScreenTex;
+ smooth in vec2 fTexcoord;
+-out vec4 oColor;
++layout(location = 0) out vec4 oColor;
+ void main()
+ {
+     vec4 pixel = texture(ScreenTex, fTexcoord);
+diff --git a/src/libretro/glsl/melondsds.vert b/src/libretro/glsl/melondsds.vert
+index c6bf9e5..ef7d7a5 100644
+--- a/src/libretro/glsl/melondsds.vert
++++ b/src/libretro/glsl/melondsds.vert
+@@ -1,4 +1,6 @@
+-#version 140
++#version 300 es
++precision highp float;
++precision highp int;
+ layout(std140) uniform uConfig
+ {
+     vec2 uScreenSize;
+@@ -14,7 +16,7 @@ void main()
+ {
+     vec4 fpos;
+     fpos.xy = ((vPosition * 2.0) / uScreenSize) - 1.0;
+-    fpos.y *= -1;
++    fpos.y *= -1.0;
+     fpos.z = 0.0;
+     fpos.w = 1.0;
+     gl_Position = fpos;
+diff --git a/src/libretro/render/opengl.cpp b/src/libretro/render/opengl.cpp
+index bf3641e..33bfa4d 100644
+--- a/src/libretro/render/opengl.cpp
++++ b/src/libretro/render/opengl.cpp
+@@ -160,7 +160,12 @@ MelonDsDs::OpenGLRenderState::OpenGLRenderState() {
+ 
+     // MelonDS needs at least OpenGL 3.2 for OpenGL renderer
+     // (it doesn't use the legacy fixed-function pipeline)
++#ifdef HAVE_OPENGLES
++    // GLES 3.2: melonDS carries the melonDS-android-lib GLES port (cores/patches/melonds.patch)
++    params.context_type = RETRO_HW_CONTEXT_OPENGLES_VERSION;
++#else
+     params.context_type = RETRO_HW_CONTEXT_OPENGL_CORE;
++#endif
+     params.major = 3;
+     params.minor = 2;
+     params.context_reset = HardwareContextReset;
+@@ -223,6 +228,7 @@ void MelonDsDs::OpenGLRenderState::ContextReset(melonDS::NDS& nds, const CoreCon
+         throw opengl_not_initialized_exception();
+     }
+ 
++#if defined(HAVE_OPENGL) && !defined(HAVE_OPENGLES) // GLES: the core links libGLESv3, nothing to resolve
+     // The core doesn't link against OpenGL,
+     // so the OpenGL 1.0/1.1 functions that glsym doesn't cover
+     // must be resolved before glsm makes its first OpenGL call
+@@ -246,6 +252,7 @@ void MelonDsDs::OpenGLRenderState::ContextReset(melonDS::NDS& nds, const CoreCon
+         retro::error("Frontend couldn't resolve {} OpenGL functions, can't use the OpenGL renderer", missingSymbols);
+         throw opengl_not_initialized_exception();
+     }
++#endif
+ 
+     glsm_ctl(GLSM_CTL_STATE_CONTEXT_RESET, nullptr);
+     TracyGpuContext; // Must be called AFTER the function pointers are bound!
+@@ -296,6 +303,9 @@ void MelonDsDs::OpenGLRenderState::ContextReset(melonDS::NDS& nds, const CoreCon
+     _contextInitialized = true;
+ 
+     // Stop using OpenGL structures
++    // On GLES glsm owns no VAO, so its bind/unbind toggle vertex attrib arrays on
++    // whatever VAO is bound: keep melonDS's GLRenderer VAOs out of it.
++    glBindVertexArray(0);
+     glsm_ctl(GLSM_CTL_STATE_UNBIND, nullptr); // Always succeeds
+     retro::debug("Unbound GL state");
+ 
+@@ -408,6 +418,9 @@ void MelonDsDs::OpenGLRenderState::Render(
+     TracyGpuZone(TracyFunction);
+     retro_assert(nds.GetRenderer3D().Accelerated);
+ 
++    // On GLES glsm owns no VAO, so its bind/unbind toggle vertex attrib arrays on
++    // whatever VAO is bound: keep melonDS's GLRenderer VAOs out of it.
++    glBindVertexArray(0);
+     glsm_ctl(GLSM_CTL_STATE_BIND, nullptr);
+ 
+     GLuint current_fbo = glsm_get_current_framebuffer();
+@@ -459,6 +472,9 @@ void MelonDsDs::OpenGLRenderState::Render(
+     glDisable(GL_DEPTH_TEST);
+     glDisable(GL_STENCIL_TEST);
+     glDisable(GL_BLEND);
++    // melonDS's GLRenderer may leave these on; they would clip or cull the screen quads
++    glDisable(GL_CULL_FACE);
++    glDisable(GL_SCISSOR_TEST);
+ 
+     glViewport(0, 0, screenLayout.BufferWidth(), screenLayout.BufferHeight());
+ 
+@@ -474,6 +490,9 @@ void MelonDsDs::OpenGLRenderState::Render(
+ 
+     glBindBuffer(GL_ARRAY_BUFFER, vbo);
+     glBindVertexArray(vao);
++    // glsm's bind/unbind may have toggled this VAO's attrib arrays (no glsm-owned VAO on GLES): re-enable them
++    glEnableVertexAttribArray(0);
++    glEnableVertexAttribArray(1);
+     if (nds.IsLidClosed()) [[unlikely]] {
+         // If the emulated lid is closed, just draw a blank
+         // so that there's no annoying flickering with some games
+@@ -485,6 +504,7 @@ void MelonDsDs::OpenGLRenderState::Render(
+     }
+ 
+     glFlush();
++    glBindVertexArray(0); // keep glsm's unbind from disabling this VAO's attrib arrays
+ 
+     glsm_ctl(GLSM_CTL_STATE_UNBIND, nullptr);
+ 
+@@ -492,6 +512,19 @@ void MelonDsDs::OpenGLRenderState::Render(
+     // GLSM state_unbind doesn't do this, and a stale PBO binding causes
+     // glReadPixels (used by the frontend for screenshots) to fail.
+     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
++    // The frontend (LibretroDroid's FramebufferRenderer) draws with client-side arrays right after this callback;
++    // a VAO left bound makes that draw fail silently (black screen). Leave neutral state.
++    // Tried without this block and the GL_CULL_FACE/GL_SCISSOR_TEST disables above (2026-09-27): the whole
++    // picture went black on Adreno 840 (Galaxy Z Fold), so both stay.
++    glBindVertexArray(0);
++    glBindBuffer(GL_ARRAY_BUFFER, 0);
++    glUseProgram(0);
++    glDisable(GL_SCISSOR_TEST);
++    glDisable(GL_BLEND);
++    glDisable(GL_STENCIL_TEST);
++    glDisable(GL_CULL_FACE);
++    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
++    glActiveTexture(GL_TEXTURE0);
+ 
+ #if defined(HAVE_TRACY) && !defined(__APPLE__)
+     if (_tracyCapture) {

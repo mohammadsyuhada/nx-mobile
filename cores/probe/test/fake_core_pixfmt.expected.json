@@ -1,0 +1,2 @@
+{"core":"fake_core_pixfmt","emulator":"Fake Pixfmt","sections":[{"key":"","label":"","info":"","items":[
+{"key":"fake_renderer","label":"Renderer","labelCategorized":"","info":"","values":["software","opengl"],"labels":["",""],"default":"software"}]}]}

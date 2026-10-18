@@ -1,0 +1,17 @@
+# licence: modifies PicoDrive (https://github.com/irixxxx/picodrive), non-commercial (its COPYING file: may not be
+# sold or used in a commercial product or activity); this patch is distributed under the same licence.
+diff --git a/jni/Android.mk b/jni/Android.mk
+index 43680aa..30d988d 100644
+--- a/jni/Android.mk
++++ b/jni/Android.mk
+@@ -47,6 +47,10 @@ ifeq ($(TARGET_ARCH),arm)
+ #  asm_32xmemory := 1
+ endif
+ 
++ifeq ($(TARGET_ARCH),arm64)
++  use_sh2drc := 1
++endif
++
+ ifeq ($(TARGET_ARCH_ABI),armeabi)
+   CYCLONE_CONFIG := cyclone_config_armv4.h
+ endif

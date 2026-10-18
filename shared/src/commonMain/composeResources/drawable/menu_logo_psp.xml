@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Logo by Dan Patrick (Platform Logos, Professionally Redrawn). Never to be sold. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="512dp"
+    android:height="88dp"
+    android:viewportWidth="3839"
+    android:viewportHeight="656.6">
+    <path
+        android:pathData="M 1126.1 294.6 L 0 294.6 L 0 656.6 L 66.8 656.6 L 66.8 361.1 L 1192.8 361.1 L 1192.8 0 L 0 0 L 0 66.9 L 1126.1 66.9 Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M 3772.4 294.6 L 2646.1 294.6 L 2646.1 656.6 L 2712.9 656.6 L 2712.9 361.1 L 3839 361.1 L 3839 0 L 2646.1 0 L 2646.1 66.9 L 3772.4 66.9 Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M 1192.8 656.6 L 1869.3 656.6 L 1869.3 66.9 L 2475.9 66.9 L 2475.9 0 L 1800.1 0 L 1800.1 590.1 L 1192.8 590.1 Z"
+        android:fillColor="#FFFFFFFF" />
+</vector>

@@ -1,0 +1,2238 @@
+{
+ "core": "flycast",
+ "emulator": "Flycast",
+ "sections": [
+  {
+   "key": "system",
+   "label": "System",
+   "info": "Configure region, language, BIOS and base hardware settings.",
+   "items": [
+    {
+     "key": "reicast_region",
+     "label": "Region",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "Japan",
+      "USA",
+      "Europe",
+      "Default"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "USA"
+    },
+    {
+     "key": "reicast_language",
+     "label": "Language",
+     "labelCategorized": "",
+     "info": "Changes the language used by the BIOS and by any games that contain multiple languages.",
+     "values": [
+      "Japanese",
+      "English",
+      "German",
+      "French",
+      "Spanish",
+      "Italian",
+      "Default"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "English"
+    },
+    {
+     "key": "reicast_hle_bios",
+     "label": "HLE BIOS (Restart Required)",
+     "labelCategorized": "",
+     "info": "Force use of high-level emulation BIOS.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_enable_dsp",
+     "label": "Enable DSP",
+     "labelCategorized": "",
+     "info": "Enable emulation of the Dreamcast's audio DSP (digital signal processor). Improves the accuracy of generated sound, but increases performance requirements.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "reicast_allow_service_buttons",
+     "label": "Allow Arcade Service Buttons",
+     "labelCategorized": "",
+     "info": "Enables SERVICE button for arcade games, to enter cabinet settings.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_force_freeplay",
+     "label": "Set NAOMI Games to Free Play",
+     "labelCategorized": "",
+     "info": "Modify to coin settings of the game to free play.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "reicast_coin_limit",
+     "label": "Coin Limit",
+     "labelCategorized": "",
+     "info": "Disable coin insertion after defined limit.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "20"
+     ],
+     "labels": [
+      "disabled",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "reicast_emulate_bba",
+     "label": "Broadband Adapter Emulation",
+     "labelCategorized": "",
+     "info": "Emulate the Ethernet broadband adapter instead of the modem. (Restart Required)",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_upnp",
+     "label": "Enable UPnP",
+     "labelCategorized": "",
+     "info": "Use UPnP to automatically configure your Internet router for online games.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "reicast_dcnet",
+     "label": "Use DCNet",
+     "labelCategorized": "",
+     "info": "Use the DCNet cloud service for Dreamcast Internet access.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    }
+   ]
+  },
+  {
+   "key": "video",
+   "label": "Video",
+   "info": "Configure resolution, order-independent transparency and visual effect settings.",
+   "items": [
+    {
+     "key": "reicast_internal_resolution",
+     "label": "Internal Resolution",
+     "labelCategorized": "",
+     "info": "Modify rendering resolution.",
+     "values": [
+      "320x240",
+      "640x480",
+      "800x600",
+      "960x720",
+      "1024x768",
+      "1280x960",
+      "1440x1080",
+      "1600x1200",
+      "1920x1440",
+      "2560x1920",
+      "2880x2160",
+      "3200x2400",
+      "3840x2880",
+      "4480x3360",
+      "5120x3840",
+      "5760x4320",
+      "6400x4800",
+      "7040x5280",
+      "7680x5760",
+      "8320x6240",
+      "8960x6720",
+      "9600x7200",
+      "10240x7680",
+      "10880x8160",
+      "11520x8640",
+      "12160x9120",
+      "12800x9600"
+     ],
+     "labels": [
+      "320x240 (Half)",
+      "640x480 (Native)",
+      "800x600 (x1.25)",
+      "960x720 (x1.5)",
+      "1024x768 (x1.6)",
+      "1280x960 (x2)",
+      "1440x1080 (x2.25)",
+      "1600x1200 (x2.5)",
+      "1920x1440 (x3)",
+      "2560x1920 (x4)",
+      "2880x2160 (x4.5)",
+      "3200x2400 (x5)",
+      "3840x2880 (x6)",
+      "4480x3360 (x7)",
+      "5120x3840 (x8)",
+      "5760x4320 (x9)",
+      "6400x4800 (x10)",
+      "7040x5280 (x11)",
+      "7680x5760 (x12)",
+      "8320x6240 (x13)",
+      "8960x6720 (x14)",
+      "9600x7200 (x15)",
+      "10240x7680 (x16)",
+      "10880x8160 (x17)",
+      "11520x8640 (x18)",
+      "12160x9120 (x19)",
+      "12800x9600 (x20)"
+     ],
+     "default": "640x480"
+    },
+    {
+     "key": "reicast_cable_type",
+     "label": "Cable Type",
+     "labelCategorized": "",
+     "info": "The output signal type. 'TV (Composite)' is the most widely supported.",
+     "values": [
+      "VGA",
+      "TV (RGB)",
+      "TV (Composite)"
+     ],
+     "labels": [
+      "",
+      "",
+      ""
+     ],
+     "default": "TV (Composite)"
+    },
+    {
+     "key": "reicast_broadcast",
+     "label": "Broadcast Standard",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "NTSC",
+      "PAL",
+      "PAL_N",
+      "PAL_M",
+      "Default"
+     ],
+     "labels": [
+      "",
+      "PAL (World)",
+      "PAL-N (Argentina, Paraguay, Uruguay)",
+      "PAL-M (Brazil)",
+      ""
+     ],
+     "default": "NTSC"
+    },
+    {
+     "key": "reicast_screen_rotation",
+     "label": "Screen Orientation",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "horizontal",
+      "vertical"
+     ],
+     "labels": [
+      "Horizontal",
+      "Vertical"
+     ],
+     "default": "horizontal"
+    },
+    {
+     "key": "reicast_alpha_sorting",
+     "label": "Alpha Sorting",
+     "labelCategorized": "",
+     "info": "Select how the transparent polygons are sorted.",
+     "values": [
+      "per-strip (fast, least accurate)",
+      "per-triangle (normal)",
+      "per-pixel (accurate)"
+     ],
+     "labels": [
+      "Per-Strip (fast, least accurate)",
+      "Per-Triangle (normal)",
+      "Per-Pixel (accurate, but slowest)"
+     ],
+     "default": "per-triangle (normal)"
+    },
+    {
+     "key": "reicast_oit_abuffer_size",
+     "label": "Accumulation Pixel Buffer Size",
+     "labelCategorized": "",
+     "info": "Higher values might be required for higher resolutions to output correctly.",
+     "values": [
+      "512MB",
+      "1GB",
+      "2GB",
+      "4GB"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "512MB"
+    },
+    {
+     "key": "reicast_oit_layers",
+     "label": "Maximum Transparent Layers",
+     "labelCategorized": "",
+     "info": "Higher values might be required for complex scenes.",
+     "values": [
+      "8",
+      "16",
+      "32",
+      "64",
+      "96",
+      "128"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "32"
+    },
+    {
+     "key": "reicast_emulate_framebuffer",
+     "label": "Full framebuffer emulation",
+     "labelCategorized": "",
+     "info": "Enable full framebuffer emulation in VRAM. This is useful for games that directly read or write the framebuffer in VRAM. When enabled, Internal Resolution is forced to 640x480 and performance may be severely impacted.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_enable_rttb",
+     "label": "Enable RTT (Render To Texture) Buffer",
+     "labelCategorized": "",
+     "info": "Copy rendered textures back from the GPU to VRAM. This option is normally enabled for games that require it. When enabled, texture rendering upscaling is disabled and performance may be impacted.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_mipmapping",
+     "label": "Mipmapping",
+     "labelCategorized": "",
+     "info": "When enabled textures will use smaller version of themselves when they appear farther away, it can increase performances and reduce shimmering.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "reicast_fog",
+     "label": "Fog Effects",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "reicast_volume_modifier_enable",
+     "label": "Volume Modifier",
+     "labelCategorized": "",
+     "info": "A Dreamcast GPU feature that is typically used by games to draw object shadows. This should normally be enabled - the performance impact is usually minimal to negligible.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "reicast_anisotropic_filtering",
+     "label": "Anisotropic Filtering",
+     "labelCategorized": "",
+     "info": "Enhance the quality of textures on surfaces that are at oblique viewing angles with respect to the camera. Higher values are more demanding on the GPU. Changes to this setting only apply after restarting.",
+     "values": [
+      "off",
+      "2",
+      "4",
+      "8",
+      "16"
+     ],
+     "labels": [
+      "disabled",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "4"
+    },
+    {
+     "key": "reicast_texture_filtering",
+     "label": "Texture Filtering",
+     "labelCategorized": "",
+     "info": "The texture filtering mode to use. This can be used to force a certain texture filtering mode on all textures to get a crisper (or smoother) appearance than Default. Values other than Default may cause various rendering issues. Changes to this setting only apply after restarting.",
+     "values": [
+      "0",
+      "1",
+      "2"
+     ],
+     "labels": [
+      "Default",
+      "Force Nearest-Neighbor",
+      "Force Linear"
+     ],
+     "default": "0"
+    },
+    {
+     "key": "reicast_delay_frame_swapping",
+     "label": "Delay Frame Swapping",
+     "labelCategorized": "",
+     "info": "Useful to avoid flashing screens or glitchy videos. Not recommended on slow platforms.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "reicast_detect_vsync_swap_interval",
+     "label": "Detect Frame Rate Changes",
+     "labelCategorized": "",
+     "info": "Notify frontend when internal frame rate changes (e.g. from 60 fps to 30 fps). Improves frame pacing in games that run at a locked 30 fps or 20 fps, but should be disabled for games with unlocked (unstable) frame rates (e.g. Ecco the Dolphin, Unreal Tournament). Note: Unavailable when 'Auto Skip Frame' is enabled.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_pvr2_filtering",
+     "label": "PowerVR2 Post-processing Filter",
+     "labelCategorized": "",
+     "info": "Post-process the rendered image to simulate effects specific to the PowerVR2 GPU and analog video signals.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_native_depth_interpolation",
+     "label": "Native Depth Interpolation",
+     "labelCategorized": "",
+     "info": "Helps with texture corruption and depth issues on AMD GPUs. Can also help Intel GPUs in some cases.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_fix_upscale_bleeding_edge",
+     "label": "Fix Upscale Bleeding Edge",
+     "labelCategorized": "",
+     "info": "Helps with texture bleeding case when upscaling. Disabling it can help if pixels are warping when upscaling in 2D games (MVC2, CVS, KOF, etc.)",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    }
+   ]
+  },
+  {
+   "key": "performance",
+   "label": "Performance",
+   "info": "Configure threaded rendering and frame skip settings.",
+   "items": [
+    {
+     "key": "reicast_threaded_rendering",
+     "label": "Threaded Rendering",
+     "labelCategorized": "",
+     "info": "Runs the GPU and CPU on different threads. Highly recommended.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "reicast_auto_skip_frame",
+     "label": "Auto Skip Frame",
+     "labelCategorized": "",
+     "info": "Automatically skip frames when the emulator is running slow. Note: This setting only applies when 'Threaded Rendering' is enabled.",
+     "values": [
+      "disabled",
+      "some",
+      "more"
+     ],
+     "labels": [
+      "",
+      "Normal",
+      "Maximum"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_frame_skipping",
+     "label": "Frame Skipping",
+     "labelCategorized": "",
+     "info": "Sets the number of frames to skip between each displayed frame.",
+     "values": [
+      "disabled",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "hacks",
+   "label": "Emulation Hacks",
+   "info": "Configure widescreen overrides, GD-ROM loading speed and texture replacement settings.",
+   "items": [
+    {
+     "key": "reicast_widescreen_cheats",
+     "label": "Widescreen Cheats (Restart Required)",
+     "labelCategorized": "",
+     "info": "Activates cheats that allow certain games to display in widescreen format.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_widescreen_hack",
+     "label": "Widescreen Hack",
+     "labelCategorized": "",
+     "info": "Draw geometry outside of the normal 4:3 aspect ratio. May produce graphical glitches in the revealed areas.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_gdrom_fast_loading",
+     "label": "GD-ROM Fast Loading (inaccurate)",
+     "labelCategorized": "",
+     "info": "Speeds up GD-ROM loading.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_dc_32mb_mod",
+     "label": "Dreamcast 32MB RAM Mod",
+     "labelCategorized": "",
+     "info": "Enables 32MB RAM Mod for Dreamcast. May affect compatibility",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_sh4clock",
+     "label": "SH4 CPU under/overclock",
+     "labelCategorized": "",
+     "info": "Change the SH4 main CPU clock from the default 200 MHz. Underclocking may help slow platforms. Overclocking may increase the frame rate for some games. Use with caution.",
+     "values": [
+      "100",
+      "110",
+      "120",
+      "130",
+      "140",
+      "150",
+      "160",
+      "170",
+      "180",
+      "190",
+      "200",
+      "210",
+      "220",
+      "230",
+      "240",
+      "250",
+      "260",
+      "270",
+      "280",
+      "290",
+      "300",
+      "310",
+      "320",
+      "330",
+      "340",
+      "350",
+      "360",
+      "370",
+      "380",
+      "390",
+      "400",
+      "410",
+      "420",
+      "430",
+      "440",
+      "450",
+      "460",
+      "470",
+      "480",
+      "490",
+      "500"
+     ],
+     "labels": [
+      "100 MHz",
+      "110 MHz",
+      "120 MHz",
+      "130 MHz",
+      "140 MHz",
+      "150 MHz",
+      "160 MHz",
+      "170 MHz",
+      "180 MHz",
+      "190 MHz",
+      "200 MHz",
+      "210 MHz",
+      "220 MHz",
+      "230 MHz",
+      "240 MHz",
+      "250 MHz",
+      "260 MHz",
+      "270 MHz",
+      "280 MHz",
+      "290 MHz",
+      "300 MHz",
+      "310 MHz",
+      "320 MHz",
+      "330 MHz",
+      "340 MHz",
+      "350 MHz",
+      "360 MHz",
+      "370 MHz",
+      "380 MHz",
+      "390 MHz",
+      "400 MHz",
+      "410 MHz",
+      "420 MHz",
+      "430 MHz",
+      "440 MHz",
+      "450 MHz",
+      "460 MHz",
+      "470 MHz",
+      "480 MHz",
+      "490 MHz",
+      "500 MHz"
+     ],
+     "default": "200"
+    },
+    {
+     "key": "reicast_custom_textures",
+     "label": "Load Custom Textures",
+     "labelCategorized": "",
+     "info": "Load custom textures located in the 'system/dc/textures/<game-id>/' folder.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_preload_custom_textures",
+     "label": "Preload Custom Textures",
+     "labelCategorized": "",
+     "info": "Preload custom textures at game start. May improve performance but increases memory usage.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_dump_textures",
+     "label": "Dump Textures",
+     "labelCategorized": "",
+     "info": "Every time a new texture is used by the game, it will be saved as a .png file in the 'system/dc/texdump/<game-id>/' folder.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_dump_replaced_textures",
+     "label": "Dump Replaced Textures",
+     "labelCategorized": "",
+     "info": "Always dump textures that are already replaced by custom textures.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "input",
+   "label": "Input",
+   "info": "Configure gamepad and light gun settings.",
+   "items": [
+    {
+     "key": "reicast_analog_stick_deadzone",
+     "label": "Analog Stick Deadzone",
+     "labelCategorized": "",
+     "info": "Select how far you have to push the analog stick before it starts being processed.",
+     "values": [
+      "0%",
+      "5%",
+      "10%",
+      "15%",
+      "20%",
+      "25%",
+      "30%"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "15%"
+    },
+    {
+     "key": "reicast_trigger_deadzone",
+     "label": "Trigger Deadzone",
+     "labelCategorized": "",
+     "info": "Select how much you have to press the trigger before it starts being processed.",
+     "values": [
+      "0%",
+      "5%",
+      "10%",
+      "15%",
+      "20%",
+      "25%",
+      "30%"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0%"
+    },
+    {
+     "key": "reicast_digital_triggers",
+     "label": "Digital Triggers",
+     "labelCategorized": "",
+     "info": "When enabled the triggers will act as regular buttons, meaning they will be processed as either fully pressed or not pressed at all, with no in-between.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_network_output",
+     "label": "Broadcast Digital Outputs",
+     "labelCategorized": "",
+     "info": "Broadcast digital outputs and force-feedback state on TCP port 8000. Compatible with the \"-output network\" MAME option.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_show_lightgun_settings",
+     "label": "Show Light Gun Settings",
+     "labelCategorized": "",
+     "info": "Enable configuration of light gun crosshair display options. NOTE: Quick Menu may need to be toggled for this setting to take effect.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_lightgun_crosshair_size_scaling",
+     "label": "Gun Crosshair Size Scaling",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "50%",
+      "60%",
+      "70%",
+      "80%",
+      "90%",
+      "100%",
+      "110%",
+      "120%",
+      "130%",
+      "140%",
+      "150%",
+      "160%",
+      "170%",
+      "180%",
+      "190%",
+      "200%",
+      "210%",
+      "220%",
+      "230%",
+      "240%",
+      "250%",
+      "260%",
+      "270%",
+      "280%",
+      "290%",
+      "300%"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100%"
+    },
+    {
+     "key": "reicast_lightgun1_crosshair",
+     "label": "Gun Crosshair 1 Display",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "disabled",
+      "White",
+      "Red",
+      "Green",
+      "Blue"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_lightgun2_crosshair",
+     "label": "Gun Crosshair 2 Display",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "disabled",
+      "White",
+      "Red",
+      "Green",
+      "Blue"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_lightgun3_crosshair",
+     "label": "Gun Crosshair 3 Display",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "disabled",
+      "White",
+      "Red",
+      "Green",
+      "Blue"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_lightgun4_crosshair",
+     "label": "Gun Crosshair 4 Display",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "disabled",
+      "White",
+      "Red",
+      "Green",
+      "Blue"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "expansions",
+   "label": "Controller Expansion Slots",
+   "info": "Select the device (VMU, rumble device) plugged in each controller expansion slot.",
+   "items": [
+    {
+     "key": "reicast_device_port1_slot1",
+     "label": "Device in Expansion Slot A1",
+     "labelCategorized": "",
+     "info": "Select the device plugged in the expansion slot A1 (port A slot 1).",
+     "values": [
+      "VMU",
+      "Purupuru",
+      "DreamPotato",
+      "None"
+     ],
+     "labels": [
+      "",
+      "Vibration Pack",
+      "",
+      ""
+     ],
+     "default": "VMU"
+    },
+    {
+     "key": "reicast_device_port1_slot2",
+     "label": "Device in Expansion Slot A2",
+     "labelCategorized": "",
+     "info": "Select the device plugged in the expansion slot A2 (port A slot 2).",
+     "values": [
+      "VMU",
+      "Purupuru",
+      "None"
+     ],
+     "labels": [
+      "",
+      "Vibration Pack",
+      ""
+     ],
+     "default": "Purupuru"
+    },
+    {
+     "key": "reicast_device_port2_slot1",
+     "label": "Device in Expansion Slot B1",
+     "labelCategorized": "",
+     "info": "Select the device plugged in the expansion slot B1 (port B slot 1).",
+     "values": [
+      "VMU",
+      "Purupuru",
+      "DreamPotato",
+      "None"
+     ],
+     "labels": [
+      "",
+      "Vibration Pack",
+      "",
+      ""
+     ],
+     "default": "VMU"
+    },
+    {
+     "key": "reicast_device_port2_slot2",
+     "label": "Device in Expansion Slot B2",
+     "labelCategorized": "",
+     "info": "Select the device plugged in the expansion slot B2 (port B slot 2).",
+     "values": [
+      "VMU",
+      "Purupuru",
+      "None"
+     ],
+     "labels": [
+      "",
+      "Vibration Pack",
+      ""
+     ],
+     "default": "Purupuru"
+    },
+    {
+     "key": "reicast_device_port3_slot1",
+     "label": "Device in Expansion Slot C1",
+     "labelCategorized": "",
+     "info": "Select the device plugged in the expansion slot C1 (port C slot 1).",
+     "values": [
+      "VMU",
+      "Purupuru",
+      "DreamPotato",
+      "None"
+     ],
+     "labels": [
+      "",
+      "Vibration Pack",
+      "",
+      ""
+     ],
+     "default": "VMU"
+    },
+    {
+     "key": "reicast_device_port3_slot2",
+     "label": "Device in Expansion Slot C2",
+     "labelCategorized": "",
+     "info": "Select the device plugged in the expansion slot C2 (port C slot 2).",
+     "values": [
+      "VMU",
+      "Purupuru",
+      "None"
+     ],
+     "labels": [
+      "",
+      "Vibration Pack",
+      ""
+     ],
+     "default": "Purupuru"
+    },
+    {
+     "key": "reicast_device_port4_slot1",
+     "label": "Device in Expansion Slot D1",
+     "labelCategorized": "",
+     "info": "Select the device plugged in the expansion slot D1 (port D slot 1).",
+     "values": [
+      "VMU",
+      "Purupuru",
+      "DreamPotato",
+      "None"
+     ],
+     "labels": [
+      "",
+      "Vibration Pack",
+      "",
+      ""
+     ],
+     "default": "VMU"
+    },
+    {
+     "key": "reicast_device_port4_slot2",
+     "label": "Device in Expansion Slot D2",
+     "labelCategorized": "",
+     "info": "Select the device plugged in the expansion slot D2 (port D slot 2).",
+     "values": [
+      "VMU",
+      "Purupuru",
+      "None"
+     ],
+     "labels": [
+      "",
+      "Vibration Pack",
+      ""
+     ],
+     "default": "Purupuru"
+    }
+   ]
+  },
+  {
+   "key": "vmu",
+   "label": "Visual Memory Unit",
+   "info": "Configure per-game VMU save files and on-screen VMU visibility settings.",
+   "items": [
+    {
+     "key": "reicast_per_content_vmus",
+     "label": "Per-Game Visual Memory Units/Systems (VMU)",
+     "labelCategorized": "Per-Game VMUs",
+     "info": "When disabled, all games share up to 8 VMU save files (A1/A2/B1/B2/C1/C2/D1/D2) located in RetroArch's system folder.\nThe 'VMU A1' setting creates a unique VMU 'A1' file in RetroArch's save folder for each game that is launched.\nThe 'All VMUs' setting creates up to 8 unique VMU files (A1/A2/B1/B2/C1/C2/D1/D2) for each game that is launched.",
+     "values": [
+      "disabled",
+      "VMU A1",
+      "All VMUs"
+     ],
+     "labels": [
+      "",
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_vmu_sound",
+     "label": "Visual Memory Units/Systems (VMU) Sounds",
+     "labelCategorized": "VMU Sounds",
+     "info": "When enabled, VMU beeps are played.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_linked_vmu_storage",
+     "label": "DreamPotato VMU storage",
+     "labelCategorized": "",
+     "info": "Enable storage of VMU data on the connected DreamPotato emulator. When enabled, the local VMU save file is not used.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_show_vmu_screen_settings",
+     "label": "Show Visual Memory Unit/System (VMU) Display Settings",
+     "labelCategorized": "Show VMU Display Settings",
+     "info": "Enable configuration of emulated VMU LCD screen visibility, size, position and color. NOTE: Quick Menu may need to be toggled for this setting to take effect.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_vmu1_screen_display",
+     "label": "VMU Screen 1 Display",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_vmu1_screen_position",
+     "label": "VMU Screen 1 Position",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "Upper Left",
+      "Upper Right",
+      "Lower Left",
+      "Lower Right"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "Upper Left"
+    },
+    {
+     "key": "reicast_vmu1_screen_size_mult",
+     "label": "VMU Screen 1 Size",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "1x",
+      "2x",
+      "3x",
+      "4x",
+      "5x"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "1x"
+    },
+    {
+     "key": "reicast_vmu1_pixel_on_color",
+     "label": "VMU Screen 1 Pixel On Color",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "DEFAULT_ON 00",
+      "DEFAULT_OFF 01",
+      "BLACK 02",
+      "BLUE 03",
+      "LIGHT_BLUE 04",
+      "GREEN 05",
+      "CYAN 06",
+      "CYAN_BLUE 07",
+      "LIGHT_GREEN 08",
+      "CYAN_GREEN 09",
+      "LIGHT_CYAN 10",
+      "RED 11",
+      "PURPLE 12",
+      "LIGHT_PURPLE 13",
+      "YELLOW 14",
+      "GRAY 15",
+      "LIGHT_PURPLE_2 16",
+      "LIGHT_GREEN_2 17",
+      "LIGHT_GREEN_3 18",
+      "LIGHT_CYAN_2 19",
+      "LIGHT_RED_2 20",
+      "MAGENTA 21",
+      "LIGHT_PURPLE_3 22",
+      "LIGHT_ORANGE 23",
+      "ORANGE 24",
+      "LIGHT_PURPLE_4 25",
+      "LIGHT_YELLOW 26",
+      "LIGHT_YELLOW_2 27",
+      "WHITE 28"
+     ],
+     "labels": [
+      "Default ON",
+      "Default OFF",
+      "Black",
+      "Blue",
+      "Light Blue",
+      "Green",
+      "Cyan",
+      "Cyan Blue",
+      "Light Green",
+      "Cyan Green",
+      "Light Cyan",
+      "Red",
+      "Purple",
+      "Light Purple",
+      "Yellow",
+      "Gray",
+      "Light Purple (2)",
+      "Light Green (2)",
+      "Light Green (3)",
+      "Light Cyan (2)",
+      "Light Red (2)",
+      "Magenta",
+      "Light Purple (3)",
+      "Light Orange",
+      "Orange",
+      "Light Purple (4)",
+      "Light Yellow",
+      "Light Yellow (2)",
+      "White"
+     ],
+     "default": "DEFAULT_ON 00"
+    },
+    {
+     "key": "reicast_vmu1_pixel_off_color",
+     "label": "VMU Screen 1 Pixel Off Color",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "DEFAULT_OFF 01",
+      "DEFAULT_ON 00",
+      "BLACK 02",
+      "BLUE 03",
+      "LIGHT_BLUE 04",
+      "GREEN 05",
+      "CYAN 06",
+      "CYAN_BLUE 07",
+      "LIGHT_GREEN 08",
+      "CYAN_GREEN 09",
+      "LIGHT_CYAN 10",
+      "RED 11",
+      "PURPLE 12",
+      "LIGHT_PURPLE 13",
+      "YELLOW 14",
+      "GRAY 15",
+      "LIGHT_PURPLE_2 16",
+      "LIGHT_GREEN_2 17",
+      "LIGHT_GREEN_3 18",
+      "LIGHT_CYAN_2 19",
+      "LIGHT_RED_2 20",
+      "MAGENTA 21",
+      "LIGHT_PURPLE_3 22",
+      "LIGHT_ORANGE 23",
+      "ORANGE 24",
+      "LIGHT_PURPLE_4 25",
+      "LIGHT_YELLOW 26",
+      "LIGHT_YELLOW_2 27",
+      "WHITE 28"
+     ],
+     "labels": [
+      "Default OFF",
+      "Default ON",
+      "Black",
+      "Blue",
+      "Light Blue",
+      "Green",
+      "Cyan",
+      "Cyan Blue",
+      "Light Green",
+      "Cyan Green",
+      "Light Cyan",
+      "Red",
+      "Purple",
+      "Light Purple",
+      "Yellow",
+      "Gray",
+      "Light Purple (2)",
+      "Light Green (2)",
+      "Light Green (3)",
+      "Light Cyan (2)",
+      "Light Red (2)",
+      "Magenta",
+      "Light Purple (3)",
+      "Light Orange",
+      "Orange",
+      "Light Purple (4)",
+      "Light Yellow",
+      "Light Yellow (2)",
+      "White"
+     ],
+     "default": "DEFAULT_OFF 01"
+    },
+    {
+     "key": "reicast_vmu1_screen_opacity",
+     "label": "VMU Screen 1 Opacity",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "10%",
+      "20%",
+      "30%",
+      "40%",
+      "50%",
+      "60%",
+      "70%",
+      "80%",
+      "90%",
+      "100%"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100%"
+    },
+    {
+     "key": "reicast_vmu2_screen_display",
+     "label": "VMU Screen 2 Display",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_vmu2_screen_position",
+     "label": "VMU Screen 2 Position",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "Upper Left",
+      "Upper Right",
+      "Lower Left",
+      "Lower Right"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "Upper Right"
+    },
+    {
+     "key": "reicast_vmu2_screen_size_mult",
+     "label": "VMU Screen 2 Size",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "1x",
+      "2x",
+      "3x",
+      "4x",
+      "5x"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "1x"
+    },
+    {
+     "key": "reicast_vmu2_pixel_on_color",
+     "label": "VMU Screen 2 Pixel On Color",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "DEFAULT_ON 00",
+      "DEFAULT_OFF 01",
+      "BLACK 02",
+      "BLUE 03",
+      "LIGHT_BLUE 04",
+      "GREEN 05",
+      "CYAN 06",
+      "CYAN_BLUE 07",
+      "LIGHT_GREEN 08",
+      "CYAN_GREEN 09",
+      "LIGHT_CYAN 10",
+      "RED 11",
+      "PURPLE 12",
+      "LIGHT_PURPLE 13",
+      "YELLOW 14",
+      "GRAY 15",
+      "LIGHT_PURPLE_2 16",
+      "LIGHT_GREEN_2 17",
+      "LIGHT_GREEN_3 18",
+      "LIGHT_CYAN_2 19",
+      "LIGHT_RED_2 20",
+      "MAGENTA 21",
+      "LIGHT_PURPLE_3 22",
+      "LIGHT_ORANGE 23",
+      "ORANGE 24",
+      "LIGHT_PURPLE_4 25",
+      "LIGHT_YELLOW 26",
+      "LIGHT_YELLOW_2 27",
+      "WHITE 28"
+     ],
+     "labels": [
+      "Default ON",
+      "Default OFF",
+      "Black",
+      "Blue",
+      "Light Blue",
+      "Green",
+      "Cyan",
+      "Cyan Blue",
+      "Light Green",
+      "Cyan Green",
+      "Light Cyan",
+      "Red",
+      "Purple",
+      "Light Purple",
+      "Yellow",
+      "Gray",
+      "Light Purple (2)",
+      "Light Green (2)",
+      "Light Green (3)",
+      "Light Cyan (2)",
+      "Light Red (2)",
+      "Magenta",
+      "Light Purple (3)",
+      "Light Orange",
+      "Orange",
+      "Light Purple (4)",
+      "Light Yellow",
+      "Light Yellow (2)",
+      "White"
+     ],
+     "default": "DEFAULT_ON 00"
+    },
+    {
+     "key": "reicast_vmu2_pixel_off_color",
+     "label": "VMU Screen 2 Pixel Off Color",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "DEFAULT_OFF 01",
+      "DEFAULT_ON 00",
+      "BLACK 02",
+      "BLUE 03",
+      "LIGHT_BLUE 04",
+      "GREEN 05",
+      "CYAN 06",
+      "CYAN_BLUE 07",
+      "LIGHT_GREEN 08",
+      "CYAN_GREEN 09",
+      "LIGHT_CYAN 10",
+      "RED 11",
+      "PURPLE 12",
+      "LIGHT_PURPLE 13",
+      "YELLOW 14",
+      "GRAY 15",
+      "LIGHT_PURPLE_2 16",
+      "LIGHT_GREEN_2 17",
+      "LIGHT_GREEN_3 18",
+      "LIGHT_CYAN_2 19",
+      "LIGHT_RED_2 20",
+      "MAGENTA 21",
+      "LIGHT_PURPLE_3 22",
+      "LIGHT_ORANGE 23",
+      "ORANGE 24",
+      "LIGHT_PURPLE_4 25",
+      "LIGHT_YELLOW 26",
+      "LIGHT_YELLOW_2 27",
+      "WHITE 28"
+     ],
+     "labels": [
+      "Default OFF",
+      "Default ON",
+      "Black",
+      "Blue",
+      "Light Blue",
+      "Green",
+      "Cyan",
+      "Cyan Blue",
+      "Light Green",
+      "Cyan Green",
+      "Light Cyan",
+      "Red",
+      "Purple",
+      "Light Purple",
+      "Yellow",
+      "Gray",
+      "Light Purple (2)",
+      "Light Green (2)",
+      "Light Green (3)",
+      "Light Cyan (2)",
+      "Light Red (2)",
+      "Magenta",
+      "Light Purple (3)",
+      "Light Orange",
+      "Orange",
+      "Light Purple (4)",
+      "Light Yellow",
+      "Light Yellow (2)",
+      "White"
+     ],
+     "default": "DEFAULT_OFF 01"
+    },
+    {
+     "key": "reicast_vmu2_screen_opacity",
+     "label": "VMU Screen 2 Opacity",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "10%",
+      "20%",
+      "30%",
+      "40%",
+      "50%",
+      "60%",
+      "70%",
+      "80%",
+      "90%",
+      "100%"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100%"
+    },
+    {
+     "key": "reicast_vmu3_screen_display",
+     "label": "VMU Screen 3 Display",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_vmu3_screen_position",
+     "label": "VMU Screen 3 Position",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "Upper Left",
+      "Upper Right",
+      "Lower Left",
+      "Lower Right"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "Lower Left"
+    },
+    {
+     "key": "reicast_vmu3_screen_size_mult",
+     "label": "VMU Screen 3 Size",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "1x",
+      "2x",
+      "3x",
+      "4x",
+      "5x"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "1x"
+    },
+    {
+     "key": "reicast_vmu3_pixel_on_color",
+     "label": "VMU Screen 3 Pixel On Color",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "DEFAULT_ON 00",
+      "DEFAULT_OFF 01",
+      "BLACK 02",
+      "BLUE 03",
+      "LIGHT_BLUE 04",
+      "GREEN 05",
+      "CYAN 06",
+      "CYAN_BLUE 07",
+      "LIGHT_GREEN 08",
+      "CYAN_GREEN 09",
+      "LIGHT_CYAN 10",
+      "RED 11",
+      "PURPLE 12",
+      "LIGHT_PURPLE 13",
+      "YELLOW 14",
+      "GRAY 15",
+      "LIGHT_PURPLE_2 16",
+      "LIGHT_GREEN_2 17",
+      "LIGHT_GREEN_3 18",
+      "LIGHT_CYAN_2 19",
+      "LIGHT_RED_2 20",
+      "MAGENTA 21",
+      "LIGHT_PURPLE_3 22",
+      "LIGHT_ORANGE 23",
+      "ORANGE 24",
+      "LIGHT_PURPLE_4 25",
+      "LIGHT_YELLOW 26",
+      "LIGHT_YELLOW_2 27",
+      "WHITE 28"
+     ],
+     "labels": [
+      "Default ON",
+      "Default OFF",
+      "Black",
+      "Blue",
+      "Light Blue",
+      "Green",
+      "Cyan",
+      "Cyan Blue",
+      "Light Green",
+      "Cyan Green",
+      "Light Cyan",
+      "Red",
+      "Purple",
+      "Light Purple",
+      "Yellow",
+      "Gray",
+      "Light Purple (2)",
+      "Light Green (2)",
+      "Light Green (3)",
+      "Light Cyan (2)",
+      "Light Red (2)",
+      "Magenta",
+      "Light Purple (3)",
+      "Light Orange",
+      "Orange",
+      "Light Purple (4)",
+      "Light Yellow",
+      "Light Yellow (2)",
+      "White"
+     ],
+     "default": "DEFAULT_ON 00"
+    },
+    {
+     "key": "reicast_vmu3_pixel_off_color",
+     "label": "VMU Screen 3 Pixel Off Color",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "DEFAULT_OFF 01",
+      "DEFAULT_ON 00",
+      "BLACK 02",
+      "BLUE 03",
+      "LIGHT_BLUE 04",
+      "GREEN 05",
+      "CYAN 06",
+      "CYAN_BLUE 07",
+      "LIGHT_GREEN 08",
+      "CYAN_GREEN 09",
+      "LIGHT_CYAN 10",
+      "RED 11",
+      "PURPLE 12",
+      "LIGHT_PURPLE 13",
+      "YELLOW 14",
+      "GRAY 15",
+      "LIGHT_PURPLE_2 16",
+      "LIGHT_GREEN_2 17",
+      "LIGHT_GREEN_3 18",
+      "LIGHT_CYAN_2 19",
+      "LIGHT_RED_2 20",
+      "MAGENTA 21",
+      "LIGHT_PURPLE_3 22",
+      "LIGHT_ORANGE 23",
+      "ORANGE 24",
+      "LIGHT_PURPLE_4 25",
+      "LIGHT_YELLOW 26",
+      "LIGHT_YELLOW_2 27",
+      "WHITE 28"
+     ],
+     "labels": [
+      "Default OFF",
+      "Default ON",
+      "Black",
+      "Blue",
+      "Light Blue",
+      "Green",
+      "Cyan",
+      "Cyan Blue",
+      "Light Green",
+      "Cyan Green",
+      "Light Cyan",
+      "Red",
+      "Purple",
+      "Light Purple",
+      "Yellow",
+      "Gray",
+      "Light Purple (2)",
+      "Light Green (2)",
+      "Light Green (3)",
+      "Light Cyan (2)",
+      "Light Red (2)",
+      "Magenta",
+      "Light Purple (3)",
+      "Light Orange",
+      "Orange",
+      "Light Purple (4)",
+      "Light Yellow",
+      "Light Yellow (2)",
+      "White"
+     ],
+     "default": "DEFAULT_OFF 01"
+    },
+    {
+     "key": "reicast_vmu3_screen_opacity",
+     "label": "VMU Screen 3 Opacity",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "10%",
+      "20%",
+      "30%",
+      "40%",
+      "50%",
+      "60%",
+      "70%",
+      "80%",
+      "90%",
+      "100%"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100%"
+    },
+    {
+     "key": "reicast_vmu4_screen_display",
+     "label": "VMU Screen 4 Display",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "reicast_vmu4_screen_position",
+     "label": "VMU Screen 4 Position",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "Upper Left",
+      "Upper Right",
+      "Lower Left",
+      "Lower Right"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "Lower Right"
+    },
+    {
+     "key": "reicast_vmu4_screen_size_mult",
+     "label": "VMU Screen 4 Size",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "1x",
+      "2x",
+      "3x",
+      "4x",
+      "5x"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "1x"
+    },
+    {
+     "key": "reicast_vmu4_pixel_on_color",
+     "label": "VMU Screen 4 Pixel On Color",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "DEFAULT_ON 00",
+      "DEFAULT_OFF 01",
+      "BLACK 02",
+      "BLUE 03",
+      "LIGHT_BLUE 04",
+      "GREEN 05",
+      "CYAN 06",
+      "CYAN_BLUE 07",
+      "LIGHT_GREEN 08",
+      "CYAN_GREEN 09",
+      "LIGHT_CYAN 10",
+      "RED 11",
+      "PURPLE 12",
+      "LIGHT_PURPLE 13",
+      "YELLOW 14",
+      "GRAY 15",
+      "LIGHT_PURPLE_2 16",
+      "LIGHT_GREEN_2 17",
+      "LIGHT_GREEN_3 18",
+      "LIGHT_CYAN_2 19",
+      "LIGHT_RED_2 20",
+      "MAGENTA 21",
+      "LIGHT_PURPLE_3 22",
+      "LIGHT_ORANGE 23",
+      "ORANGE 24",
+      "LIGHT_PURPLE_4 25",
+      "LIGHT_YELLOW 26",
+      "LIGHT_YELLOW_2 27",
+      "WHITE 28"
+     ],
+     "labels": [
+      "Default ON",
+      "Default OFF",
+      "Black",
+      "Blue",
+      "Light Blue",
+      "Green",
+      "Cyan",
+      "Cyan Blue",
+      "Light Green",
+      "Cyan Green",
+      "Light Cyan",
+      "Red",
+      "Purple",
+      "Light Purple",
+      "Yellow",
+      "Gray",
+      "Light Purple (2)",
+      "Light Green (2)",
+      "Light Green (3)",
+      "Light Cyan (2)",
+      "Light Red (2)",
+      "Magenta",
+      "Light Purple (3)",
+      "Light Orange",
+      "Orange",
+      "Light Purple (4)",
+      "Light Yellow",
+      "Light Yellow (2)",
+      "White"
+     ],
+     "default": "DEFAULT_ON 00"
+    },
+    {
+     "key": "reicast_vmu4_pixel_off_color",
+     "label": "VMU Screen 4 Pixel Off Color",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "DEFAULT_OFF 01",
+      "DEFAULT_ON 00",
+      "BLACK 02",
+      "BLUE 03",
+      "LIGHT_BLUE 04",
+      "GREEN 05",
+      "CYAN 06",
+      "CYAN_BLUE 07",
+      "LIGHT_GREEN 08",
+      "CYAN_GREEN 09",
+      "LIGHT_CYAN 10",
+      "RED 11",
+      "PURPLE 12",
+      "LIGHT_PURPLE 13",
+      "YELLOW 14",
+      "GRAY 15",
+      "LIGHT_PURPLE_2 16",
+      "LIGHT_GREEN_2 17",
+      "LIGHT_GREEN_3 18",
+      "LIGHT_CYAN_2 19",
+      "LIGHT_RED_2 20",
+      "MAGENTA 21",
+      "LIGHT_PURPLE_3 22",
+      "LIGHT_ORANGE 23",
+      "ORANGE 24",
+      "LIGHT_PURPLE_4 25",
+      "LIGHT_YELLOW 26",
+      "LIGHT_YELLOW_2 27",
+      "WHITE 28"
+     ],
+     "labels": [
+      "Default OFF",
+      "Default ON",
+      "Black",
+      "Blue",
+      "Light Blue",
+      "Green",
+      "Cyan",
+      "Cyan Blue",
+      "Light Green",
+      "Cyan Green",
+      "Light Cyan",
+      "Red",
+      "Purple",
+      "Light Purple",
+      "Yellow",
+      "Gray",
+      "Light Purple (2)",
+      "Light Green (2)",
+      "Light Green (3)",
+      "Light Cyan (2)",
+      "Light Red (2)",
+      "Magenta",
+      "Light Purple (3)",
+      "Light Orange",
+      "Orange",
+      "Light Purple (4)",
+      "Light Yellow",
+      "Light Yellow (2)",
+      "White"
+     ],
+     "default": "DEFAULT_OFF 01"
+    },
+    {
+     "key": "reicast_vmu4_screen_opacity",
+     "label": "VMU Screen 4 Opacity",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "10%",
+      "20%",
+      "30%",
+      "40%",
+      "50%",
+      "60%",
+      "70%",
+      "80%",
+      "90%",
+      "100%"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100%"
+    }
+   ]
+  }
+ ],
+ "soSha256": "3d5412958c471956b5d8a6bd2e52d0ff7e03ae18736e99afdd8b75e28b495ea0",
+ "probedAt": "2026-09-29"
+}

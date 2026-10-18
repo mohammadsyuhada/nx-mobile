@@ -1,0 +1,178 @@
+# licence: modifies gpSP (https://github.com/libretro/gpsp), GPL-2.0 (its COPYING file); this patch is distributed
+# under the same licence.
+diff --git a/gba_memory.c b/gba_memory.c
+index 5dff1b5..850a740 100644
+--- a/gba_memory.c
++++ b/gba_memory.c
+@@ -2393,6 +2393,23 @@ void memory_term(void)
+   gamepak_mini_materialized = false;
+ }
+ 
++/* nx-mobile: state that init_memory and load_gamepak leave alone, reset at
++ * retro_init so a second session on the same loaded library starts clean. */
++void memory_reset_session(void)
++{
++  rtc_status = 0x40;
++  rtc_write_mode = 0;
++  rtc_command = 0;
++  rtc_data_bits = 0;
++  rtc_bit_count = 0;
++  rtc_data = 0;
++  rtc_base_time = 0;
++  rtc_enabled = false;
++  rumble_enabled = false;
++  gamepak_header_nonstandard = false;
++  is_known_game = false;
++}
++
+ bool memory_check_savestate(const u8 *src)
+ {
+   static const char *vars32[] = {
+diff --git a/gba_memory.h b/gba_memory.h
+index 50472a3..3903419 100644
+--- a/gba_memory.h
++++ b/gba_memory.h
+@@ -254,6 +254,8 @@ void init_memory(void);
+ void init_gamepak_buffer(void);
+ bool gamepak_must_swap(void);
+ void memory_term(void);
++/* nx-mobile: resets what only a fresh library load used to reset. */
++void memory_reset_session(void);
+ u8 *load_gamepak_page(u32 physical_index);
+ 
+ extern u32 oam_update;
+diff --git a/input.c b/input.c
+index 1574e51..adcb7ed 100644
+--- a/input.c
++++ b/input.c
+@@ -36,6 +36,13 @@ static retro_input_state_t input_state_cb;
+ 
+ void retro_set_input_state(retro_input_state_t cb) { input_state_cb = cb; }
+ 
++void input_reset_session(void)
++{
++   old_key           = 0;
++   gbp_keypad_frames = 0;
++   gbp_keypad_sent   = false;
++}
++
+ extern void set_fastforward_override(bool fastforward);
+ 
+ static void trigger_key(u32 key)
+diff --git a/input.h b/input.h
+index b8b11e8..f9d7d72 100644
+--- a/input.h
++++ b/input.h
+@@ -74,6 +74,8 @@ extern unsigned turbo_a_counter;
+ extern unsigned turbo_b_counter;
+ 
+ void init_input(void);
++/* nx-mobile: resets the key edge state a fresh library load used to reset. */
++void input_reset_session(void);
+ u32 update_input(void);
+ 
+ bool input_check_savestate(const u8 *src);
+diff --git a/libretro/libretro.c b/libretro/libretro.c
+index 5f02c09..55b3d1b 100644
+--- a/libretro/libretro.c
++++ b/libretro/libretro.c
+@@ -108,6 +108,47 @@ static void (*video_post_process)(void) = NULL;
+ static bool post_process_cc  = false;
+ static bool post_process_mix = false;
+ 
++#if defined(HAVE_DYNAREC) && defined(MMAP_JIT_CACHE)
++/* nx-mobile: the recompiler cache must sit within +/-128 MB of the core's
++ * code, and a busy address space may have no such gap. The frontend keeps
++ * this .so loaded between games, so the block is mapped once, on the first
++ * retro_init, and reused by every later session. retro_deinit leaves it
++ * mapped; it is released only if the library itself is unloaded. */
++static u8 *nx_jit_block = NULL;
++
++__attribute__((destructor)) static void nx_unmap_jit_block(void)
++{
++   if (nx_jit_block)
++      unmap_jit_block(nx_jit_block, ROM_TRANSLATION_CACHE_SIZE + RAM_TRANSLATION_CACHE_SIZE);
++   nx_jit_block = NULL;
++}
++#endif
++
++/* nx-mobile: a second retro_init on the same loaded .so must start where a
++ * freshly loaded one does. Resets the state that nothing else in the init,
++ * load or reset path sets again (it was only reset by the frontend unloading
++ * the library between games). */
++static void nx_reset_session_state(void)
++{
++   cheat_clear();
++   input_reset_session();
++   memory_reset_session();
++   serial_set_irq_cycles(0);
++   serialproto_reset();
++
++   memset(palette_ram_converted, 0, sizeof(palette_ram_converted));
++   memset(affine_reference_x, 0, sizeof(affine_reference_x));
++   memset(affine_reference_y, 0, sizeof(affine_reference_y));
++
++   skip_next_frame   = 0;
++   sprite_limit      = 1;
++   rtc_mode          = FEAT_AUTODETECT;
++   rumble_mode       = FEAT_AUTODETECT;
++   serial_setting    = SERIAL_MODE_AUTO;
++   rumble_cb         = NULL;
++   main_path[0]      = '\0';
++}
++
+ static void error_msg(const char* text)
+ {
+    if (log_cb)
+@@ -575,6 +616,7 @@ void retro_get_system_av_info(struct retro_system_av_info* info)
+ void retro_init(void)
+ {
+    u32 audio_sample_buffer_size;
++   nx_reset_session_state();
+    audio_samples_per_frame   = (float)(GBA_SOUND_FREQUENCY) / (float)(GBA_FPS);
+    audio_samples_accumulator = 0.0f;
+    audio_sample_buffer_size  = ((u32)audio_samples_per_frame + 1) * 2;
+@@ -593,8 +635,12 @@ void retro_init(void)
+ 
+ #if defined(HAVE_DYNAREC)
+   #if defined(MMAP_JIT_CACHE)
+-   rom_translation_cache = map_jit_block(ROM_TRANSLATION_CACHE_SIZE + RAM_TRANSLATION_CACHE_SIZE);
+-   ram_translation_cache = &rom_translation_cache[ROM_TRANSLATION_CACHE_SIZE];
++   /* nx-mobile: map once and keep it (see nx_jit_block). A failed mapping
++    * leaves both caches NULL, and retro_load_game refuses the game. */
++   if (!nx_jit_block)
++      nx_jit_block = (u8*)map_jit_block(ROM_TRANSLATION_CACHE_SIZE + RAM_TRANSLATION_CACHE_SIZE);
++   rom_translation_cache = nx_jit_block;
++   ram_translation_cache = nx_jit_block ? &nx_jit_block[ROM_TRANSLATION_CACHE_SIZE] : NULL;
+   #elif defined(_3DS)
+    if (__ctr_svchax && !translation_caches_inited)
+    {
+@@ -695,7 +741,9 @@ void retro_deinit(void)
+    memory_term();
+ 
+ #if defined(MMAP_JIT_CACHE) && defined(HAVE_DYNAREC)
+-   unmap_jit_block(rom_translation_cache, ROM_TRANSLATION_CACHE_SIZE + RAM_TRANSLATION_CACHE_SIZE);
++   /* nx-mobile: the block stays mapped for the next session (nx_jit_block). */
++   rom_translation_cache = NULL;
++   ram_translation_cache = NULL;
+ #endif
+ #if defined(_3DS) && defined(HAVE_DYNAREC)
+ 
+@@ -1149,6 +1197,17 @@ bool retro_load_game(const struct retro_game_info* info)
+    if (!gba_screen_pixels)
+       return false;
+ 
++#if defined(HAVE_DYNAREC) && defined(MMAP_JIT_CACHE)
++   /* nx-mobile: the emitter writes into this cache even with the dynarec
++    * option off, so without it the game cannot start. */
++   if (!rom_translation_cache)
++   {
++      if (log_cb)
++         log_cb(RETRO_LOG_ERROR, "gpsp: couldn't reserve its 10.5 MB recompiler cache near the core\n");
++      return false;
++   }
++#endif
++
+    check_variables(true);
+    set_input_descriptors();
+ 

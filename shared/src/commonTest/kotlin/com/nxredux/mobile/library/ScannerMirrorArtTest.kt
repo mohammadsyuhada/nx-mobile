@@ -1,0 +1,89 @@
+package com.nxredux.mobile.library
+
+import com.nxredux.mobile.runner.ContentRef
+import com.nxredux.mobile.settings.ExtraFolder
+import com.nxredux.mobile.storage.MemorySidecarStore
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlinx.coroutines.test.runTest
+
+class ScannerMirrorArtTest {
+    private val home = ContentRef("Home")
+    private val x1 = ExtraFolder("x1", ContentRef("sd/Ext"))
+    private val mirror = "Home/Roms/.sources/x1/My Sega Genesis/.media"
+    private val baseDirs = mapOf(
+        "Home" to listOf("Roms"),
+        "Home/Roms" to listOf(".sources"),
+        "Home/Roms/.sources" to listOf("x1"),
+        "Home/Roms/.sources/x1" to listOf("My Sega Genesis"),
+        "Home/Roms/.sources/x1/My Sega Genesis" to listOf(".media"),
+        mirror to listOf("Sonic.png", "boxart", "box2d", "grid", "hero"),
+        "$mirror/boxart" to listOf("Sonic.png"),
+        "$mirror/box2d" to listOf("Sonic.jpg"),
+        "$mirror/grid" to listOf("Sonic.jpg"),
+        "$mirror/hero" to listOf("Sonic.jpg"),
+        "sd/Ext" to listOf("My Sega Genesis"),
+    )
+
+    private suspend fun sonic(dirs: Map<String, List<String>>): GameEntry {
+        val src = FakeRomsSource(dirs)
+        val index = LibraryScanner(src, Sidecars(src, MemorySidecarStore()) { home }).scan(home, listOf(x1), emptyMap())
+        return index.toSystems().flatMap { it.games }.single { it.fileName == "Sonic.md" }
+    }
+
+    @Test fun scannerReadsMirrorArt() = runTest {
+        val game = sonic(baseDirs + ("sd/Ext/My Sega Genesis" to listOf("Sonic.md")))
+        assertEquals(ContentRef("$mirror/boxart/Sonic.png"), game.boxartRef)
+        assertEquals(ContentRef("$mirror/box2d/Sonic.jpg"), game.box2dRef)
+        assertEquals(ContentRef("$mirror/grid/Sonic.jpg"), game.gridRef)
+        assertEquals(ContentRef("$mirror/hero/Sonic.jpg"), game.heroRef)
+        assertNull(game.screenshotRef)   // the mirror's untyped Sonic.png is not art
+    }
+
+    @Test fun ownWinsPerTypedSlot() = runTest {
+        val own = "sd/Ext/My Sega Genesis/.media"
+        val game = sonic(
+            baseDirs + mapOf(
+                "sd/Ext/My Sega Genesis" to listOf("Sonic.md", ".media"),
+                own to listOf("Sonic.png", "screenshot", "box2d", "grid"),
+                "$own/screenshot" to listOf("Sonic.png"),
+                "$own/box2d" to listOf("Sonic.png"),
+                "$own/grid" to listOf("Sonic.png"),
+            ),
+        )
+        assertEquals(ContentRef("$mirror/boxart/Sonic.png"), game.boxartRef)   // mirror fills only what is missing
+        assertEquals(ContentRef("$own/box2d/Sonic.png"), game.box2dRef)        // own box2d over the mirror's
+        assertEquals(ContentRef("$own/screenshot/Sonic.png"), game.screenshotRef)
+        assertEquals(ContentRef("$own/grid/Sonic.png"), game.gridRef)
+        assertEquals(ContentRef("$mirror/hero/Sonic.jpg"), game.heroRef)       // no own hero: the mirror's
+    }
+
+    @Test fun noMirrorWalksWhenTheExtraHasNoMirrorRoot() = runTest {
+        // No `.sources/x1` yet (nothing scraped): `.sources` is looked up once and no folder of x1 is walked in it.
+        val dirs = mapOf(
+            "Home" to listOf("Roms"),
+            "Home/Roms" to listOf(".sources"),
+            "Home/Roms/.sources" to listOf("other"),
+            "Home/Roms/.sources/other" to emptyList(),
+            "sd/Ext" to listOf("A", "B", "C"),
+            "sd/Ext/A" to listOf("Sonic.md"),
+            "sd/Ext/B" to listOf("Streets.md"),
+            "sd/Ext/C" to listOf("Comix.md"),
+        )
+        val counting = CountingRomsSource(FakeRomsSource(dirs))
+        // Sidecars get no home, so every `.sources` call below is the scanner's art mirror (the sidecar copies have their own).
+        val games = LibraryScanner(counting, Sidecars(counting, MemorySidecarStore()) { null }).scan(home, listOf(x1), emptyMap())
+            .systems.flatMap { it.games }
+        assertEquals(3, games.size)
+        val mirrorCalls = counting.calls.filter { ".sources" in it }
+        assertEquals(listOf("child:Home/Roms/.sources", "child:Home/Roms/.sources/x1"), mirrorCalls)
+    }
+
+    @Test fun homeGamesIgnoreSourcesTree() = runTest {
+        // A home game named like a mirror file does not pick up .sources art.
+        val src = FakeRomsSource(baseDirs + mapOf("Home/Roms" to listOf(".sources", "Sega Genesis (MD)"), "Home/Roms/Sega Genesis (MD)" to listOf("Sonic.md")))
+        val index = LibraryScanner(src, Sidecars(src, MemorySidecarStore()) { home }).scan(home, emptyList(), emptyMap())
+        assertNull(index.toSystems().flatMap { it.games }.single { it.fileName == "Sonic.md" }.boxartRef)
+    }
+}

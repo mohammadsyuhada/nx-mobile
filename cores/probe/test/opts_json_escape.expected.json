@@ -1,0 +1,2 @@
+{"core":"esc","emulator":"Esc \"Core\"","sections":[
+{"key":"","label":"","info":"","items":[{"key":"esc_a","label":"Say \"hi\"","labelCategorized":"","info":"back\\slash\nline\ttab\u0001 café","values":["a/b"],"labels":["A \"b\""],"default":"a/b"}]}]}

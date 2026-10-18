@@ -1,0 +1,123 @@
+{
+ "core": "race",
+ "emulator": "RACE",
+ "sections": [
+  {
+   "key": "",
+   "label": "",
+   "info": "",
+   "items": [
+    {
+     "key": "race_language",
+     "label": "Language (Restart)",
+     "labelCategorized": "",
+     "info": "Specify which language to display when running content with dual language support.",
+     "values": [
+      "japanese",
+      "english"
+     ],
+     "labels": [
+      "Japanese",
+      "English"
+     ],
+     "default": "english"
+    },
+    {
+     "key": "race_dark_filter_level",
+     "label": "Dark Filter Level (percent)",
+     "labelCategorized": "",
+     "info": "Enable luminosity-based brightness reduction. May be used to avoid glare/eye strain when playing games with white backgrounds.",
+     "values": [
+      "0",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "race_frameskip",
+     "label": "Frameskip",
+     "labelCategorized": "",
+     "info": "Skip frames to avoid audio buffer under-run (crackling). Improves performance at the expense of visual smoothness. 'Auto' skips frames when advised by the frontend. 'Manual' utilises the 'Frameskip Threshold (%)' setting.",
+     "values": [
+      "disabled",
+      "auto",
+      "manual"
+     ],
+     "labels": [
+      "",
+      "Auto",
+      "Manual"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "race_frameskip_threshold",
+     "label": "Frameskip Threshold (%)",
+     "labelCategorized": "",
+     "info": "When 'Frameskip' is set to 'Manual', specifies the audio buffer occupancy threshold (percentage) below which frames will be skipped. Higher values reduce the risk of crackling by causing frames to be dropped more frequently.",
+     "values": [
+      "15",
+      "18",
+      "21",
+      "24",
+      "27",
+      "30",
+      "33",
+      "36",
+      "39",
+      "42",
+      "45",
+      "48",
+      "51",
+      "54",
+      "57",
+      "60"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "33"
+    }
+   ]
+  }
+ ],
+ "soSha256": "47f297d7e5d3f12e6ebebb51eab14f1e727ed1c6911a4fe6fde971daa17b1969",
+ "probedAt": "2026-09-29"
+}

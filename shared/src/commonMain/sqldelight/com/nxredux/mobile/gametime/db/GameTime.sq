@@ -1,0 +1,162 @@
+CREATE TABLE device (
+  id TEXT NOT NULL PRIMARY KEY,
+  name TEXT NOT NULL
+);
+
+CREATE TABLE game (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  rom_path TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  title TEXT,
+  tag TEXT NOT NULL
+);
+
+CREATE TABLE session (
+  uuid TEXT NOT NULL PRIMARY KEY,
+  game_id INTEGER NOT NULL REFERENCES game(id),
+  device_id TEXT NOT NULL REFERENCES device(id),
+  tag TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL,
+  ended_at INTEGER,
+  duration INTEGER,
+  -- The launch it belongs to: the uuid of the launch's first slice (that slice's own uuid; each return from the
+  -- background is a slice). NULL (sessions from before version 2): the session is a launch on its own.
+  play_uuid TEXT
+);
+
+CREATE TABLE game_merge (
+  game_id INTEGER NOT NULL PRIMARY KEY REFERENCES game(id),
+  into_id INTEGER NOT NULL REFERENCES game(id)
+);
+
+CREATE INDEX session_game ON session(game_id);
+CREATE INDEX session_started ON session(started_at);
+CREATE INDEX session_open ON session(ended_at) WHERE ended_at IS NULL;
+CREATE INDEX game_merge_into ON game_merge(into_id);
+
+insertDevice:
+INSERT OR IGNORE INTO device(id, name) VALUES (?, ?);
+
+renameDevice:
+UPDATE device SET name = ? WHERE id = ?;
+
+gameByPath:
+SELECT * FROM game WHERE rom_path = ?;
+
+gameById:
+SELECT * FROM game WHERE id = ?;
+
+insertGame:
+INSERT INTO game(rom_path, name, tag) VALUES (?, ?, ?);
+
+lastInsertRowId:
+SELECT last_insert_rowid();
+
+setTitle:
+UPDATE game SET title = ? WHERE id = ?;
+
+-- The ROM's current name and tag (a rename, another emulator). A merge group's chosen title is separate and stays.
+refreshGame:
+UPDATE game SET name = :name, tag = :tag WHERE id = :id AND (name != :name OR tag != :tag);
+
+deleteGame:
+DELETE FROM game WHERE id = ?;
+
+insertSession:
+INSERT INTO session(uuid, game_id, device_id, tag, started_at, last_seen_at, play_uuid) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+touchSession:
+UPDATE session SET last_seen_at = ? WHERE uuid = ? AND ended_at IS NULL;
+
+closeSession:
+UPDATE session SET ended_at = :endedAt, duration = :endedAt - started_at WHERE uuid = :uuid AND ended_at IS NULL;
+
+closeStaleSessions:
+UPDATE session SET ended_at = last_seen_at, duration = last_seen_at - started_at WHERE ended_at IS NULL AND device_id = ?;
+
+deleteImplausible:
+DELETE FROM session WHERE ended_at IS NOT NULL AND (duration < :minMs OR duration > :maxMs);
+
+sessionByUuid:
+SELECT * FROM session WHERE uuid = ?;
+
+deleteSessionsOfGame:
+DELETE FROM session WHERE game_id = ?;
+
+mergeTarget:
+SELECT into_id FROM game_merge WHERE game_id = ?;
+
+insertMerge:
+INSERT OR REPLACE INTO game_merge(game_id, into_id) VALUES (?, ?);
+
+repointMembers:
+UPDATE game_merge SET into_id = :into WHERE into_id = :from;
+
+deleteMerge:
+DELETE FROM game_merge WHERE game_id = ?;
+
+memberIds:
+SELECT game_id FROM game_merge WHERE into_id = ?;
+
+-- Every game to its group target.
+gameGroups:
+SELECT g.rom_path, COALESCE(m.into_id, g.id) AS group_id FROM game g LEFT JOIN game_merge m ON m.game_id = g.id;
+
+-- A play is one launch: its slices share COALESCE(play_uuid, uuid). Plays count those keys; time sums the slices.
+
+-- Per group (every device): its target's row and member count, total, plays, last end.
+groupTotals:
+SELECT t.id AS group_id, COALESCE(t.title, t.name) AS name, t.tag, t.rom_path, x.total, x.plays, x.last_played,
+  (SELECT COUNT(*) FROM game_merge mm WHERE mm.into_id = t.id) AS members
+FROM (
+  SELECT COALESCE(m.into_id, g.id) AS group_id, SUM(s.duration) AS total,
+    COUNT(DISTINCT COALESCE(s.play_uuid, s.uuid)) AS plays, MAX(s.ended_at) AS last_played
+  FROM session s JOIN game g ON g.id = s.game_id LEFT JOIN game_merge m ON m.game_id = g.id
+  WHERE s.ended_at IS NOT NULL
+  GROUP BY group_id
+) x JOIN game t ON t.id = x.group_id;
+
+-- [target] and the games merged into it, each with its own closed sessions (none: total NULL, 0 plays).
+memberTotals:
+SELECT g.id, COALESCE(g.title, g.name) AS name, g.tag, g.rom_path, SUM(s.duration) AS total,
+  COUNT(DISTINCT COALESCE(s.play_uuid, s.uuid)) AS plays, MAX(s.ended_at) AS last_played
+FROM game g LEFT JOIN game_merge m ON m.game_id = g.id LEFT JOIN session s ON s.game_id = g.id AND s.ended_at IS NOT NULL
+WHERE g.id = :target OR m.into_id = :target
+GROUP BY g.id;
+
+-- Every game (the target and its merged members) of each group with a session overlapping [since, now], on the same
+-- overlap rule as windowGroupTotals.
+windowGroupPaths:
+SELECT g2.rom_path FROM game g2 LEFT JOIN game_merge m2 ON m2.game_id = g2.id
+WHERE COALESCE(m2.into_id, g2.id) IN (
+  SELECT COALESCE(m.into_id, g.id)
+  FROM session s JOIN game g ON g.id = s.game_id LEFT JOIN game_merge m ON m.game_id = g.id
+  WHERE s.started_at < :now AND COALESCE(s.ended_at, MIN(s.last_seen_at, s.started_at + :maxOpen)) > :since
+);
+
+-- Per group, the part of each session inside [since, now], with its target's row and member count. An open session
+-- runs to its last touch, at most :maxOpen after its start (the bound closed sessions get), and never past now. Plays:
+-- the launches with a slice in the window.
+windowGroupTotals:
+SELECT t.id AS group_id, COALESCE(t.title, t.name) AS name, t.tag, t.rom_path, x.total, x.plays, x.last_played,
+  (SELECT COUNT(*) FROM game_merge mm WHERE mm.into_id = t.id) AS members
+FROM (
+  SELECT COALESCE(m.into_id, g.id) AS group_id,
+    CAST(SUM(MAX(0, MIN(COALESCE(s.ended_at, MIN(s.last_seen_at, s.started_at + :maxOpen)), :now) - MAX(s.started_at, :since))) AS INTEGER) AS total,
+    COUNT(DISTINCT COALESCE(s.play_uuid, s.uuid)) AS plays,
+    MAX(MIN(COALESCE(s.ended_at, MIN(s.last_seen_at, s.started_at + :maxOpen)), :now)) AS last_played
+  FROM session s JOIN game g ON g.id = s.game_id LEFT JOIN game_merge m ON m.game_id = g.id
+  WHERE s.started_at < :now AND COALESCE(s.ended_at, MIN(s.last_seen_at, s.started_at + :maxOpen)) > :since
+  GROUP BY group_id
+) x JOIN game t ON t.id = x.group_id;
+
+-- Every play of a group (the target and the games merged into it) from its closed slices, newest first, with its
+-- device's name: from the first slice's start to the last one's end, the time its slices add up to.
+groupPlays:
+SELECT COALESCE(s.play_uuid, s.uuid) AS play, s.game_id, s.device_id, d.name AS device_name,
+  MIN(s.started_at) AS first_start, MAX(s.ended_at) AS last_end, SUM(s.duration) AS played
+FROM session s JOIN game g ON g.id = s.game_id LEFT JOIN game_merge m ON m.game_id = g.id LEFT JOIN device d ON d.id = s.device_id
+WHERE s.ended_at IS NOT NULL AND COALESCE(m.into_id, g.id) = :target
+GROUP BY play, s.game_id, s.device_id
+ORDER BY first_start DESC, play;

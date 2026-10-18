@@ -1,0 +1,1237 @@
+{
+ "core": "snes9x",
+ "emulator": "Snes9x",
+ "sections": [
+  {
+   "key": "",
+   "label": "",
+   "info": "",
+   "items": [
+    {
+     "key": "snes9x_region",
+     "label": "Console Region (Reload Core)",
+     "labelCategorized": "",
+     "info": "Specify which region the system is from. 'PAL' is 50hz, 'NTSC' is 60hz. Games will run faster or slower than normal if the incorrect region is selected.",
+     "values": [
+      "auto",
+      "ntsc",
+      "pal"
+     ],
+     "labels": [
+      "Auto",
+      "NTSC",
+      "PAL"
+     ],
+     "default": "auto"
+    },
+    {
+     "key": "snes9x_aspect",
+     "label": "Preferred Aspect Ratio",
+     "labelCategorized": "",
+     "info": "Choose the preferred content aspect ratio. This will only apply when RetroArch's aspect ratio is set to 'Core provided' in the Video settings.",
+     "values": [
+      "4:3",
+      "4:3 scaled",
+      "uncorrected",
+      "auto",
+      "ntsc",
+      "pal"
+     ],
+     "labels": [
+      "",
+      "4:3 (Preserved)",
+      "Uncorrected",
+      "Auto",
+      "NTSC",
+      "PAL"
+     ],
+     "default": "4:3"
+    },
+    {
+     "key": "snes9x_overscan",
+     "label": "Crop Overscan",
+     "labelCategorized": "",
+     "info": "Remove the borders at the top and bottom of the screen, typically unused by games and hidden by the bezel of a standard-definition television. 'Auto' will attempt to detect and crop the ~8 pixel overscan based on the current content.",
+     "values": [
+      "enabled",
+      "12_pixels",
+      "16_pixels",
+      "auto",
+      "disabled"
+     ],
+     "labels": [
+      "~8 Pixels",
+      "12 Pixels",
+      "16 Pixels",
+      "Auto (~8 Pixels)",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "snes9x_mode7_hires",
+     "label": "HD Mode 7 Scale",
+     "labelCategorized": "",
+     "info": "Render Mode 7 backgrounds at a higher horizontal resolution. 2x/4x sample the rotation matrix at sub-pixel steps; the _hv variants additionally resample vertically for square pixels. From snes9x2010.",
+     "values": [
+      "disabled",
+      "2x",
+      "4x",
+      "2x_hv",
+      "4x_hv"
+     ],
+     "labels": [
+      "",
+      "2x",
+      "4x",
+      "2x (H+V)",
+      "4x (H+V)"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "snes9x_mode7_hires_bilinear",
+     "label": "HD Mode 7 Filtering",
+     "labelCategorized": "",
+     "info": "Texture sampling filter for HD Mode 7. 'Stable' bilinear snaps to texel centres to avoid shimmer; 'Smooth' is full bilinear.",
+     "values": [
+      "disabled",
+      "stable",
+      "smooth"
+     ],
+     "labels": [
+      "",
+      "Stable",
+      "Smooth"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "snes9x_hires_blend",
+     "label": "Hi-Res Blending",
+     "labelCategorized": "",
+     "info": "Blend adjacent pixels when game switches to hi-res mode (512x448). Required for certain games that use hi-res mode to produce transparency effects (Kirby's Dream Land, Jurassic Park...).",
+     "values": [
+      "disabled",
+      "merge",
+      "blur"
+     ],
+     "labels": [
+      "",
+      "Merge",
+      "Blur"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "snes9x_blargg",
+     "label": "Blargg NTSC Filter",
+     "labelCategorized": "",
+     "info": "Apply a video filter to mimic various NTSC TV signals.",
+     "values": [
+      "disabled",
+      "monochrome",
+      "rf",
+      "composite",
+      "s-video",
+      "rgb"
+     ],
+     "labels": [
+      "",
+      "Monochrome",
+      "RF",
+      "Composite",
+      "S-Video",
+      "RGB"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "snes9x_audio_interpolation",
+     "label": "Audio Interpolation",
+     "labelCategorized": "",
+     "info": "Apply an audio filter. 'Gaussian' reproduces the bass-heavy sound of the original hardware. 'Cubic' and 'Sinc' are less accurate, and preserve more of the high range.",
+     "values": [
+      "gaussian",
+      "cubic",
+      "sinc",
+      "none",
+      "linear"
+     ],
+     "labels": [
+      "Gaussian",
+      "Cubic",
+      "Sinc",
+      "None",
+      "Linear"
+     ],
+     "default": "gaussian"
+    },
+    {
+     "key": "snes9x_up_down_allowed",
+     "label": "Allow Opposing Directions",
+     "labelCategorized": "",
+     "info": "Enabling this will allow pressing / quickly alternating / holding both left and right (or up and down) directions at the same time. This may cause movement-based glitches.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "snes9x_show_lightgun_settings",
+     "label": "Show Light Gun Settings",
+     "labelCategorized": "",
+     "info": "Enable configuration of Super Scope / Justifier / M.A.C.S. rifle input. NOTE: Quick Menu must be toggled for this setting to take effect.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "snes9x_msu1_enhanced_audio",
+     "label": "MSU-1 Enhanced Audio",
+     "labelCategorized": "",
+     "info": "Run the audio pipeline at 44.1 kHz when an MSU-1 game is loaded. When disabled, MSU-1's 44.1 kHz PCM stream is decimated to the SNES's native ~32 kHz output with no anti-alias filtering, folding the track's top octave into the audible band as slight hiss. When enabled, the MSU-1 stream passes through bit-exactly and the SPC sound is upsampled cleanly. Has no effect on non-MSU-1 games. Changing this takes effect on the next content load.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "snes9x_show_advanced_av_settings",
+     "label": "Show Advanced Audio/Video Settings",
+     "labelCategorized": "",
+     "info": "Enable configuration of low-level video layer / GFX effect / audio channel parameters. NOTE: Quick Menu must be toggled for this setting to take effect.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "hacks",
+   "label": "Emulation Hacks",
+   "info": "Configure processor overclocking and emulation accuracy parameters affecting low-level performance and compatibility.",
+   "items": [
+    {
+     "key": "snes9x_overclock_superfx",
+     "label": "SuperFX Overclocking",
+     "labelCategorized": "",
+     "info": "SuperFX coprocessor frequency multiplier. Can improve frame rate or cause timing errors. Values under 100% can improve game performance on slow devices.",
+     "values": [
+      "50%",
+      "60%",
+      "70%",
+      "80%",
+      "90%",
+      "100%",
+      "150%",
+      "200%",
+      "250%",
+      "300%",
+      "350%",
+      "400%",
+      "450%",
+      "500%"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100%"
+    },
+    {
+     "key": "snes9x_superfx_timing",
+     "label": "SuperFX Timing Model (Experimental)",
+     "labelCategorized": "",
+     "info": "'Compatibility' runs the GSU with snes9x2010's field-tested per-line budget. 'Hardware-derived' charges each instruction its approximate real GSU cycle cost (cache-aware fetches, 5-cycle memory accesses, amortized plot flushes), matching ares/MiSTer wait states; backported from mainline Snes9x. More accurate, less field-tested. Works together with SuperFX Overclocking.",
+     "values": [
+      "compat",
+      "hardware"
+     ],
+     "labels": [
+      "Compatibility (snes9x2010)",
+      "Hardware-derived"
+     ],
+     "default": "compat"
+    },
+    {
+     "key": "snes9x_overclock_cycles",
+     "label": "Reduce Slowdown (Hack, Unsafe)",
+     "labelCategorized": "Reduce Slowdown (Unsafe)",
+     "info": "Overclock SNES CPU. May cause games to crash! Use 'Light' for shorter loading times, 'Compatible' for most games exhibiting slowdown and 'Max' only if absolutely required (Gradius 3, Super R-type...).",
+     "values": [
+      "disabled",
+      "light",
+      "compatible",
+      "max"
+     ],
+     "labels": [
+      "",
+      "Light",
+      "Compatible",
+      "Max"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "snes9x_reduce_sprite_flicker",
+     "label": "Reduce Flickering (Hack, Unsafe)",
+     "labelCategorized": "Reduce Flickering (Unsafe)",
+     "info": "Increases number of sprites that can be drawn simultaneously on screen.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "snes9x_randomize_memory",
+     "label": "Randomize Memory (Unsafe)",
+     "labelCategorized": "",
+     "info": "Randomizes system RAM upon start-up. Some games such as 'Super Off Road' use system RAM as a random number generator for item placement and AI behavior, to make gameplay more unpredictable.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "snes9x_block_invalid_vram_access",
+     "label": "Block Invalid VRAM Access",
+     "labelCategorized": "",
+     "info": "Some homebrew/ROM hacks require this option to be disabled for correct operation.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "snes9x_echo_buffer_hack",
+     "label": "Echo Buffer Hack (Unsafe, only enable for old addmusic hacks)",
+     "labelCategorized": "",
+     "info": "Some homebrew/ROM hacks require this option to be enabled for correct operation.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "lightgun",
+   "label": "Light Gun",
+   "info": "Configure Super Scope / Justifier / M.A.C.S. rifle input.",
+   "items": [
+    {
+     "key": "snes9x_lightgun_mode",
+     "label": "Light Gun Mode",
+     "labelCategorized": "Mode",
+     "info": "Use a mouse-controlled 'Light Gun' or 'Touchscreen' input.",
+     "values": [
+      "Lightgun",
+      "Touchscreen"
+     ],
+     "labels": [
+      "Light Gun",
+      ""
+     ],
+     "default": "Lightgun"
+    },
+    {
+     "key": "snes9x_superscope_reverse_buttons",
+     "label": "Super Scope Reverse Trigger Buttons",
+     "labelCategorized": "",
+     "info": "Swap the positions of the Super Scope 'Fire' and 'Cursor' buttons.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "snes9x_superscope_crosshair",
+     "label": "Super Scope Crosshair",
+     "labelCategorized": "",
+     "info": "Change the crosshair size on screen.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "2"
+    },
+    {
+     "key": "snes9x_superscope_color",
+     "label": "Super Scope Color",
+     "labelCategorized": "",
+     "info": "Change the crosshair color on screen.",
+     "values": [
+      "White",
+      "White (blend)",
+      "Red",
+      "Red (blend)",
+      "Orange",
+      "Orange (blend)",
+      "Yellow",
+      "Yellow (blend)",
+      "Green",
+      "Green (blend)",
+      "Cyan",
+      "Cyan (blend)",
+      "Sky",
+      "Sky (blend)",
+      "Blue",
+      "Blue (blend)",
+      "Violet",
+      "Violet (blend)",
+      "Pink",
+      "Pink (blend)",
+      "Purple",
+      "Purple (blend)",
+      "Black",
+      "Black (blend)",
+      "25% Grey",
+      "25% Grey (blend)",
+      "50% Grey",
+      "50% Grey (blend)",
+      "75% Grey",
+      "75% Grey (blend)"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "White"
+    },
+    {
+     "key": "snes9x_justifier1_crosshair",
+     "label": "Justifier 1 Crosshair",
+     "labelCategorized": "",
+     "info": "Change the crosshair size on screen.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "4"
+    },
+    {
+     "key": "snes9x_justifier1_color",
+     "label": "Justifier 1 Color",
+     "labelCategorized": "",
+     "info": "Change the crosshair color on screen.",
+     "values": [
+      "Blue",
+      "Blue (blend)",
+      "Violet",
+      "Violet (blend)",
+      "Pink",
+      "Pink (blend)",
+      "Purple",
+      "Purple (blend)",
+      "Black",
+      "Black (blend)",
+      "25% Grey",
+      "25% Grey (blend)",
+      "50% Grey",
+      "50% Grey (blend)",
+      "75% Grey",
+      "75% Grey (blend)",
+      "White",
+      "White (blend)",
+      "Red",
+      "Red (blend)",
+      "Orange",
+      "Orange (blend)",
+      "Yellow",
+      "Yellow (blend)",
+      "Green",
+      "Green (blend)",
+      "Cyan",
+      "Cyan (blend)",
+      "Sky",
+      "Sky (blend)"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "Blue"
+    },
+    {
+     "key": "snes9x_justifier2_crosshair",
+     "label": "Justifier 2 Crosshair",
+     "labelCategorized": "",
+     "info": "Change the crosshair size on screen.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "4"
+    },
+    {
+     "key": "snes9x_justifier2_color",
+     "label": "Justifier 2 Color",
+     "labelCategorized": "",
+     "info": "Change the crosshair color on screen.",
+     "values": [
+      "Pink",
+      "Pink (blend)",
+      "Purple",
+      "Purple (blend)",
+      "Black",
+      "Black (blend)",
+      "25% Grey",
+      "25% Grey (blend)",
+      "50% Grey",
+      "50% Grey (blend)",
+      "75% Grey",
+      "75% Grey (blend)",
+      "White",
+      "White (blend)",
+      "Red",
+      "Red (blend)",
+      "Orange",
+      "Orange (blend)",
+      "Yellow",
+      "Yellow (blend)",
+      "Green",
+      "Green (blend)",
+      "Cyan",
+      "Cyan (blend)",
+      "Sky",
+      "Sky (blend)",
+      "Blue",
+      "Blue (blend)",
+      "Violet",
+      "Violet (blend)"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "Pink"
+    },
+    {
+     "key": "snes9x_rifle_crosshair",
+     "label": "M.A.C.S. Rifle Crosshair",
+     "labelCategorized": "",
+     "info": "Change the crosshair size on screen.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "2"
+    },
+    {
+     "key": "snes9x_rifle_color",
+     "label": "M.A.C.S. Rifle Color",
+     "labelCategorized": "",
+     "info": "Change the crosshair color on screen.",
+     "values": [
+      "White",
+      "White (blend)",
+      "Red",
+      "Red (blend)",
+      "Orange",
+      "Orange (blend)",
+      "Yellow",
+      "Yellow (blend)",
+      "Green",
+      "Green (blend)",
+      "Cyan",
+      "Cyan (blend)",
+      "Sky",
+      "Sky (blend)",
+      "Blue",
+      "Blue (blend)",
+      "Violet",
+      "Violet (blend)",
+      "Pink",
+      "Pink (blend)",
+      "Purple",
+      "Purple (blend)",
+      "Black",
+      "Black (blend)",
+      "25% Grey",
+      "25% Grey (blend)",
+      "50% Grey",
+      "50% Grey (blend)",
+      "75% Grey",
+      "75% Grey (blend)"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "White"
+    }
+   ]
+  },
+  {
+   "key": "advanced_av",
+   "label": "Advanced Audio/Video Settings",
+   "info": "Configure low-level video layer / GFX effect / audio channel parameters.",
+   "items": [
+    {
+     "key": "snes9x_layer_1",
+     "label": "Show Layer 1",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "snes9x_layer_2",
+     "label": "Show Layer 2",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "snes9x_layer_3",
+     "label": "Show Layer 3",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "snes9x_layer_4",
+     "label": "Show Layer 4",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "snes9x_layer_5",
+     "label": "Show Sprite Layer",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "snes9x_gfx_transp",
+     "label": "Enable Transparency Effects",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "snes9x_sndchan_volume_1",
+     "label": "Volume % for Sound Channel 1",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "snes9x_sndchan_volume_2",
+     "label": "Volume % for Sound Channel 2",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "snes9x_sndchan_volume_3",
+     "label": "Volume % for Sound Channel 3",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "snes9x_sndchan_volume_4",
+     "label": "Volume % for Sound Channel 4",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "snes9x_sndchan_volume_5",
+     "label": "Volume % for Sound Channel 5",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "snes9x_sndchan_volume_6",
+     "label": "Volume % for Sound Channel 6",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "snes9x_sndchan_volume_7",
+     "label": "Volume % for Sound Channel 7",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "snes9x_sndchan_volume_8",
+     "label": "Volume % for Sound Channel 8",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    }
+   ]
+  }
+ ],
+ "soSha256": "7fc28e8962483f353f3747bf7076baf613f1b04e0ab41a41f41df8f7ebe4d739",
+ "probedAt": "2026-09-29"
+}

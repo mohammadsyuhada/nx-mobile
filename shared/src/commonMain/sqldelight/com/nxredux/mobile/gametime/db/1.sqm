@@ -1,0 +1,4 @@
+-- Version 1 to 2: a launch's foreground slices are linked into one play; game_merge is looked up by its target.
+ALTER TABLE session ADD COLUMN play_uuid TEXT;
+
+CREATE INDEX game_merge_into ON game_merge(into_id);

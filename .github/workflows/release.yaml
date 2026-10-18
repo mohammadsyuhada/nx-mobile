@@ -1,0 +1,326 @@
+---
+name: Release NX Redux Mobile
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: "release type"
+        default: "patch"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+# Read-only by default; build (attestation) and release (tag, release) get only what they need. Third-party actions
+# are pinned to commit SHAs: the build job holds the signing keystore.
+permissions:
+  contents: read
+
+# One release at a time: two runs would compute the same next tag. Queued, never cancelled mid-release.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  # The pins cores/Makefile and the runner's externalNativeBuild build with (AGP 8.4's default NDK).
+  NDK_VERSION: 26.1.10909125
+  CMAKE_VERSION: 3.22.1
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      next-tag: ${{ steps.next-tag.outputs.NEXT_TAG }}
+    steps:
+      - name: Require main
+        # Releases tag and publish; only main may cut one. The other jobs all depend on this one (via core-matrix).
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::Release must be dispatched from refs/heads/main, not $REF" >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Compute Next Tag
+        id: next-tag
+        run: |
+          LATEST_TAG="$(git describe --tags "$(git rev-list --tags --max-count=1)" 2>/dev/null || echo "v0.0.0")"
+          IFS='.' read -r major minor patch <<< "${LATEST_TAG#v}"
+          case "${{ github.event.inputs.release_type }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          NEXT_TAG="v${major}.${minor}.${patch}"
+          echo "NEXT_TAG=$NEXT_TAG" >> "$GITHUB_OUTPUT"
+
+  core-matrix:
+    # Cores build on x86_64: cores/Makefile picks the NDK's linux-x86_64 prebuilts on Linux.
+    # Waits for prepare so a dispatch from another branch fails before any core builds.
+    needs: prepare
+    runs-on: ubuntu-24.04
+    outputs:
+      cores: ${{ steps.cores.outputs.cores }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5.0.0
+
+      - name: Generate cores matrix
+        id: cores
+        run: |
+          CORES="$(make -s -C cores cores-json)"
+          echo "cores=$CORES" >> "$GITHUB_OUTPUT"
+
+  build-core:
+    needs: core-matrix
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        core: ${{ fromJson(needs.core-matrix.outputs.cores) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5.0.0
+
+      - name: Compute core cache key
+        id: cache-key
+        run: |
+          # Hash all files that affect this core's build:
+          # - the Makefile (pins, flags, build logic)
+          # - the core's patch and its numbered patches (cores/patches/<core>/*.patch), and for melondsds its melonDS
+          #   dependency's patch
+          # - the set-table generators (fbneo, flycast)
+          FILES=(cores/Makefile)
+          if [ -f "cores/patches/${{ matrix.core }}.patch" ]; then
+            FILES+=("cores/patches/${{ matrix.core }}.patch")
+          fi
+          for f in cores/patches/${{ matrix.core }}/*.patch; do
+            [ -f "$f" ] && FILES+=("$f")
+          done
+          if [ "${{ matrix.core }}" = "melondsds" ]; then
+            FILES+=(cores/patches/melonds.patch)
+          fi
+          for f in cores/scripts/*; do
+            [ -f "$f" ] && FILES+=("$f")
+          done
+          HASH=$(cat "${FILES[@]}" | sha256sum | cut -d' ' -f1)
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Restore cached core
+        id: cache
+        uses: actions/cache@v5
+        with:
+          path: cores/output/
+          # The toolchain pins are workflow env overrides, not in the Makefile hash; a bump must miss the cache.
+          key: core-${{ matrix.core }}-ndk${{ env.NDK_VERSION }}-cmake${{ env.CMAKE_VERSION }}-${{ steps.cache-key.outputs.hash }}
+
+      - name: Install NDK and CMake
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" "cmake;$CMAKE_VERSION" > /dev/null
+          # azahar and dolphin need CMake 3.25+: cores/Makefile pins <core>_CMAKE / <core>_NINJA to the SDK's 3.30.3.
+          if [ "${{ matrix.core }}" = "azahar" ] || [ "${{ matrix.core }}" = "dolphin" ]; then
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "cmake;3.30.3" > /dev/null
+          fi
+
+      - name: Build ${{ matrix.core }} core
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          # The image's ANDROID_NDK_HOME names its own default NDK; the Makefile would prefer it over the pin.
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
+          make -C cores ${{ matrix.core }}
+
+      - name: Upload core
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: core-${{ matrix.core }}
+          path: cores/output/
+          if-no-files-found: error
+
+  build:
+    needs:
+      - prepare
+      - build-core
+    runs-on: ubuntu-24.04
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    env:
+      BUILD_TAG: ${{ needs.prepare.outputs.next-tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5.0.0
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # The built-in scan covers every jar in the tree, and the oboe submodule's OboeTester sample ships a Gradle
+      # 1.6 snapshot wrapper that is never run. Only the root wrapper runs; it is checked against Gradle's checksum.
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          validate-wrappers: false
+
+      - name: Validate Gradle wrapper
+        run: |
+          VERSION=$(sed -n 's/^distributionUrl=.*gradle-\(.*\)-bin\.zip$/\1/p' gradle/wrapper/gradle-wrapper.properties)
+          EXPECTED=$(curl -fsSL "https://services.gradle.org/distributions/gradle-$VERSION-wrapper.jar.sha256")
+          echo "$EXPECTED  gradle/wrapper/gradle-wrapper.jar" | sha256sum -c -
+
+      - name: Install Android SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;34.0.0" \
+            "build-tools;35.0.0" "build-tools;36.0.0" "ndk;$NDK_VERSION" "cmake;$CMAKE_VERSION" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Cache MiSans
+        # shared's fetchMiSans takes the font from Xiaomi's MiSans_Latin.zip (it may not live in git) into this
+        # directory; the key is the TTF's SHA-256 pinned in shared/build.gradle.kts.
+        uses: actions/cache@v5
+        with:
+          path: ~/.gradle/nx-mobile/misans
+          key: misans-2080f37e783eb269129c15f7f40028943fe659c1859efc5ba5f0de4e726c0e62
+
+      - name: Download Cores
+        uses: actions/download-artifact@v7.0.0
+        with:
+          path: cores/output/
+          pattern: core-*
+          merge-multiple: true
+
+      - name: Build rsync
+        # Netplay's save copy (tools/rsync): a PIE executable shipped as jniLibs/arm64-v8a/librsync_exec.so, with its licence.
+        run: make -C tools/rsync install
+
+      - name: Install Cores
+        # gmake -C cores install would rebuild (it depends on the src/ stamps), so copy and verify here.
+        run: |
+          mkdir -p androidApp/src/main/jniLibs/arm64-v8a androidApp/src/main/assets/system
+          cp cores/output/*.so androidApp/src/main/jniLibs/arm64-v8a/
+          test ! -d cores/output/system || cp -R cores/output/system/. androidApp/src/main/assets/system/
+          # Every core's licence text (cores/output/licenses/, staged into the APK by androidApp's stageLicenses, or a
+          # curated LICENSES/<core>.txt) must be present.
+          make -s -C cores check-licenses
+          READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          # ELF checks only (AArch64, 16 KB LOAD alignment): an empty JNILIBS_DIR skips the option-table warnings,
+          # since the tables' soSha256 names the locally probed builds, never these.
+          JNILIBS_DIR="$RUNNER_TEMP/none" sh cores/verify.sh "$READELF" cores/output/*.so
+
+      - name: Decode Keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "ANDROID_KEYSTORE_BASE64 is not set" >&2
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: ./gradlew :shared:testAndroidHostTest :libretrodroid:testDebugUnitTest :androidApp:testDebugUnitTest
+
+      - name: Build
+        env:
+          SCREENSCRAPER_DEV_ID: ${{ vars.SCREENSCRAPER_DEV_ID || secrets.SCREENSCRAPER_DEV_ID }}
+          # XOR-encoded into BuildConfig at build time (androidApp/build.gradle.kts) and decoded at run time, so it is
+          # not plain text in the dex. Obfuscation against casual extraction, not secrecy: the key ships in the APK too.
+          # Accepted risk: ScreenScraper's dev credential model has to ship it in the client.
+          SCREENSCRAPER_DEV_PASSWORD: ${{ secrets.SCREENSCRAPER_DEV_PASSWORD }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew :androidApp:assembleRelease -PnxVersionName="${BUILD_TAG#v}"
+
+      - name: Package
+        run: |
+          APK=androidApp/build/outputs/apk/release/androidApp-release.apk
+          test -f "$APK" || { echo "no signed APK at $APK" >&2; exit 1; }
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK"
+          # The APK is zipaligned (zipalign -P needs build-tools 35+). With useLegacyPackaging every .so is stored deflated,
+          # so this no longer covers native libraries: their 16 KB guarantee is the ELF LOAD-alignment check (cores/verify.sh).
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 -v 4 "$APK" > "$RUNNER_TEMP/zipalign.log" \
+            || { tail -n 50 "$RUNNER_TEMP/zipalign.log" >&2; echo "APK is not 16 KB zip-aligned" >&2; exit 1; }
+          tail -n 1 "$RUNNER_TEMP/zipalign.log"
+          # ELF checks of the runner's own library, which CMake builds here rather than cores/Makefile.
+          rm -rf "$RUNNER_TEMP/apk-libs"
+          unzip -q -o "$APK" 'lib/arm64-v8a/liblibretrodroid.so' -d "$RUNNER_TEMP/apk-libs"
+          JNILIBS_DIR="$RUNNER_TEMP/none" sh cores/verify.sh \
+            "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" \
+            "$RUNNER_TEMP/apk-libs/lib/arm64-v8a/liblibretrodroid.so"
+          mkdir -p releases
+          cp "$APK" "releases/NXReduxMobile-$BUILD_TAG.apk"
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: release-artifacts
+          path: releases/*.apk
+
+      # GitHub offers attestations to user-owned repositories only when public; skipped while this one is private.
+      - name: Attest Build Provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@v3.2.0
+        with:
+          subject-path: releases/*.apk
+
+  release:
+    needs:
+      - build
+      - prepare
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Download Release Artifacts
+        uses: actions/download-artifact@v7.0.0
+        with:
+          path: releases/
+          pattern: release-artifacts*
+          merge-multiple: true
+
+      - name: Create and Push Tag
+        run: |
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
+          git tag "$GIT_NEXT_TAG"
+          git push origin "$GIT_NEXT_TAG"
+        env:
+          GIT_NEXT_TAG: ${{ needs.prepare.outputs.next-tag }}
+
+      - name: Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          files: releases/*
+          generate_release_notes: true
+          append_body: true
+          tag_name: ${{ needs.prepare.outputs.next-tag }}
+          make_latest: "true"
+          body: |
+
+            Side-load NXReduxMobile-${{ needs.prepare.outputs.next-tag }}.apk on an arm64 Android 8.0+ phone (allow installs from unknown sources for your browser or file manager). Updates install over the previous release.
+            If you have any questions, please open an issue in the repository.

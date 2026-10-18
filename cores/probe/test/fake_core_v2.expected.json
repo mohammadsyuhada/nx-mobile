@@ -1,0 +1,3 @@
+{"core":"fake_core_v2","emulator":"Fake V2","sections":[
+{"key":"","label":"","info":"","items":[{"key":"fake_speed","label":"Speed","labelCategorized":"","info":"","values":["normal","fast"],"labels":["Normal","Fast"],"default":"normal"}]},
+{"key":"video","label":"Video","info":"Video options","items":[{"key":"fake_res","label":"Resolution (restart)","labelCategorized":"Resolution","info":"","values":["1x","2x","3x"],"labels":["","",""],"default":"2x"}]}]}

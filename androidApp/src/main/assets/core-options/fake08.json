@@ -1,0 +1,114 @@
+{
+ "core": "fake08",
+ "emulator": "fake-08",
+ "sections": [
+  {
+   "key": "",
+   "label": "",
+   "info": "",
+   "items": [
+    {
+     "key": "fake08_video_scale",
+     "label": "Video Scale",
+     "labelCategorized": "",
+     "info": "Set internal video scale factor.",
+     "values": [
+      "1x",
+      "2x"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "1x"
+    },
+    {
+     "key": "fake08_crop_h_left",
+     "label": "Crop Horizontal Left",
+     "labelCategorized": "",
+     "info": "Removes pixels from left side of the screen.",
+     "values": [
+      "0",
+      "4",
+      "8",
+      "12",
+      "16"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "fake08_crop_h_right",
+     "label": "Crop Horizontal Right ",
+     "labelCategorized": "",
+     "info": "Removes pixels from right side of the screen.",
+     "values": [
+      "0",
+      "4",
+      "8",
+      "12",
+      "16"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "fake08_crop_v_top",
+     "label": "Crop Vertical Top",
+     "labelCategorized": "",
+     "info": "Removes pixels from the top of the screen.",
+     "values": [
+      "0",
+      "4",
+      "8",
+      "12",
+      "16"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "fake08_crop_v_bottom",
+     "label": "Crop Vertical Bottom",
+     "labelCategorized": "",
+     "info": "Removes pixels from the bottom of the screen.",
+     "values": [
+      "0",
+      "4",
+      "8",
+      "12",
+      "16"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    }
+   ]
+  }
+ ],
+ "soSha256": "3d287af545635177d197a7d523862482c5a5255033fa27d7b7b0629747c79d81",
+ "probedAt": "2026-09-29"
+}

@@ -1,0 +1,114 @@
+package com.nxredux.mobile.ui.nx
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+
+internal val NxModalPanelColor = Color(0xFF121212)
+internal val NxModalCardColor = Color(0xFF1E1E1E)
+internal val NxModalScrimColor = Color(0xB3000000)
+
+/**
+ * The one modal frame: scrim, a dark panel holding a lighter card (a small caption and [content]), and below the card
+ * a footer that follows [LocalFooterMode]: tappable key hints when a pad or controller exists, real buttons otherwise
+ * (never for a MENU). A tap on the scrim sends B (A for INFO), unless [scrimDismisses] is false (it then only blocks
+ * the page below). Every hint or button tap is delivered through [onButton], exactly as a pad press would be.
+ */
+@Composable
+fun NxModal(
+    caption: String?, kind: ModalKind, onButton: (NxButton) -> Unit,
+    confirmLabel: String = "OK", cancelLabel: String = "Cancel", scrimDismisses: Boolean = true,
+    maxWidth: Dp = 420.dp,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val colors = LocalNxColors.current
+    val footer = modalFooter(kind, LocalFooterMode.current, confirmLabel, cancelLabel)
+    val dismiss = if (kind == ModalKind.INFO) NxButton.A else NxButton.B
+    val padVisible = LocalPadBelow.current
+    // Landscape (no pad): the screen slot is the whole window, so imePadding lifts the panel exactly above the keyboard.
+    // Portrait: the keyboard lands mostly on the pad band, so no IME padding (the card scrolls if it is ever covered).
+    // A tap gesture, not clickable: no full-screen ripple, and the scrim is not focusable or clicked by a hardware Enter.
+    Box(
+        Modifier.fillMaxSize().then(if (!padVisible) Modifier.imePadding() else Modifier).background(NxModalScrimColor)
+            .pointerInput(scrimDismisses) { detectTapGestures { if (scrimDismisses) onButton(dismiss) } },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            Modifier.padding(horizontal = 24.dp).widthIn(max = maxWidth).fillMaxWidth().background(NxModalPanelColor, RoundedCornerShape(24.dp))
+                .pointerInput(Unit) { detectTapGestures { } }   // taps inside stay inside
+                .padding(start = 8.dp, top = 8.dp, end = 8.dp, bottom = if (footer is ModalFooter.None) 8.dp else 0.dp),
+        ) {
+            // The card scrolls and the footer stays pinned, so a landscape keyboard leaving ~125dp still shows the buttons.
+            Column(Modifier.weight(1f, fill = false).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(NxModalCardColor).verticalScroll(rememberScrollState()).padding(16.dp)) {
+                if (caption != null) {
+                    Text(caption, color = colors.hint, fontFamily = LocalNxFont.current, fontWeight = FontWeight.SemiBold, fontSize = NxTextSizes.modalSmall * nxTextScale(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(8.dp))
+                }
+                content()
+            }
+            NxModalFooter(footer, onButton)
+        }
+    }
+}
+
+/** The footer strip on the panel below the card: bare key hints (start-aligned) or pill buttons (end-aligned); nothing for [ModalFooter.None]. */
+@Composable
+private fun NxModalFooter(footer: ModalFooter, onButton: (NxButton) -> Unit) {
+    val colors = LocalNxColors.current
+    when (footer) {
+        // The vertical padding sits inside each hint's clickable: a 40dp tap target in a 44dp strip.
+        is ModalFooter.Hints -> Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            footer.hints.inPadOrder().forEach { hint ->
+                Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { onButton(hint.button) }.padding(horizontal = 4.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    NxButtonGlyph(hint.button, 16.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(hint.label, color = colors.listText, fontFamily = LocalNxFont.current, fontWeight = FontWeight.SemiBold, fontSize = NxTextSizes.modalSmall * nxTextScale(), maxLines = 1)
+                }
+            }
+        }
+        is ModalFooter.Buttons -> Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically) {
+            footer.actions.forEach { action -> NxModalButton(action) { onButton(action.button) } }
+        }
+        ModalFooter.None -> Unit
+    }
+}
+
+/** A 36dp pill: primary is the list pill's white on black text; secondary is outlined. */
+@Composable
+internal fun NxModalButton(action: FooterAction, onClick: () -> Unit) {
+    val colors = LocalNxColors.current
+    val shape = RoundedCornerShape(50)
+    val base = Modifier.height(36.dp).clip(shape).clickable(onClick = onClick)
+    val styled = if (action.primary) base.background(colors.main, shape) else base.border(1.dp, colors.main.copy(alpha = 0.2f), shape)
+    Box(styled.padding(horizontal = 18.dp), contentAlignment = Alignment.Center) {
+        Text(action.label, color = if (action.primary) colors.listTextSelected else colors.listText, fontFamily = LocalNxFont.current, fontWeight = FontWeight.SemiBold, fontSize = NxTextSizes.modalButton * nxTextScale(), maxLines = 1)
+    }
+}

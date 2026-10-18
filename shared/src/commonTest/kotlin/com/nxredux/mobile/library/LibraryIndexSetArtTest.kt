@@ -1,0 +1,32 @@
+package com.nxredux.mobile.library
+
+import com.nxredux.mobile.storage.Recents
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertSame
+
+class LibraryIndexSetArtTest {
+    private val dir = "Roms/Game Boy (GB)"
+    private val g1 = IndexedGame(Recents.HOME, dir, "Tetris.gb", "Home/$dir/Tetris.gb", "Home/$dir", "Tetris", subtitle = null)
+    private val g2 = IndexedGame(Recents.HOME, dir, "Zelda.gb", "Home/$dir/Zelda.gb", "Home/$dir", "Zelda", boxart = "old.png", hero = "h.jpg")
+    private val index = LibraryIndex(
+        version = LibraryIndex.VERSION, home = "Home", extras = emptyList(), defaultTags = emptyMap(),
+        systems = listOf(IndexedSystem("GB", "Game Boy", "Game Boy (GB)", games = listOf(g1, g2))),
+    )
+
+    @Test fun setArtUpdatesOneGame() {
+        val next = index.setArt(g1, ArtRefs(boxart = "b", box2d = "c", screenshot = "s", grid = "g", hero = "h"))
+        val games = next.systems.single().games
+        assertEquals(g1.copy(boxart = "b", box2d = "c", screenshot = "s", grid = "g", hero = "h"), games[0])
+        assertEquals(g2, games[1])
+        assertEquals(index.copy(systems = emptyList()), next.copy(systems = emptyList()))
+    }
+
+    @Test fun setArtClearsWithNull() {
+        assertEquals(g2.copy(boxart = null, hero = null), index.setArt(g2, ArtRefs()).systems.single().games[1])   // every slot replaced
+    }
+
+    @Test fun setArtUnknownGameReturnsSameInstance() {
+        assertSame(index, index.setArt(g1.copy(file = "Ghost.gb"), ArtRefs(boxart = "b")))
+    }
+}

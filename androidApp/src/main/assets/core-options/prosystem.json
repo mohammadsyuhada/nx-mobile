@@ -1,0 +1,109 @@
+{
+ "core": "prosystem",
+ "emulator": "ProSystem",
+ "sections": [
+  {
+   "key": "",
+   "label": "",
+   "info": "",
+   "items": [
+    {
+     "key": "prosystem_color_depth",
+     "label": "Color Depth (Restart)",
+     "labelCategorized": "",
+     "info": "Specifies number of colors to display on-screen. 24-bit may increase performance overheads on some platforms.",
+     "values": [
+      "16bit",
+      "24bit"
+     ],
+     "labels": [
+      "Thousands (16-bit)",
+      "Millions (24-bit)"
+     ],
+     "default": "16bit"
+    },
+    {
+     "key": "prosystem_low_pass_filter",
+     "label": "Audio Filter",
+     "labelCategorized": "",
+     "info": "Enables a low pass audio filter to soften the 'harsh' sound produced by the Atari 7800's TIA chip.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "prosystem_low_pass_range",
+     "label": "Audio Filter Level",
+     "labelCategorized": "",
+     "info": "Specifies the cut-off frequency of the low pass audio filter. A higher value increases the perceived 'strength' of the filter, since a wider range of the high frequency spectrum is attenuated.",
+     "values": [
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95"
+     ],
+     "labels": [
+      "5%",
+      "10%",
+      "15%",
+      "20%",
+      "25%",
+      "30%",
+      "35%",
+      "40%",
+      "45%",
+      "50%",
+      "55%",
+      "60%",
+      "65%",
+      "70%",
+      "75%",
+      "80%",
+      "85%",
+      "90%",
+      "95%"
+     ],
+     "default": "60"
+    },
+    {
+     "key": "prosystem_gamepad_dual_stick_hack",
+     "label": "Dual Stick Controller",
+     "labelCategorized": "",
+     "info": "Maps Player 2's joystick to the right analog stick of Player 1's RetroPad. Enables dual stick control in supported games (e.g. Robotron: 2084, T:ME Salvo).",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  }
+ ],
+ "soSha256": "6993fdc67b5d8697d333015492f776f2ff1be3b72b07aa1d760e261d9358f41f",
+ "probedAt": "2026-09-29"
+}

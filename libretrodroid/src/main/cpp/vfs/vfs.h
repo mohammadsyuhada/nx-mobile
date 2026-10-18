@@ -1,0 +1,115 @@
+/*
+ *     Copyright (C) 2021  Filippo Scognamiglio
+ *
+ *     This program is free software: you can redistribute it and/or modify
+ *     it under the terms of the GNU General Public License as published by
+ *     the Free Software Foundation, either version 3 of the License, or
+ *     (at your option) any later version.
+ *
+ *     This program is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU General Public License for more details.
+ *
+ *     You should have received a copy of the GNU General Public License
+ *     along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+#ifndef LIBRETRODROID_VFS_H
+#define LIBRETRODROID_VFS_H
+
+#include "unistd.h"
+#include "retro_common_api.h"
+#include "libretro.h"
+#include "vfs.h"
+#include "vfsfile.h"
+
+#include <vector>
+#include <string>
+#include <memory>
+#include <optional>
+#include <mutex>
+#include <unordered_map>
+
+namespace libretrodroid {
+
+// VFS API v4 (upstream libretro.h: retro_vfs_stat_64_t and the stat_64 member appended to
+// struct retro_vfs_interface). The libretro-common submodule this fork builds against stops
+// at v3, so the v4 additions are declared here under fork-local names that cannot clash with
+// the real ones if a submodule bump brings them in.
+typedef int (RETRO_CALLCONV *nx_retro_vfs_stat_64_t)(const char *path, int64_t *size);
+
+// Layout-compatible with upstream's v4 struct retro_vfs_interface: the v3 struct followed by
+// stat_64. A core that negotiated v4 reads stat_64 right after closedir.
+struct nx_retro_vfs_interface_v4 {
+    struct retro_vfs_interface v3;
+    nx_retro_vfs_stat_64_t stat_64;
+};
+
+class VFS {
+public:
+    static const unsigned SUPPORTED_VERSION = 4;
+    static VFS& getInstance()
+    {
+        static VFS instance;
+        return instance;
+    }
+    VFS(VFS const&) = delete;
+    void operator=(VFS const&) = delete;
+
+    static retro_vfs_interface* getInterface();
+    void initialize(std::vector<VFSFile> files);
+    void deinitialize();
+
+private:
+    VFS() {}
+
+    struct retro_vfs_file_handle* virtualOpen(const char *path, unsigned mode, unsigned hints);
+
+    VFSFile* findVirtualFile(const char* path);
+
+    std::optional<int> virtualStat(const char *path, int64_t *size);
+
+    static int statInternal(const char *path, int64_t *size);
+
+    std::optional<int64_t> virtualOffset(struct retro_vfs_file_handle* stream);
+
+public:
+
+    static const char* path(struct retro_vfs_file_handle *stream);
+    static struct retro_vfs_file_handle* open(const char *path, unsigned mode, unsigned hints);
+    static int close(struct retro_vfs_file_handle* stream);
+    static int64_t size(struct retro_vfs_file_handle *stream);
+    static int64_t tell(struct retro_vfs_file_handle *stream);
+    static int64_t seek(struct retro_vfs_file_handle *stream, int64_t offset, int seek_position);
+    static int64_t read(struct retro_vfs_file_handle *stream, void *s, uint64_t len);
+    static int64_t write(struct retro_vfs_file_handle *stream, const void *s, uint64_t len);
+    static int flush(struct retro_vfs_file_handle *stream);
+    static int remove(const char *path);
+    static int rename(const char *old_path, const char *new_path);
+
+    static int64_t truncate(struct retro_vfs_file_handle *stream, int64_t length);
+
+    static int stat(const char *path, int32_t *size);
+    static int stat64(const char *path, int64_t *size);
+    static int mkdir(const char *dir);
+    static struct retro_vfs_dir_handle* opendir(const char *dir, bool include_hidden);
+    static bool readdir(struct retro_vfs_dir_handle *dirstream);
+    static const char* direntGetName(struct retro_vfs_dir_handle *dirstream);
+    static bool direntIsDir(struct retro_vfs_dir_handle *dirstream);
+    static int closedir(struct retro_vfs_dir_handle *dirstream);
+
+private:
+    std::vector<VFSFile> virtualFiles;
+
+    // nx-mobile 2026-10-14: a virtual file's handles are dups of one descriptor, so they share one file offset: two
+    // threads reading one game by seek + read (Dolphin's disc thread and a banner read) would move each other. Each
+    // handle keeps its own offset here and reads with pread, which leaves the shared one alone.
+    std::mutex virtualOffsetsMutex;
+    std::unordered_map<struct retro_vfs_file_handle*, int64_t> virtualOffsets;
+
+};
+
+} // namespace libretrodroid
+
+#endif //LIBRETRODROID_VFS_H

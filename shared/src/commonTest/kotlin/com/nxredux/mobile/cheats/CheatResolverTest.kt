@@ -1,0 +1,159 @@
+package com.nxredux.mobile.cheats
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+class CheatResolverTest {
+    private val gb = setOf("gb", "gbc", "dmg", "zip")
+    private fun cht(vararg cheats: Pair<String, String>) =
+        "cheats = ${cheats.size}\n" + cheats.mapIndexed { i, (d, c) -> "cheat${i}_desc = \"$d\"\ncheat${i}_code = \"$c\"\n" }.joinToString("")
+
+    @Test fun exact_candidate_wins_over_the_wildcard_stage() {
+        val disk = mapOf(
+            "Tetris.gb.cht" to cht("Exact" to "01"),
+            "Tetris (World).cht" to cht("Wild" to "02"),
+        )
+        val set = CheatResolver.resolve(disk.keys.toList(), "Tetris.gb", "Tetris", gb, read = { disk[it] })
+        assertEquals(listOf("Exact"), set.entries.map { it.desc })
+        assertEquals("Tetris.gb.cht", set.expected)
+        assertEquals("Exact", set.entries[0].info)   // single file: no source prefix
+    }
+
+    @Test fun a_cheat_named_after_the_full_rom_stem_is_an_exact_match() {
+        val disk = mapOf(
+            "Tetris [!].cht" to cht("Stem" to "01"),
+            "Tetris (GameShark).cht" to cht("Other" to "02"),
+        )
+        val set = CheatResolver.resolve(disk.keys.toList(), "Tetris [!].gb", "Tetris", gb, read = { disk[it] })
+        assertEquals(listOf("Stem"), set.entries.map { it.desc })
+    }
+
+    @Test fun a_bad_or_empty_candidate_falls_through_to_the_next() {
+        val disk = mapOf(
+            "Tetris.gb.cht" to "not a cheat file",
+            "Tetris.cht" to cht("Later" to "03"),
+        )
+        val set = CheatResolver.resolve(disk.keys.toList(), "Tetris.gb", "Tetris", gb, read = { disk[it] })
+        assertEquals(listOf("Later"), set.entries.map { it.desc })
+        // A reader failure (null) is also "try the next".
+        val set2 = CheatResolver.resolve(disk.keys.toList(), "Tetris.gb", "Tetris", gb, read = { if (it == "Tetris.gb.cht") null else disk[it] })
+        assertEquals(listOf("Later"), set2.entries.map { it.desc })
+    }
+
+    @Test fun wildcard_stage_merges_variants_with_source_prefixes() {
+        val disk = mapOf(
+            "Contra (USA).cht" to cht("Lives" to "01"),
+            "Contra (USA) (GameShark).cht" to cht("Health" to "02"),
+            "Contra (Japan).cht" to cht("Wrong region" to "03"),
+        )
+        val set = CheatResolver.resolve(disk.keys.toList(), "Contra (USA).gb", "Contra", gb, read = { disk[it] })
+        assertEquals(listOf("Lives", "Health"), set.entries.map { it.desc })
+        assertEquals(listOf("Lives", "(GameShark) Health"), set.entries.map { it.info })
+        assertEquals("Contra (USA).gb.cht", set.expected)
+    }
+
+    @Test fun wildcard_falls_back_to_the_title_stem() {
+        // The file name has no readable stem, but the launcher's title (map.txt alias) does.
+        val disk = mapOf("1941: Counter Attack (USA).cht" to cht("Coins" to "04"))
+        val set = CheatResolver.resolve(disk.keys.toList(), "1941.zip", "1941: Counter Attack", gb, read = { disk[it] })
+        assertEquals(listOf("Coins"), set.entries.map { it.desc })
+    }
+
+    @Test fun no_exact_stem_falls_back_to_the_first_file_starting_with_the_name() {   // nx-redux's glob, first hit
+        val disk = mapOf(
+            "Pokemon - Yellow Version - Special Pikachu Edition (USA, Europe) (GameShark).cht" to cht("Shark" to "01"),
+            "Pokemon - Yellow Version - Special Pikachu Edition (USA, Europe) (GBC,SGB Enhanced).cht" to cht("Plain" to "02"),
+            "Pokemon - Blue Version (USA, Europe).cht" to cht("Blue" to "03"),
+        )
+        val set = CheatResolver.resolve(disk.keys.toList(), "Pokemon - Yellow.gbc", "Pokemon - Yellow", gb, read = { disk[it] })
+        assertEquals(listOf("Plain"), set.entries.map { it.desc })   // name order: "(GBC" sorts before "(Game"
+        assertEquals("Pokemon - Yellow.gbc.cht", set.expected)
+    }
+
+    @Test fun an_exact_stem_still_beats_the_prefix_fallback() {
+        val disk = mapOf("Tetris 2 (USA).cht" to cht("Two" to "01"), "Tetris (World).cht" to cht("One" to "02"))
+        val set = CheatResolver.resolve(disk.keys.toList(), "Tetris.gb", "Tetris", gb, read = { disk[it] })
+        assertEquals(listOf("One"), set.entries.map { it.desc })
+    }
+
+    @Test fun a_serial_picks_its_tagged_files_over_a_name_match() {
+        val psp = setOf("iso", "cso", "pbp")
+        val disk = mapOf(
+            "Tekken 6 (PlayStation Store) [JP] [NPJH-50184].cht" to cht("Store" to "_L 0x1 0x1"),
+            "Tekken 6 [EU] [ULES-01376].cht" to cht("EU" to "_L 0x2 0x2"),
+            "Tekken 6 [US] [ULUS-10466].cht" to cht("US" to "_L 0x3 0x3"),
+        )
+        val us = CheatResolver.resolve(disk.keys.toList(), "Tekken 6.iso", "Tekken 6", psp, read = { disk[it] }, serial = "ULUS-10466")
+        assertEquals(listOf("US"), us.entries.map { it.desc })
+        // Unknown serial (a .chd, or a disc the cheats don't list): the name stages as before.
+        val none = CheatResolver.resolve(disk.keys.toList(), "Tekken 6.iso", "Tekken 6", psp, read = { disk[it] }, serial = "ULUS-99999")
+        assertEquals(listOf("Store"), none.entries.map { it.desc })
+    }
+
+    @Test fun nothing_matching_gives_an_empty_set_with_the_expected_name() {
+        val set = CheatResolver.resolve(listOf("Other Game.cht"), "Tetris.gb", "Tetris", gb, read = { null })
+        assertEquals(emptyList(), set.entries)
+        assertEquals("Tetris.gb.cht", set.expected)
+        assertEquals("Tetris.gb.cht", CheatResolver.resolve(emptyList(), "Tetris.gb", "Tetris", gb, read = { null }).expected)
+    }
+
+    @Test fun a_bad_file_in_the_merged_group_is_skipped() {
+        val disk = mapOf(
+            "Contra (USA).cht" to "garbage",
+            "Contra (USA) (GameShark).cht" to cht("Health" to "02"),
+        )
+        val set = CheatResolver.resolve(disk.keys.toList(), "Contra (USA).gb", "Contra", gb, read = { disk[it] })
+        assertEquals(listOf("Health"), set.entries.map { it.desc })
+        assertEquals(listOf("Health"), set.entries.map { it.info })   // one file loaded: no prefix
+    }
+
+    @Test fun rejected_candidates_are_reported() {
+        val disk = mapOf(
+            "Tetris.gb.cht" to "garbage",
+            "Tetris.cht" to cht("Later" to "03"),
+        )
+        val skipped = mutableListOf<Pair<String, String>>()
+        val set = CheatResolver.resolve(disk.keys.toList(), "Tetris.gb", "Tetris", gb, read = { disk[it] }, onSkipped = { n, r -> skipped += n to r })
+        assertEquals(listOf("Later"), set.entries.map { it.desc })
+        assertEquals(listOf("Tetris.gb.cht"), skipped.map { it.first })
+        assertTrue(skipped.single().second.isNotBlank())
+        // A null read is the platform's to report, not a rejection.
+        skipped.clear()
+        CheatResolver.resolve(disk.keys.toList(), "Tetris.gb", "Tetris", gb, read = { if (it == "Tetris.gb.cht") null else disk[it] }, onSkipped = { n, r -> skipped += n to r })
+        assertEquals(emptyList(), skipped)
+    }
+
+    @Test fun exact_candidate_merges_its_source_variants() {
+        val disk = mapOf(
+            "Alleyway (World).cht" to cht("Lives" to "01"),
+            "Alleyway (World) (GameShark).cht" to cht("Health" to "02"),
+        )
+        val set = CheatResolver.resolve(disk.keys.toList(), "Alleyway (World).gb", "Alleyway (World)", gb, read = { disk[it] })
+        assertEquals(listOf("Lives", "Health"), set.entries.map { it.desc })
+        assertEquals(listOf("Lives", "(GameShark) Health"), set.entries.map { it.info })
+        assertEquals("Alleyway (World).gb.cht", set.expected)
+    }
+
+    @Test fun exact_candidate_does_not_merge_other_regions() {
+        val disk = mapOf(
+            "Alleyway (World).cht" to cht("Lives" to "01"),
+            "Alleyway (Japan).cht" to cht("Health" to "02"),
+        )
+        val set = CheatResolver.resolve(disk.keys.toList(), "Alleyway (World).gb", "Alleyway (World)", gb, read = { disk[it] })
+        assertEquals(listOf("Lives"), set.entries.map { it.desc })
+        assertEquals(listOf("Lives"), set.entries.map { it.info })
+    }
+
+    @Test fun exact_candidate_that_fails_still_falls_through() {
+        val disk = mapOf(
+            "Alleyway (World).cht" to "garbage",
+            "Alleyway (World) (GameShark).cht" to cht("Health" to "02"),
+        )
+        val skipped = mutableListOf<String>()
+        val set = CheatResolver.resolve(disk.keys.toList(), "Alleyway (World).gb", "Alleyway (World)", gb, read = { disk[it] }, onSkipped = { n, _ -> skipped += n })
+        assertEquals(listOf("Health"), set.entries.map { it.desc })
+        assertEquals(listOf("Health"), set.entries.map { it.info })   // one file loaded: no prefix
+        assertTrue("Alleyway (World).cht" in skipped)
+    }
+}

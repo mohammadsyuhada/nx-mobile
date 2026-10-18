@@ -1,0 +1,48 @@
+# Gradle / Android
+.gradle/
+build/
+*/build/
+local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+captures/
+.externalNativeBuild/
+.cxx/
+
+# IDE
+.idea/
+*.iml
+.kotlin/
+.DS_Store
+
+# Xcode (iosApp, later)
+iosApp/build/
+iosApp/Pods/
+xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+
+# Local
+/.local/
+
+# cores pipeline outputs (see cores/README.md)
+cores/src/
+cores/output/
+cores/build/
+androidApp/src/main/jniLibs/
+androidApp/src/main/assets/system/
+# rsync build outputs (tools/rsync/README.md)
+tools/rsync/src/
+tools/rsync/output/
+
+# design notes stay local (specs, plans)
+docs/
+
+# Claude Code worktrees and local settings
+.claude/
+CLAUDE.md
+
+# MiSans is fetched at build time (Xiaomi forbids redistributing the font files): shared/build.gradle.kts fetchMiSans
+shared/src/commonMain/composeResources/font/misans_semibold.ttf

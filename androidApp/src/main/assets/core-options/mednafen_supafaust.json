@@ -1,0 +1,572 @@
+{
+ "core": "mednafen_supafaust",
+ "emulator": "Supafaust",
+ "sections": [
+  {
+   "key": "",
+   "label": "",
+   "info": "",
+   "items": [
+    {
+     "key": "supafaust_pixel_format",
+     "label": "Pixel format",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "rgb565",
+      "xrgb8888",
+      "0rgb1555"
+     ],
+     "labels": [
+      "",
+      "",
+      ""
+     ],
+     "default": "rgb565"
+    },
+    {
+     "key": "supafaust_correct_aspect",
+     "label": "Correct pixel aspect ratio",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "enabled",
+      "disabled",
+      "force_ntsc",
+      "force_pal"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "supafaust_h_filter",
+     "label": "Horizontal blend/double filter",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "phr256blend_auto512",
+      "phr256blend_512",
+      "512_blend",
+      "512",
+      "phr256blend"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "phr256blend_auto512"
+    },
+    {
+     "key": "supafaust_deinterlacer",
+     "label": "Deinterlacer",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "bob_offset",
+      "weave",
+      "blend"
+     ],
+     "labels": [
+      "",
+      "",
+      ""
+     ],
+     "default": "bob_offset"
+    },
+    {
+     "key": "supafaust_slstart",
+     "label": "First displayed scanline in NTSC mode",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "supafaust_slend",
+     "label": "Last displayed scanline in NTSC mode",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "223",
+      "222",
+      "221",
+      "220",
+      "219",
+      "218",
+      "217",
+      "216",
+      "215",
+      "214",
+      "213",
+      "212",
+      "211",
+      "210",
+      "209",
+      "208",
+      "207"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "223"
+    },
+    {
+     "key": "supafaust_slstartp",
+     "label": "First displayed scanline in PAL mode",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "20",
+      "21",
+      "22",
+      "23",
+      "24"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "supafaust_slendp",
+     "label": "Last displayed scanline in PAL mode",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "238",
+      "237",
+      "236",
+      "235",
+      "234",
+      "233",
+      "232",
+      "231",
+      "230",
+      "229",
+      "228",
+      "227",
+      "226",
+      "225",
+      "224",
+      "223",
+      "222",
+      "221",
+      "220",
+      "219",
+      "218",
+      "217",
+      "216",
+      "215",
+      "214"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "238"
+    },
+    {
+     "key": "supafaust_region",
+     "label": "Region/Type of SNES to emulate",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "auto",
+      "ntsc",
+      "pal",
+      "ntsc_lie_auto",
+      "pal_lie_auto",
+      "ntsc_lie_pal",
+      "pal_lie_ntsc"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "auto"
+    },
+    {
+     "key": "supafaust_frame_begin_vblank",
+     "label": "Begin frame in SNES VBlank to lower latency",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "supafaust_run_ahead",
+     "label": "Enable 1-frame run-ahead",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "disabled",
+      "video",
+      "video+audio"
+     ],
+     "labels": [
+      "",
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "supafaust_multitap",
+     "label": "Enable multitap",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "disabled",
+      "port1",
+      "port2",
+      "port1+port2"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "supafaust_cx4_clock_rate",
+     "label": "CX4 clock rate %",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "100",
+      "125",
+      "150",
+      "175",
+      "200",
+      "250",
+      "300",
+      "400",
+      "500"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "supafaust_superfx_clock_rate",
+     "label": "SuperFX clock rate %",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "100",
+      "125",
+      "150",
+      "175",
+      "200",
+      "250",
+      "300",
+      "400",
+      "500",
+      "95"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "supafaust_superfx_icache",
+     "label": "Emulate SuperFX instruction cache",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "supafaust_audio_rate",
+     "label": "Internal resampler(output rate)",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "disabled",
+      "44100",
+      "48000",
+      "96000"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "supafaust_thread_affinity_emu",
+     "label": "Emulation thread affinity mask",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "0x2",
+      "0x0",
+      "0x1",
+      "0x3",
+      "0x4",
+      "0x5",
+      "0x6",
+      "0x7",
+      "0x8",
+      "0x9",
+      "0xa",
+      "0xb",
+      "0xc",
+      "0xd",
+      "0xe",
+      "0xf"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0x2"
+    },
+    {
+     "key": "supafaust_thread_affinity_ppu",
+     "label": "PPU render thread affinity mask",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "0x1",
+      "0x0",
+      "0x2",
+      "0x3",
+      "0x4",
+      "0x5",
+      "0x6",
+      "0x7",
+      "0x8",
+      "0x9",
+      "0xa",
+      "0xb",
+      "0xc",
+      "0xd",
+      "0xe",
+      "0xf"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0x1"
+    },
+    {
+     "key": "supafaust_renderer",
+     "label": "PPU renderer",
+     "labelCategorized": "",
+     "info": "",
+     "values": [
+      "mt",
+      "st"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "mt"
+    }
+   ]
+  }
+ ],
+ "soSha256": "6fe8639ae7aebe9d2340e2fa87013663c7ad272af91cb35f75e02b1ec2012f90",
+ "probedAt": "2026-09-29"
+}

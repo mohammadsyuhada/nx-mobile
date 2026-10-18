@@ -1,0 +1,9 @@
+androidApp/src/main/assets/wii/controls.tsv is derived from the GameTDB Wii database, https://www.gametdb.com,
+"a collaborative database of Nintendo Wii games for anyone to contribute and anyone to use in any Wii-related project".
+
+GameTDB asks that software using the database link back to it, so that users know where to add new game entries and
+artwork: https://www.gametdb.com
+
+To add or fix a game entry: https://www.gametdb.com/Wii
+
+The table is regenerated with tools/gametdb/build_controls.py (see tools/gametdb/README.md).

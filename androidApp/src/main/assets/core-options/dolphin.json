@@ -1,0 +1,3232 @@
+{
+ "core": "dolphin",
+ "emulator": "dolphin-emu",
+ "sections": [
+  {
+   "key": "core",
+   "label": "Core",
+   "info": "Configure CPU emulation, timing, and core system settings.",
+   "items": [
+    {
+     "key": "dolphin_cpu_core",
+     "label": "Core > CPU Core",
+     "labelCategorized": "CPU Core",
+     "info": "Select CPU emulation method - JIT provides best performance.",
+     "values": [
+      "0",
+      "4",
+      "5"
+     ],
+     "labels": [
+      "Interpreter (slowest)",
+      "JITARM64 (Recommended)",
+      "Cached Interpreter (slower)"
+     ],
+     "default": "4"
+    },
+    {
+     "key": "dolphin_cpu_clock_rate",
+     "label": "Core > CPU Clock Rate",
+     "labelCategorized": "CPU Clock Rate",
+     "info": "Adjust emulated CPU speed.",
+     "values": [
+      "0.05",
+      "0.10",
+      "0.20",
+      "0.30",
+      "0.40",
+      "0.50",
+      "0.60",
+      "0.70",
+      "0.80",
+      "0.90",
+      "1.00",
+      "1.50",
+      "2.00",
+      "2.50",
+      "3.00"
+     ],
+     "labels": [
+      "5%",
+      "10%",
+      "20%",
+      "30%",
+      "40%",
+      "50%",
+      "60%",
+      "70%",
+      "80%",
+      "90%",
+      "100% (Default)",
+      "150%",
+      "200%",
+      "250%",
+      "300%"
+     ],
+     "default": "1.00"
+    },
+    {
+     "key": "dolphin_emulation_speed",
+     "label": "Core > Emulation Speed",
+     "labelCategorized": "Emulation Speed",
+     "info": "Set speed limit for emulation.",
+     "values": [
+      "1.0",
+      "0.0"
+     ],
+     "labels": [
+      "100% (Normal Speed)",
+      "Unlimited"
+     ],
+     "default": "0.0"
+    },
+    {
+     "key": "dolphin_main_cpu_thread",
+     "label": "Core > Dual Core Mode",
+     "labelCategorized": "Dual Core Mode",
+     "info": "Enable dual-core CPU emulation. Requires core RESTART.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "Disabled",
+      "Enabled"
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_sync_gpu",
+     "label": "Core > Synchronize GPU Thread",
+     "labelCategorized": "Synchronize GPU Thread",
+     "info": "Keeps the dual-core GPU thread in step with the CPU thread, which stops FIFO desyncs at some speed cost. Requires core RESTART.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "Disabled",
+      "Enabled"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_main_load_game_into_memory",
+     "label": "Core > Load Whole Game Into Memory",
+     "labelCategorized": "Load Whole Game Into Memory",
+     "info": "Load Whole Game Into Memory. Requires core RESTART.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "Disabled",
+      "Enabled"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_precision_frame_timing",
+     "label": "Core > Precision Frame Timing",
+     "labelCategorized": "Precision Frame Timing",
+     "info": "Use busy-wait for more accurate frame timing.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_fastmem",
+     "label": "Core > Fastmem",
+     "labelCategorized": "Fastmem",
+     "info": "Enable fastmem optimization - which uses memory mapping for faster access.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_fastmem_arena",
+     "label": "Core > Fastmem Arena",
+     "labelCategorized": "Fastmem Arena",
+     "info": "Enable fastmem arena - reserves 12 GiB of virtual memory for super fast access.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_main_accurate_cpu_cache",
+     "label": "Core > Accurate CPU cache",
+     "labelCategorized": "Accurate CPU cache",
+     "info": "Enabled - fast, Disabled - guarantees correctness involving cache behaviour.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_cheats_enabled",
+     "label": "Core > Internal Cheats",
+     "labelCategorized": "Internal Cheats",
+     "info": "Enable built-in cheat codes. Restart core to take effect.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_skip_gc_bios",
+     "label": "Core > Skip GameCube BIOS",
+     "labelCategorized": "Skip GameCube BIOS",
+     "info": "Skip the GameCube BIOS animation/menu and start the game directly.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_disc_based_games_boot_to_wii_menu",
+     "label": "Core > Disc Based Games Boot to Wii Menu",
+     "labelCategorized": "Disc Based Games Boot to Wii System Menu",
+     "info": "When a Wii System Menu is installed in the save location and the game is a disc based game, it will start the Wii Menu with the disc inserted in the drive instead of directly booting the game. Beware: The game region must match the Wii Menu region otherwise the game will not be recognized.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_language",
+     "label": "Core > System Language",
+     "labelCategorized": "System Language",
+     "info": "Set system language.",
+     "values": [
+      "1",
+      "0",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9"
+     ],
+     "labels": [
+      "English",
+      "Japanese",
+      "German",
+      "French",
+      "Spanish",
+      "Italian",
+      "Dutch",
+      "Simplified Chinese",
+      "Traditional Chinese",
+      "Korean"
+     ],
+     "default": "1"
+    },
+    {
+     "key": "dolphin_fast_disc_speed",
+     "label": "Core > Speed Up Disc Transfer",
+     "labelCategorized": "Speed Up Disc Transfer",
+     "info": "Reduce loading times.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_main_mmu",
+     "label": "Core > Enable MMU",
+     "labelCategorized": "Enable MMU",
+     "info": "Enable emulation of the Memory Management Unit.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_rush_presentation",
+     "label": "Core > Rush Frame Presentation",
+     "labelCategorized": "Rush Frame Presentation",
+     "info": "Enable rushing frame presentation for lower latency.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_early_presentation",
+     "label": "Core > Smooth Early Presentation",
+     "labelCategorized": "Smooth Early Presentation",
+     "info": "Enable smoother early frame presentation timing.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "audio",
+   "label": "Audio / DSP",
+   "info": "Configure audio output and DSP emulation.",
+   "items": [
+    {
+     "key": "dolphin_dsp_hle",
+     "label": "Audio / DSP > DSP HLE",
+     "labelCategorized": "DSP HLE",
+     "info": "Choose DSP method - HLE is faster, LLE is more accurate.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "HLE (Fast)",
+      "LLE (Accurate)"
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_dsp_jit",
+     "label": "Audio / DSP > DSP JIT",
+     "labelCategorized": "DSP JIT",
+     "info": "Enable JIT for DSP LLE.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_call_back_audio_method",
+     "label": "Audio / DSP > Async Audio Callback",
+     "labelCategorized": "Async Audio Callback",
+     "info": "Use asynchronous audio callbacks.",
+     "values": [
+      "0",
+      "1",
+      "2"
+     ],
+     "labels": [
+      "Sync - Dolphin will push samples",
+      "Sync - Per Frame using target refresh rate",
+      "Async - driven by callbacks using refresh rate and audio buffer status"
+     ],
+     "default": "0"
+    }
+   ]
+  },
+  {
+   "key": "interface",
+   "label": "Interface",
+   "info": "Configure on-screen display and logging.",
+   "items": [
+    {
+     "key": "dolphin_osd_enabled",
+     "label": "Interface > On-Screen Display",
+     "labelCategorized": "On-Screen Display",
+     "info": "Show OSD messages.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_log_level",
+     "label": "Interface > Log Level",
+     "labelCategorized": "Log Level",
+     "info": "Set log verbosity.",
+     "values": [
+      "1",
+      "2",
+      "3",
+      "4"
+     ],
+     "labels": [
+      "Notice",
+      "Error",
+      "Warning",
+      "Info"
+     ],
+     "default": "4"
+    },
+    {
+     "key": "dolphin_log_boot_enabled",
+     "label": "Interface > Logging > Boot",
+     "labelCategorized": "Boot Logging",
+     "info": "Enable Boot log messages.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_log_core_enabled",
+     "label": "Interface > Logging > Core",
+     "labelCategorized": "Core Logging",
+     "info": "Enable Core log messages.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_log_video_enabled",
+     "label": "Interface > Logging > Video",
+     "labelCategorized": "Video Logging",
+     "info": "Enable Video log messages.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_log_common_enabled",
+     "label": "Interface > Logging > Common",
+     "labelCategorized": "Common Logging",
+     "info": "Enable Common log messages.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_log_host_gpu_enabled",
+     "label": "Interface > Logging > Host GPU",
+     "labelCategorized": "Host GPU Logging",
+     "info": "Enable Host GPU log messages.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_log_memmap_enabled",
+     "label": "Interface > Logging > MemMap",
+     "labelCategorized": "MemMap Logging",
+     "info": "Enable MemMap log messages.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_log_dspinterface_enabled",
+     "label": "Interface > Logging > DSP Interface",
+     "labelCategorized": "DSP Interface Logging",
+     "info": "Enable DSP Interface log messages.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_log_dsphle_enabled",
+     "label": "Interface > Logging > DSP HLE",
+     "labelCategorized": "DSP HLE Logging",
+     "info": "Enable DSP HLE log messages.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_log_dsplle_enabled",
+     "label": "Interface > Logging > DSP LLE",
+     "labelCategorized": "DSP LLE Logging",
+     "info": "Enable DSP LLE log messages.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_log_dsp_mail_enabled",
+     "label": "Interface > Logging > DSP MAIL",
+     "labelCategorized": "DSP MAIL Logging",
+     "info": "Enable DSP MAIL log messages.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_debug_mode_enabled",
+     "label": "Interface > Enable debugging",
+     "labelCategorized": "Enable debugging",
+     "info": "Enable the debugger.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "sysconf_gc",
+   "label": "System Configuration - Gamecube",
+   "info": "Configure Gamecube system settings.",
+   "items": [
+    {
+     "key": "dolphin_gc_sp1",
+     "label": "System Configuration (GC) > SP1 Device",
+     "labelCategorized": "SP1 Device",
+     "info": "Select the device connected to the GameCube SP1 slot.",
+     "values": [
+      "255",
+      "0",
+      "5",
+      "10",
+      "11",
+      "12",
+      "13",
+      "6"
+     ],
+     "labels": [
+      "None",
+      "Dummy",
+      "Ethernet",
+      "Ethernet XLink",
+      "Ethernet TapServer",
+      "Ethernet Built-In",
+      "Modem TapServer",
+      "Baseboard"
+     ],
+     "default": "255"
+    },
+    {
+     "key": "dolphin_enable_gamecube_mic",
+     "label": "System Configuration (GC) > GameCube Microphone",
+     "labelCategorized": "GameCube Microphone",
+     "info": "Emulate the official GameCube microphone accessory. Restart core after changing this option.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_hotkey_activate_microphone",
+     "label": "System Configuration (GC) > Microphone Button",
+     "labelCategorized": "Microphone Button",
+     "info": "Button to hold or press to activate the microphone input. Selecting OFF disables microphone activation.",
+     "values": [
+      "Disabled",
+      "L3",
+      "R3",
+      "L1",
+      "R1",
+      "L2",
+      "R2",
+      "A",
+      "B",
+      "X",
+      "Y",
+      "Start",
+      "Select"
+     ],
+     "labels": [
+      "Disabled",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "Disabled"
+    }
+   ]
+  },
+  {
+   "key": "sysconf",
+   "label": "System Configuration - Wii",
+   "info": "Configure Wii system settings.",
+   "items": [
+    {
+     "key": "dolphin_widescreen",
+     "label": "System Configuration > Widescreen (Wii)",
+     "labelCategorized": "Widescreen (Wii)",
+     "info": "Enable widescreen for Wii.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_progressive_scan",
+     "label": "System Configuration > Progressive Scan",
+     "labelCategorized": "Progressive Scan",
+     "info": "Enable progressive scan.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_pal60",
+     "label": "System Configuration > PAL60 Mode",
+     "labelCategorized": "PAL60 Mode",
+     "info": "Enable 60Hz for PAL games.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_sensor_bar_position",
+     "label": "System Configuration > Sensor Bar Position",
+     "labelCategorized": "Sensor Bar Position",
+     "info": "Set Wiimote sensor bar position.",
+     "values": [
+      "0",
+      "1"
+     ],
+     "labels": [
+      "Bottom",
+      "Top"
+     ],
+     "default": "0"
+    },
+    {
+     "key": "dolphin_enable_rumble",
+     "label": "System Configuration > Controller Rumble",
+     "labelCategorized": "Controller Rumble",
+     "info": "Enable rumble feedback.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_wiimote_continuous_scanning",
+     "label": "System Configuration > Wiimote Continuous Scanning",
+     "labelCategorized": "Wiimote Continuous Scanning",
+     "info": "Continuously scan for Wiimotes.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_alt_gc_ports_on_wii",
+     "label": "System Configuration > Alt GC Ports (Wii)",
+     "labelCategorized": "Alt GC Ports (Wii)",
+     "info": "Use ports 5-8 for GameCube controllers in Wii mode.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_bluetooth_passthrough",
+     "label": "System Configuration > Bluetooth passthrough mode",
+     "labelCategorized": "Bluetooth passthrough mode",
+     "info": "Pass all traffic directly to the host's Bluetooth adapter. Press F12 to begin the sync process.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_wiispeak_enable",
+     "label": "System Configuration > Wii Speak",
+     "labelCategorized": "Wii Speak",
+     "info": "Emulate the Wii Speak microphone. Restart when changing this option.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_wiispeak_muted",
+     "label": "Audio > Devices > Wii Speak Muted",
+     "labelCategorized": "Wii Speak Muted",
+     "info": "Mute or unmute the Wii Speak microphone.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_wii_logi_microphone_enable",
+     "label": "System Configuration > Logitech USB Microphone",
+     "labelCategorized": "Logitech USB Microphone",
+     "info": "Emulate the Logitech USB microphone. Restart when changing this option.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "graphics_settings",
+   "label": "Graphics > Settings",
+   "info": "Configure rendering backend and quality settings.",
+   "items": [
+    {
+     "key": "dolphin_renderer",
+     "label": "Graphics > Settings > Graphics Backend",
+     "labelCategorized": "Graphics Backend",
+     "info": "Select rendering backend.",
+     "values": [
+      "Hardware"
+     ],
+     "labels": [
+      "Hardware"
+     ],
+     "default": "Hardware"
+    },
+    {
+     "key": "dolphin_widescreen_hack",
+     "label": "Graphics > Settings > Widescreen Hack",
+     "labelCategorized": "Widescreen Hack",
+     "info": "Force 16:9 rendering.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_aspect_ratio",
+     "label": "Graphics > Settings > Aspect Ratio",
+     "labelCategorized": "Aspect Ratio",
+     "info": "Control how the game's image is scaled.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6"
+     ],
+     "labels": [
+      "Auto",
+      "Force Wide",
+      "Force Standard",
+      "Stretch",
+      "Custom",
+      "Custom Stretch",
+      "Raw"
+     ],
+     "default": "3"
+    },
+    {
+     "key": "dolphin_crop_overscan",
+     "label": "Graphics > Settings > Crop Overscan",
+     "labelCategorized": "Crop Overscan",
+     "info": "Report standard TV output resolution to the frontend (NTSC: 480, PAL: 576). Recommended for CRT displays with SwitchRes.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_efb_scale",
+     "label": "Graphics > Settings > Internal Resolution",
+     "labelCategorized": "Internal Resolution",
+     "info": "Multiply native resolution.",
+     "values": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+     ],
+     "labels": [
+      "1x Native (640x528)",
+      "2x Native (1280x1056) for 720p",
+      "3x Native (1920x1584) for 1080p",
+      "4x Native (2560x2112) for 1440p",
+      "5x Native (3200x2640)",
+      "6x Native (3840x3168) for 4K",
+      "7x Native (4480x3696)",
+      "8x Native (5120x4224) for 5K",
+      "9x Native (5760x4752)",
+      "10x Native (6400x5280)",
+      "11x Native (7040x5808)",
+      "12x Native (7680x6336) for 8K"
+     ],
+     "default": "1"
+    },
+    {
+     "key": "dolphin_shader_compilation_mode",
+     "label": "Graphics > Settings > Shader Compilation",
+     "labelCategorized": "Shader Compilation",
+     "info": "Control shader compilation.",
+     "values": [
+      "0",
+      "3",
+      "1",
+      "2"
+     ],
+     "labels": [
+      "Synchronous",
+      "Async (Skip Rendering)",
+      "Sync (UberShaders)",
+      "Async (UberShaders)"
+     ],
+     "default": "0"
+    },
+    {
+     "key": "dolphin_wait_for_shaders",
+     "label": "Graphics > Settings > Wait for Shaders",
+     "labelCategorized": "Wait for Shaders",
+     "info": "Precompile shaders before starting.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_anti_aliasing",
+     "label": "Graphics > Settings > Anti-Aliasing",
+     "labelCategorized": "Anti-Aliasing",
+     "info": "Reduce jagged edges.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6"
+     ],
+     "labels": [
+      "None",
+      "2x MSAA",
+      "4x MSAA",
+      "8x MSAA",
+      "2x SSAA",
+      "4x SSAA",
+      "8x SSAA"
+     ],
+     "default": "0"
+    },
+    {
+     "key": "dolphin_texture_cache_accuracy",
+     "label": "Graphics > Settings > Texture Cache Accuracy",
+     "labelCategorized": "Texture Cache Accuracy",
+     "info": "Texture cache safety level.",
+     "values": [
+      "128",
+      "512",
+      "0"
+     ],
+     "labels": [
+      "Fast",
+      "Middle",
+      "Safe"
+     ],
+     "default": "128"
+    },
+    {
+     "key": "dolphin_gpu_texture_decoding",
+     "label": "Graphics > Settings > GPU Texture Decoding",
+     "labelCategorized": "GPU Texture Decoding",
+     "info": "Decode textures on GPU.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_pixel_lighting",
+     "label": "Graphics > Settings > Pixel Lighting",
+     "labelCategorized": "Pixel Lighting",
+     "info": "Enable per-pixel lighting calculations instead of per-vertex.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_fast_depth_calculation",
+     "label": "Graphics > Settings > Fast Depth Calculation",
+     "labelCategorized": "Fast Depth Calculation",
+     "info": "Use faster depth calculation.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_disable_fog",
+     "label": "Graphics > Settings > Disable Fog",
+     "labelCategorized": "Disable Fog",
+     "info": "Disable fog rendering effects. May improve performance but reduces visual accuracy.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_mods_enabled",
+     "label": "Graphics > Settings > Enable Mods",
+     "labelCategorized": "Enable Mods",
+     "info": "Loads graphic mods from User/Load/GraphicsMods.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "graphics_enhancements",
+   "label": "Graphics > Enhancements",
+   "info": "Configure texture filtering and visual enhancements.",
+   "items": [
+    {
+     "key": "dolphin_force_texture_filtering_mode",
+     "label": "Graphics > Enhancements > Texture Filtering",
+     "labelCategorized": "Texture Filtering",
+     "info": "Override texture filtering.",
+     "values": [
+      "0",
+      "1",
+      "2"
+     ],
+     "labels": [
+      "Default",
+      "Nearest (Sharp)",
+      "Linear (Smooth)"
+     ],
+     "default": "0"
+    },
+    {
+     "key": "dolphin_max_anisotropy",
+     "label": "Graphics > Enhancements > Anisotropic Filtering",
+     "labelCategorized": "Anisotropic Filtering",
+     "info": "Improve texture quality at angles.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4"
+     ],
+     "labels": [
+      "1x (Off)",
+      "2x",
+      "4x",
+      "8x",
+      "16x"
+     ],
+     "default": "0"
+    },
+    {
+     "key": "dolphin_load_custom_textures",
+     "label": "Graphics > Enhancements > Load Custom Textures",
+     "labelCategorized": "Load Custom Textures",
+     "info": "Load high-res texture packs.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_cache_custom_textures",
+     "label": "Graphics > Enhancements > Prefetch Custom Textures",
+     "labelCategorized": "Prefetch Custom Textures",
+     "info": "Preload custom textures.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_enhance_output_resampling",
+     "label": "Graphics > Enhancements > Output Resampling",
+     "labelCategorized": "Output Resampling",
+     "info": "Select the resampling filter used when scaling the final image.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6"
+     ],
+     "labels": [
+      "Default",
+      "Bilinear",
+      "B-Spline",
+      "Mitchell-Netravali",
+      "Catmull-Rom",
+      "Sharp Bilinear",
+      "Area Sampling"
+     ],
+     "default": "0"
+    },
+    {
+     "key": "dolphin_force_true_color",
+     "label": "Graphics > Enhancements > Force True Color",
+     "labelCategorized": "Force True Color",
+     "info": "Disable dithering and force 24-bit color output instead of 18-bit.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_disable_copy_filter",
+     "label": "Graphics > Enhancements > Disable Copy Filter",
+     "labelCategorized": "Disable Copy Filter",
+     "info": "Disable the GameCube/Wii copy filter. Removes blur from some games but may reduce accuracy.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_enhance_hdr_output",
+     "label": "Graphics > Enhancements > HDR Output",
+     "labelCategorized": "HDR Output",
+     "info": "Enable High Dynamic Range output when supported by the graphics backend and display.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "Disabled",
+      "Enabled"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_mipmap_detection",
+     "label": "Graphics > Enhancements > Arbitrary Mipmap Detection",
+     "labelCategorized": "Arbitrary Mipmap Detection",
+     "info": "Enable detection of arbitrary mipmaps. Improves accuracy in some games but may reduce performance.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "graphics_hacks",
+   "label": "Graphics > Hacks",
+   "info": "Configure accuracy vs performance tradeoffs.",
+   "items": [
+    {
+     "key": "dolphin_efb_access_enable",
+     "label": "Graphics > Hacks > EFB Access from CPU",
+     "labelCategorized": "EFB Access from CPU",
+     "info": "Allow CPU EFB access. Required for some games but slow.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_efb_access_defer_invalidation",
+     "label": "Graphics > Hacks > EFB Access Defer Invalidation",
+     "labelCategorized": "EFB Access Defer Invalidation",
+     "info": "Defer EFB cache invalidation.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_efb_access_tile_size",
+     "label": "Graphics > Hacks > EFB Access Tile Size",
+     "labelCategorized": "EFB Access Tile Size",
+     "info": "EFB access granularity.",
+     "values": [
+      "1",
+      "4",
+      "8",
+      "16",
+      "32",
+      "64"
+     ],
+     "labels": [
+      "1 (per-pixel, slowest/most accurate)",
+      "4",
+      "8",
+      "16",
+      "32",
+      "64 (default)"
+     ],
+     "default": "64"
+    },
+    {
+     "key": "dolphin_bbox_enabled",
+     "label": "Graphics > Hacks > Bounding Box",
+     "labelCategorized": "Bounding Box",
+     "info": "Emulate bounding box hardware. Required for Paper Mario TTYD.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_force_progressive",
+     "label": "Graphics > Hacks > Force Progressive",
+     "labelCategorized": "Force Progressive",
+     "info": "Force progressive scan.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_efb_to_texture",
+     "label": "Graphics > Hacks > Skip EFB Copy to RAM",
+     "labelCategorized": "Skip EFB Copy to RAM",
+     "info": "Store EFB in texture memory.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_xfb_to_texture_enable",
+     "label": "Graphics > Hacks > Skip XFB Copy to RAM",
+     "labelCategorized": "Skip XFB Copy to RAM",
+     "info": "Store XFB in texture memory.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_efb_to_vram",
+     "label": "Graphics > Hacks > Disable EFB to VRAM",
+     "labelCategorized": "Disable EFB to VRAM",
+     "info": "Disable EFB VRAM copies.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_defer_efb_copies",
+     "label": "Graphics > Hacks > Defer EFB Copies",
+     "labelCategorized": "Defer EFB Copies",
+     "info": "Defer EFB copies until needed.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_immediate_xfb",
+     "label": "Graphics > Hacks > Immediate XFB",
+     "labelCategorized": "Immediate XFB",
+     "info": "Display XFB immediately.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_skip_dupe_frames",
+     "label": "Graphics > Hacks > Skip Duplicate Frames",
+     "labelCategorized": "Skip Duplicate Frames",
+     "info": "Don't present duplicate frames.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_early_xfb_output",
+     "label": "Graphics > Hacks > Early XFB Output",
+     "labelCategorized": "Early XFB Output",
+     "info": "Output XFB early.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_efb_scaled_copy",
+     "label": "Graphics > Hacks > EFB Scaled Copy",
+     "labelCategorized": "EFB Scaled Copy",
+     "info": "Scale EFB copy by IR.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_efb_emulate_format_changes",
+     "label": "Graphics > Hacks > EFB Emulate Format Changes",
+     "labelCategorized": "EFB Emulate Format Changes",
+     "info": "Emulate EFB format changes (needed for some effects).",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_vertex_rounding",
+     "label": "Graphics > Hacks > Vertex Rounding",
+     "labelCategorized": "Vertex Rounding",
+     "info": "Round vertex positions to avoid gaps.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_vi_skip",
+     "label": "Graphics > Hacks > VI Skip",
+     "labelCategorized": "VI Skip",
+     "info": "Skip VI updates to improve performance.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_fast_texture_sampling",
+     "label": "Graphics > Hacks > Fast Texture Sampling",
+     "labelCategorized": "Fast Texture Sampling",
+     "info": "Use faster but less accurate texture sampling.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    }
+   ]
+  },
+  {
+   "key": "graphics_gamespecific",
+   "label": "Graphics > Game Specific",
+   "info": "Configure game specific settings.",
+   "items": [
+    {
+     "key": "dolphin_per_queries_enable",
+     "label": "Graphics > Game Specific > Performance Queries",
+     "labelCategorized": "Performance Queries",
+     "info": "Enable performance queries.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "wiimote",
+   "label": "Wiimote IR / Gyro / Swing",
+   "info": "Configure Wiimote infrared pointer, gyro and swing settings.",
+   "items": [
+    {
+     "key": "dolphin_hotkey_sideways_toggle",
+     "label": "WiiMote Sideways > Toggle Button",
+     "labelCategorized": "Sideways Toggle Button",
+     "info": "Button used to toggle sideways mode. Can be disabled.",
+     "values": [
+      "Disabled",
+      "L3",
+      "R3",
+      "L1",
+      "R1",
+      "L2",
+      "R2",
+      "A",
+      "B",
+      "X",
+      "Y",
+      "Start",
+      "Select"
+     ],
+     "labels": [
+      "Disabled",
+      "L3 (Default)",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "L3"
+    },
+    {
+     "key": "dolphin_hotkey_upright_toggle",
+     "label": "WiiMote Upright > Toggle Button",
+     "labelCategorized": "Upright Toggle Button",
+     "info": "Button used to toggle upright mode. Can be disabled.",
+     "values": [
+      "Disabled",
+      "L3",
+      "R3",
+      "L1",
+      "R1",
+      "L2",
+      "R2",
+      "A",
+      "B",
+      "X",
+      "Y",
+      "Start",
+      "Select"
+     ],
+     "labels": [
+      "Disabled",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "Disabled"
+    },
+    {
+     "key": "dolphin_ir_mode",
+     "label": "Wiimote IR > Wiimote IR Mode",
+     "labelCategorized": "Wiimote IR Mode",
+     "info": "Control method for Wiimote pointer.",
+     "values": [
+      "0",
+      "1",
+      "2"
+     ],
+     "labels": [
+      "Right Stick controls pointer (relative)",
+      "Right Stick controls pointer (absolute)",
+      "Mouse controls pointer"
+     ],
+     "default": "1"
+    },
+    {
+     "key": "dolphin_ir_offset",
+     "label": "Wiimote IR > Wiimote IR Vertical Offset",
+     "labelCategorized": "Wiimote IR Vertical Offset",
+     "info": "Adjust vertical center of Wiimote pointer.",
+     "values": [
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "20",
+      "21",
+      "22",
+      "23",
+      "24",
+      "25",
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31",
+      "32",
+      "33",
+      "34",
+      "35",
+      "36",
+      "37",
+      "38",
+      "39",
+      "40",
+      "41",
+      "42",
+      "43",
+      "44",
+      "45",
+      "46",
+      "47",
+      "48",
+      "49",
+      "50",
+      "-50",
+      "-49",
+      "-48",
+      "-47",
+      "-46",
+      "-45",
+      "-44",
+      "-43",
+      "-42",
+      "-41",
+      "-40",
+      "-39",
+      "-38",
+      "-37",
+      "-36",
+      "-35",
+      "-34",
+      "-33",
+      "-32",
+      "-31",
+      "-30",
+      "-29",
+      "-28",
+      "-27",
+      "-26",
+      "-25",
+      "-24",
+      "-23",
+      "-22",
+      "-21",
+      "-20",
+      "-19",
+      "-18",
+      "-17",
+      "-16",
+      "-15",
+      "-14",
+      "-13",
+      "-12",
+      "-11",
+      "-10",
+      "-9",
+      "-8",
+      "-7",
+      "-6",
+      "-5",
+      "-4",
+      "-3",
+      "-2",
+      "-1",
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "0 (Center)",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "dolphin_ir_yaw",
+     "label": "Wiimote IR > Wiimote IR Total Yaw",
+     "labelCategorized": "Wiimote IR Total Yaw",
+     "info": "Horizontal field of view for Wiimote pointer.",
+     "values": [
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "20",
+      "21",
+      "22",
+      "23",
+      "24",
+      "25",
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31",
+      "32",
+      "33",
+      "34",
+      "35",
+      "36",
+      "37",
+      "38",
+      "39",
+      "40",
+      "41",
+      "42",
+      "43",
+      "44",
+      "45",
+      "46",
+      "47",
+      "48",
+      "49",
+      "50",
+      "51",
+      "52",
+      "53",
+      "54",
+      "55",
+      "56",
+      "57",
+      "58",
+      "59",
+      "60",
+      "61",
+      "62",
+      "63",
+      "64",
+      "65",
+      "66",
+      "67",
+      "68",
+      "69",
+      "70",
+      "71",
+      "72",
+      "73",
+      "74",
+      "75",
+      "76",
+      "77",
+      "78",
+      "79",
+      "80",
+      "81",
+      "82",
+      "83",
+      "84",
+      "85",
+      "86",
+      "87",
+      "88",
+      "89",
+      "90",
+      "91",
+      "92",
+      "93",
+      "94",
+      "95",
+      "96",
+      "97",
+      "98",
+      "99",
+      "100",
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "25 (Default)",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "25"
+    },
+    {
+     "key": "dolphin_ir_pitch",
+     "label": "Wiimote IR > Wiimote IR Total Pitch",
+     "labelCategorized": "Wiimote IR Total Pitch",
+     "info": "Vertical field of view for Wiimote pointer.",
+     "values": [
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "20",
+      "21",
+      "22",
+      "23",
+      "24",
+      "25",
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31",
+      "32",
+      "33",
+      "34",
+      "35",
+      "36",
+      "37",
+      "38",
+      "39",
+      "40",
+      "41",
+      "42",
+      "43",
+      "44",
+      "45",
+      "46",
+      "47",
+      "48",
+      "49",
+      "50",
+      "51",
+      "52",
+      "53",
+      "54",
+      "55",
+      "56",
+      "57",
+      "58",
+      "59",
+      "60",
+      "61",
+      "62",
+      "63",
+      "64",
+      "65",
+      "66",
+      "67",
+      "68",
+      "69",
+      "70",
+      "71",
+      "72",
+      "73",
+      "74",
+      "75",
+      "76",
+      "77",
+      "78",
+      "79",
+      "80",
+      "81",
+      "82",
+      "83",
+      "84",
+      "85",
+      "86",
+      "87",
+      "88",
+      "89",
+      "90",
+      "91",
+      "92",
+      "93",
+      "94",
+      "95",
+      "96",
+      "97",
+      "98",
+      "99",
+      "100",
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "25 (Default)",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "25"
+    },
+    {
+     "key": "dolphin_ir_deadzone",
+     "label": "Wiimote IR > Wiimote IR Deadzone",
+     "labelCategorized": "IR Deadzone",
+     "info": "Amount of small IR‑cursor movement to ignore (0–50%).",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "20",
+      "21",
+      "22",
+      "23",
+      "24",
+      "25",
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31",
+      "32",
+      "33",
+      "34",
+      "35",
+      "36",
+      "37",
+      "38",
+      "39",
+      "40",
+      "41",
+      "42",
+      "43",
+      "44",
+      "45",
+      "46",
+      "47",
+      "48",
+      "49",
+      "50"
+     ],
+     "labels": [
+      "0% (No Deadzone)",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "dolphin_ir_modifier",
+     "label": "WiiMote IR > Modifier Button",
+     "labelCategorized": "IR Modifier Button",
+     "info": "Button used as a modifier for IR control. With no modifier selected, IR is always active with right thumbstick.",
+     "values": [
+      "None",
+      "L3",
+      "R3",
+      "L1",
+      "R1",
+      "L2",
+      "R2",
+      "A",
+      "B",
+      "X",
+      "Y",
+      "Start",
+      "Select"
+     ],
+     "labels": [
+      "None (Default)",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "None"
+    },
+    {
+     "key": "dolphin_swing_modifier",
+     "label": "WiiMote Swing > Modifier Button",
+     "labelCategorized": "Swing Modifier Button",
+     "info": "Button to hold while using right thumbstick to activate swing. OFF turns off swing. Selecting none will allow free use of right thumb stick to swing (It will automatically filter out L3).",
+     "values": [
+      "Disabled",
+      "None",
+      "L3",
+      "R3",
+      "L1",
+      "R1",
+      "L2",
+      "R2",
+      "A",
+      "B",
+      "X",
+      "Y",
+      "Start",
+      "Select"
+     ],
+     "labels": [
+      "Disabled",
+      "None",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "Disabled"
+    },
+    {
+     "key": "dolphin_swing_angle",
+     "label": "Wiimote Swing > Angle",
+     "labelCategorized": "Swing Angle",
+     "info": "Rotation applied at the extremities of a swing (1-180°).",
+     "values": [
+      "1",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "100",
+      "110",
+      "120",
+      "130",
+      "140",
+      "150",
+      "160",
+      "170",
+      "180"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "90° (Default)",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "90"
+    },
+    {
+     "key": "dolphin_ir_passthrough",
+     "label": "Wiimote IR > Wiimote IR Passthrough",
+     "labelCategorized": "Wiimote IR Passthrough",
+     "info": "Take the Wiimote camera's view of the sensor bar straight from the frontend, instead of deriving it from a cursor position. The frontend supplies up to four IR objects on pointer indices 1-4; Wiimote IR Mode, Total Yaw, Total Pitch and Vertical Offset are all bypassed. For frontends that know the real geometry (a VR room, a tracked light gun) this is exact, and it carries roll and distance, which a cursor cannot. Leave off for a mouse or a gamepad.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "retroarch_core",
+   "label": "RetroArch Core",
+   "info": "Configure settings which are specific to the RetroArch core and do not exist in dolphin standlone.",
+   "items": [
+    {
+     "key": "dolphin_cheats_import",
+     "label": "RetroArch Core > Automatically Import Cheats into RetroArch",
+     "labelCategorized": "Automatically Import Cheats into RetroArch",
+     "info": "Import dolphin ini files into RetroArch. Restart core to take effect.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_save_load_settings",
+     "label": "RetroArch core > Load & Prevent Save Settings",
+     "labelCategorized": "Load & Prevent Save Settings",
+     "info": "Choose whether to load core settings from GCPad.ini/WiimoteNew.ini and also prevent saving to them. Core options may no longer be reflected correctly in RetroArch interface. Editing ini files incorrectly will likely crash the emulator.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_libretro_vfs_enabled",
+     "label": "RetroArch core > Enable Virtual File System (VFS)",
+     "labelCategorized": "Enable Virtual File System (VFS)",
+     "info": "Enable VFS for SAF/SMB etc. Requires core RESTART. This feature is NEW and EXPERIMENTAL. Backup your saves regularly.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "dolphin_default_mouse_bindings_enabled",
+     "label": "RetroArch core > Enable Default Mouse Bindings",
+     "labelCategorized": "Enable Default Mouse Bindings",
+     "info": "Enable default Mouse Bindings, disable for more control on bindings.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    }
+   ]
+  },
+  {
+   "key": "wiimote_dsu",
+   "label": "Wiimote (DSU)",
+   "info": "Configure DSU client for DualShock motion data.",
+   "items": [
+    {
+     "key": "dolphin_dsu_enabled",
+     "label": "Wiimote (DSU) > Enable DSU Client",
+     "labelCategorized": "Enable DSU Client",
+     "info": "Enable DSU client for DualShock motion data. Restart core to take effect.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "dolphin_dsu_ip_octet1",
+     "label": "Wiimote (DSU) > Server IP Octet 1",
+     "labelCategorized": "Server IP Octet 1",
+     "info": "First octet of DSU server IP. e.g. for 192.168.1.10 set this to 192.",
+     "values": [
+      "127",
+      "192"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "127"
+    },
+    {
+     "key": "dolphin_dsu_ip_octet2",
+     "label": "Wiimote (DSU) > Server IP Octet 2",
+     "labelCategorized": "Server IP Octet 2",
+     "info": "Second octet of DSU server IP. e.g. for 192.168.1.10 set this to 168.",
+     "values": [
+      "0",
+      "168"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "dolphin_dsu_ip_octet3",
+     "label": "Wiimote (DSU) > Server IP Octet 3",
+     "labelCategorized": "Server IP Octet 3",
+     "info": "Third octet of DSU server IP. e.g. for 192.168.1.10 set this to 1.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "20",
+      "21",
+      "22",
+      "23",
+      "24",
+      "25",
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31",
+      "32",
+      "33",
+      "34",
+      "35",
+      "36",
+      "37",
+      "38",
+      "39",
+      "40",
+      "41",
+      "42",
+      "43",
+      "44",
+      "45",
+      "46",
+      "47",
+      "48",
+      "49",
+      "50",
+      "51",
+      "52",
+      "53",
+      "54",
+      "55",
+      "56",
+      "57",
+      "58",
+      "59",
+      "60",
+      "61",
+      "62",
+      "63",
+      "64",
+      "65",
+      "66",
+      "67",
+      "68",
+      "69",
+      "70",
+      "71",
+      "72",
+      "73",
+      "74",
+      "75",
+      "76",
+      "77",
+      "78",
+      "79",
+      "80",
+      "81",
+      "82",
+      "83",
+      "84",
+      "85",
+      "86",
+      "87",
+      "88",
+      "89",
+      "90",
+      "91",
+      "92",
+      "93",
+      "94",
+      "95",
+      "96",
+      "97",
+      "98",
+      "99",
+      "100",
+      "101",
+      "102",
+      "103",
+      "104",
+      "105",
+      "106",
+      "107",
+      "108",
+      "109",
+      "110",
+      "111",
+      "112",
+      "113",
+      "114",
+      "115",
+      "116",
+      "117",
+      "118",
+      "119",
+      "120",
+      "121",
+      "122",
+      "123",
+      "124"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "dolphin_dsu_ip_octet4",
+     "label": "Wiimote (DSU) > Server IP Octet 4",
+     "labelCategorized": "Server IP Octet 4",
+     "info": "Fourth octet of DSU server IP. e.g. for 192.168.1.10 set this to 10.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "20",
+      "21",
+      "22",
+      "23",
+      "24",
+      "25",
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31",
+      "32",
+      "33",
+      "34",
+      "35",
+      "36",
+      "37",
+      "38",
+      "39",
+      "40",
+      "41",
+      "42",
+      "43",
+      "44",
+      "45",
+      "46",
+      "47",
+      "48",
+      "49",
+      "50",
+      "51",
+      "52",
+      "53",
+      "54",
+      "55",
+      "56",
+      "57",
+      "58",
+      "59",
+      "60",
+      "61",
+      "62",
+      "63",
+      "64",
+      "65",
+      "66",
+      "67",
+      "68",
+      "69",
+      "70",
+      "71",
+      "72",
+      "73",
+      "74",
+      "75",
+      "76",
+      "77",
+      "78",
+      "79",
+      "80",
+      "81",
+      "82",
+      "83",
+      "84",
+      "85",
+      "86",
+      "87",
+      "88",
+      "89",
+      "90",
+      "91",
+      "92",
+      "93",
+      "94",
+      "95",
+      "96",
+      "97",
+      "98",
+      "99",
+      "100",
+      "101",
+      "102",
+      "103",
+      "104",
+      "105",
+      "106",
+      "107",
+      "108",
+      "109",
+      "110",
+      "111",
+      "112",
+      "113",
+      "114",
+      "115",
+      "116",
+      "117",
+      "118",
+      "119",
+      "120",
+      "121",
+      "122",
+      "123",
+      "124"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "1"
+    },
+    {
+     "key": "dolphin_dsu_port",
+     "label": "Wiimote (DSU) > Server Port",
+     "labelCategorized": "Server Port",
+     "info": "UDP port of DSU server. Default is 26760.",
+     "values": [
+      "26760",
+      "26761",
+      "26762",
+      "26763",
+      "26764",
+      "26765"
+     ],
+     "labels": [
+      "26760 (default)",
+      "26761",
+      "26762",
+      "26763",
+      "26764",
+      "26765"
+     ],
+     "default": "26760"
+    }
+   ]
+  }
+ ],
+ "soSha256": "4fb4f1bb45addd048b87267b87b47c8230308939c785b6ed59147512205a1085",
+ "probedAt": "2026-10-13"
+}

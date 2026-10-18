@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Logo by Dan Patrick (Platform Logos, Professionally Redrawn). Never to be sold. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="268dp"
+    android:height="128dp"
+    android:viewportWidth="3839"
+    android:viewportHeight="1836.3">
+    <path
+        android:pathData="M 2649.3 209.1 C 2649.3 324.4 2746.4 417.9 2865.8 417.9 C 2990 417.9 3087.5 326.3 3087.5 209.1 C 3087.5 91.8 2990 0 2865.9 0 C 2746.4 0 2649.3 93.7 2649.3 209.1"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M 2685.3 627.2 L 3054.9 627.2 L 3054.9 1823.2 L 2685.3 1823.2 Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M 3400.8 209.1 C 3400.8 324.4 3498 417.9 3617.4 417.9 C 3741.6 417.9 3839 326.3 3839 209.1 C 3839 91.8 3741.7 0 3617.4 0 C 3498 0 3400.8 93.7 3400.8 209.1"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M 3436.6 627.2 L 3806.4 627.2 L 3806.4 1823.2 L 3436.6 1823.2 Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M 2097.5 100.6 L 1773.3 1371.4 C 1773.3 1371.4 1525.5 417.5 1485.1 282.2 C 1444.8 146.7 1361.8 87.3 1244.1 87.3 C 1126.4 87.3 1043.3 146.7 1002.9 282.2 C 962.8 417.5 714.8 1371.4 714.8 1371.4 L 390.6 100.6 L 0 100.6 C 0 100.6 375.1 1456.5 426.1 1613.5 C 465.8 1736.1 559.7 1836.3 699 1836.3 C 858.3 1836.3 932.7 1720.2 967.2 1613.5 C 1001.3 1507.5 1244.1 611.9 1244.1 611.9 C 1244.1 611.9 1487 1507.5 1521 1613.5 C 1555.5 1720.2 1629.9 1836.3 1789.1 1836.3 C 1928.5 1836.3 2022.3 1736.1 2062.2 1613.5 C 2113.1 1456.5 2487.9 100.6 2487.9 100.6 L 2097.5 100.6 Z"
+        android:fillColor="#FFFFFFFF" />
+</vector>

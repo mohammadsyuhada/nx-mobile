@@ -1,0 +1,2 @@
+{"core":"fake_core_vars","emulator":"Fake Vars","sections":[
+{"key":"","label":"","info":"","items":[{"key":"fake_mode","label":"Mode","labelCategorized":"","info":"","values":["auto","manual"],"labels":["",""],"default":"auto"}]}]}

@@ -1,0 +1,1203 @@
+{
+ "core": "fceumm",
+ "emulator": "FCEUmm",
+ "sections": [
+  {
+   "key": "",
+   "label": "",
+   "info": "",
+   "items": [
+    {
+     "key": "fceumm_show_adv_system_options",
+     "label": "Show Advanced System Options",
+     "labelCategorized": "",
+     "info": "Show advanced system options and tweaks.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fceumm_show_adv_sound_options",
+     "label": "Show Advanced Sound Options",
+     "labelCategorized": "",
+     "info": "Show advanced sound options and tweaks.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "system",
+   "label": "System",
+   "info": "Change region and hardware add-on settings.",
+   "items": [
+    {
+     "key": "fceumm_region",
+     "label": "Region",
+     "labelCategorized": "",
+     "info": "Force core to use NTSC, PAL or Dendy region timings.",
+     "values": [
+      "Auto",
+      "NTSC",
+      "PAL",
+      "Dendy"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "Auto"
+    },
+    {
+     "key": "fceumm_game_genie",
+     "label": "Game Genie Add-On (Restart Required)",
+     "labelCategorized": "",
+     "info": "Enable emulation of a Game Genie add-on cartridge, allowing cheat codes to be entered when launching games. The Game Genie ROM file 'gamegenie.nes' must be present in the frontend's system directory. Does not apply to FDS or arcade content.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "video",
+   "label": "Video",
+   "info": "Change aspect ratio, display cropping, color palette and video filter options.",
+   "items": [
+    {
+     "key": "fceumm_aspect",
+     "label": "Aspect Ratio",
+     "labelCategorized": "",
+     "info": "Choose preferred aspect ratio.",
+     "values": [
+      "8:7 PAR",
+      "4:3",
+      "PP"
+     ],
+     "labels": [
+      "",
+      "",
+      "Pixel Perfect"
+     ],
+     "default": "8:7 PAR"
+    },
+    {
+     "key": "fceumm_overscan_h_left",
+     "label": "Crop Horizontal Left Overscan",
+     "labelCategorized": "",
+     "info": "Removes pixels from left side of the screen to simulate overscan seen on standard CRT televisions.",
+     "values": [
+      "0",
+      "4",
+      "8",
+      "12",
+      "16"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "fceumm_overscan_h_right",
+     "label": "Crop Horizontal Right Overscan",
+     "labelCategorized": "",
+     "info": "Removes pixels from right side of the screen to simulate overscan seen on standard CRT televisions.",
+     "values": [
+      "0",
+      "4",
+      "8",
+      "12",
+      "16"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "fceumm_overscan_v_top",
+     "label": "Crop Vertical Top Overscan",
+     "labelCategorized": "",
+     "info": "Removes pixels from the top of the screen to simulate overscan seen on standard CRT televisions.",
+     "values": [
+      "0",
+      "4",
+      "8",
+      "12",
+      "16",
+      "20",
+      "24"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "8"
+    },
+    {
+     "key": "fceumm_overscan_v_bottom",
+     "label": "Crop Vertical Bottom Overscan",
+     "labelCategorized": "",
+     "info": "Removes pixels from the bottom of the screen to simulate overscan seen on standard CRT televisions.",
+     "values": [
+      "0",
+      "4",
+      "8",
+      "12",
+      "16",
+      "20",
+      "24"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "8"
+    },
+    {
+     "key": "fceumm_palette",
+     "label": "Color Palette",
+     "labelCategorized": "",
+     "info": "Choose from pre-generated palettes, a custom 64x3 palette from file or raw format (needs to use a nes-decoder shader).",
+     "values": [
+      "default",
+      "asqrealc",
+      "restored-wii-vc",
+      "wii-vc",
+      "rgb",
+      "yuv-v3",
+      "unsaturated-final",
+      "sony-cxa2025as-us",
+      "pal",
+      "bmf-final2",
+      "bmf-final3",
+      "smooth-fbx",
+      "composite-direct-fbx",
+      "pvm-style-d93-fbx",
+      "ntsc-hardware-fbx",
+      "nes-classic-fbx-fs",
+      "nescap",
+      "wavebeam",
+      "digital-prime-fbx",
+      "magnum-fbx",
+      "smooth-v2-fbx",
+      "nes-classic-fbx",
+      "royaltea",
+      "mugicha",
+      "raw",
+      "custom"
+     ],
+     "labels": [
+      "Default",
+      "AspiringSquire's Real",
+      "Restored Wii VC",
+      "Wii Virtual Console",
+      "Nintendo RGB PPU",
+      "FBX's YUV-V3",
+      "FBX's Unsaturated-Final",
+      "Sony CXA2025AS US",
+      "PAL",
+      "BMF's Final 2",
+      "BMF's Final 3",
+      "FBX's Smooth",
+      "FBX's Composite Direct",
+      "FBX's PVM Style D93",
+      "FBX's NTSC Hardware",
+      "FBX's NES Classic (fixed)",
+      "RGBSource's NESCAP",
+      "nakedarthur's Wavebeam",
+      "FBX's Digital Prime",
+      "FBX's Magnum",
+      "FBX's Smooth V2",
+      "FBX's NES Classic",
+      "Royaltea (PVM-2530)",
+      "Mugicha",
+      "Raw",
+      "Custom"
+     ],
+     "default": "default"
+    },
+    {
+     "key": "fceumm_ntsc_filter",
+     "label": "NTSC Filter",
+     "labelCategorized": "",
+     "info": "Blargg's NTSC filters are used to replicate RF, Composite, S-Video, and RGB cable signals.",
+     "values": [
+      "disabled",
+      "composite",
+      "svideo",
+      "rgb",
+      "monochrome"
+     ],
+     "labels": [
+      "",
+      "Composite",
+      "S-Video",
+      "RGB",
+      "Monochrome"
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "audio",
+   "label": "Audio",
+   "info": "Change sound quality, volume, channel enable settings.",
+   "items": [
+    {
+     "key": "fceumm_sndrate_hint",
+     "label": "Sound Samplerate (Hint)",
+     "labelCategorized": "",
+     "info": "The NES has no sample-based audio hardware; sound is synthesized in realtime, so there is no fixed output samplerate. Select the rate the core generates audio at. Higher rates lower latency and reduce aliasing and low-pass 'smearing' from frontend resampling, at a small performance cost. 'Auto' picks whichever supported rate is closest to the frontend's target output rate.",
+     "values": [
+      "Auto",
+      "32KHz",
+      "44KHz",
+      "48KHz",
+      "96KHz"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "Auto"
+    },
+    {
+     "key": "fceumm_sndquality",
+     "label": "Sound Quality",
+     "labelCategorized": "",
+     "info": "Enable higher quality sound. Increases performance requirements.",
+     "values": [
+      "Low",
+      "High",
+      "Very High"
+     ],
+     "labels": [
+      "",
+      "",
+      ""
+     ],
+     "default": "Low"
+    },
+    {
+     "key": "fceumm_sndlowpass",
+     "label": "Audio RF Filter",
+     "labelCategorized": "",
+     "info": "Apply a low pass audio filter to simulate the 'muted' sound of the NES when connected to a television via the RF modulator.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fceumm_removetrianglenoise",
+     "label": "Reduce Triangle Channel Popping",
+     "labelCategorized": "",
+     "info": "Mute the triangle channel when its period drops into the ultrasonic range (period <= 3, > ~12 kHz at NTSC).  Eliminates the audible popping some games (Castlevania II: Simon's Quest, Jackal, etc.) produce in High / Very High sound quality, where the DAC reconstruction filter would otherwise fold the ultrasonic content back into the audible range.  Low quality is unaffected (it already silences ultrasonic triangle output).",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fceumm_reducedmcpopping",
+     "label": "Reduce DMC Channel Popping",
+     "labelCategorized": "",
+     "info": "Smooth direct writes to the DMC DAC register ($4011) by stepping the DAC only halfway toward each new value.  Reduces the audible click when games (Castlevania II: Simon's Quest, etc.) pulse the DAC for manual sample playback.  Normal DPCM bit-stream sample playback is unaffected.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fceumm_sndstereodelay",
+     "label": "Stereo Sound Effect",
+     "labelCategorized": "",
+     "info": "Enable a fake stereo sound effect by delaying the right audio channel when upmixing the mono signal output from the NES.",
+     "values": [
+      "disabled",
+      "01_ms_delay",
+      "02_ms_delay",
+      "03_ms_delay",
+      "04_ms_delay",
+      "05_ms_delay",
+      "06_ms_delay",
+      "07_ms_delay",
+      "08_ms_delay",
+      "09_ms_delay",
+      "10_ms_delay",
+      "11_ms_delay",
+      "12_ms_delay",
+      "13_ms_delay",
+      "14_ms_delay",
+      "15_ms_delay",
+      "16_ms_delay",
+      "17_ms_delay",
+      "18_ms_delay",
+      "19_ms_delay",
+      "20_ms_delay",
+      "21_ms_delay",
+      "22_ms_delay",
+      "23_ms_delay",
+      "24_ms_delay",
+      "25_ms_delay",
+      "26_ms_delay",
+      "27_ms_delay",
+      "28_ms_delay",
+      "29_ms_delay",
+      "30_ms_delay",
+      "31_ms_delay",
+      "32_ms_delay"
+     ],
+     "labels": [
+      "",
+      "1ms Delay",
+      "2ms Delay",
+      "3ms Delay",
+      "4ms Delay",
+      "5ms Delay",
+      "6ms Delay",
+      "7ms Delay",
+      "8ms Delay",
+      "9ms Delay",
+      "10ms Delay",
+      "11ms Delay",
+      "12ms Delay",
+      "13ms Delay",
+      "14ms Delay",
+      "15ms Delay (Default)",
+      "16ms Delay",
+      "17ms Delay",
+      "18ms Delay",
+      "19ms Delay",
+      "20ms Delay",
+      "21ms Delay",
+      "22ms Delay",
+      "23ms Delay",
+      "24ms Delay",
+      "25ms Delay",
+      "26ms Delay",
+      "27ms Delay",
+      "28ms Delay",
+      "29ms Delay",
+      "30ms Delay",
+      "31ms Delay",
+      "32ms Delay"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fceumm_swapduty",
+     "label": "Swap Audio Duty Cycles",
+     "labelCategorized": "Swap Duty Cycles",
+     "info": "Simulates the sound from famiclones that have the pulse wave channels duty cycle bits reversed.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fceumm_sndvolume",
+     "label": "Master Volume",
+     "labelCategorized": "",
+     "info": "Change master volume level.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10"
+     ],
+     "labels": [
+      "0%",
+      "10%",
+      "20%",
+      "30%",
+      "40%",
+      "50%",
+      "60%",
+      "70%",
+      "80%",
+      "90%",
+      "100%"
+     ],
+     "default": "7"
+    },
+    {
+     "key": "fceumm_apu_1",
+     "label": "Audio Channel 1 (Square 1)",
+     "labelCategorized": "Channel 1 (Square 1)",
+     "info": "Enables or disables pulse wave generator audio output 1.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "fceumm_apu_2",
+     "label": "Audio Channel 2 (Square 2)",
+     "labelCategorized": "Channel 2 (Square 2)",
+     "info": "Enables or disables pulse wave generator audio output 2.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "fceumm_apu_3",
+     "label": "Audio Channel 3 (Triangle)",
+     "labelCategorized": "Channel 3 (Triangle)",
+     "info": "Enables or disables triangle wave generator audio output.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "fceumm_apu_4",
+     "label": "Audio Channel 4 (Noise)",
+     "labelCategorized": "Channel 4 (Noise)",
+     "info": "Enables or disables noise generator audio output.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "fceumm_apu_5",
+     "label": "Audio Channel 5 (PCM)",
+     "labelCategorized": "Channel 5 (PCM)",
+     "info": "Enables or disables delta modulation channel audio output.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "fceumm_apu_fds",
+     "label": "Channel Volume (FDS)",
+     "labelCategorized": "",
+     "info": "Scale Famicom Disk System 2C33 wavetable expansion-audio output (0 = mute, 100 = unscaled).",
+     "values": [
+      "0",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "fceumm_apu_s5b",
+     "label": "Channel Volume (S5B)",
+     "labelCategorized": "",
+     "info": "Scale Sunsoft 5B (YM2149F) expansion-audio output (0 = mute, 100 = unscaled).",
+     "values": [
+      "0",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "fceumm_apu_n163",
+     "label": "Channel Volume (N163)",
+     "labelCategorized": "",
+     "info": "Scale Namco 163 expansion-audio output (0 = mute, 100 = unscaled).",
+     "values": [
+      "0",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "fceumm_apu_vrc6",
+     "label": "Channel Volume (VRC6)",
+     "labelCategorized": "",
+     "info": "Scale Konami VRC6 expansion-audio output (0 = mute, 100 = unscaled).",
+     "values": [
+      "0",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "fceumm_apu_vrc7",
+     "label": "Channel Volume (VRC7)",
+     "labelCategorized": "",
+     "info": "Scale Konami VRC7 (YM2413-clone) expansion-audio output (0 = mute, 100 = unscaled).",
+     "values": [
+      "0",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "fceumm_apu_mmc5",
+     "label": "Channel Volume (MMC5)",
+     "labelCategorized": "",
+     "info": "Scale Nintendo MMC5 PCM + square expansion-audio output (0 = mute, 100 = unscaled).",
+     "values": [
+      "0",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    }
+   ]
+  },
+  {
+   "key": "input",
+   "label": "Input",
+   "info": "Change turbo, Arkanoid and light gun settings.",
+   "items": [
+    {
+     "key": "fceumm_turbo_enable",
+     "label": "Turbo Enable",
+     "labelCategorized": "",
+     "info": "Enables or disables turbo buttons.",
+     "values": [
+      "None",
+      "Player 1",
+      "Player 2",
+      "Both"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "None"
+    },
+    {
+     "key": "fceumm_turbo_delay",
+     "label": "Turbo Delay (in frames)",
+     "labelCategorized": "",
+     "info": "Repeat rate of turbo buttons in frames.",
+     "values": [
+      "1",
+      "2",
+      "3",
+      "5",
+      "10",
+      "15",
+      "30",
+      "60"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "3"
+    },
+    {
+     "key": "fceumm_zapper_mode",
+     "label": "Zapper Mode",
+     "labelCategorized": "",
+     "info": "Selects device to use for Zapper games.",
+     "values": [
+      "clightgun",
+      "stlightgun",
+      "touchscreen",
+      "mouse"
+     ],
+     "labels": [
+      "Crosshair light gun",
+      "Sequential Targets light gun",
+      "Touchscreen",
+      "Mouse"
+     ],
+     "default": "clightgun"
+    },
+    {
+     "key": "fceumm_show_crosshair",
+     "label": "Show Zapper Crosshair",
+     "labelCategorized": "",
+     "info": "Shows or hides on-screen crosshairs when using a Zapper.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "fceumm_zapper_tolerance",
+     "label": "Zapper Tolerance",
+     "labelCategorized": "",
+     "info": "Sets how many pixels from target area is on target.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "20"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "6"
+    },
+    {
+     "key": "fceumm_zapper_trigger",
+     "label": "Invert Zapper Trigger Signal",
+     "labelCategorized": "",
+     "info": "Inverts trigger logic when using a Zapper. Disabling it resembles original hardware behavior.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "fceumm_zapper_sensor",
+     "label": "Invert Zapper Sensor Signal",
+     "labelCategorized": "",
+     "info": "Inverts sensor logic when using a Zapper (Sequential Targets Light gun mode only). Disabling it resembles original NES/FC hardware behavior.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "fceumm_arkanoid_mode",
+     "label": "Arkanoid Mode",
+     "labelCategorized": "",
+     "info": "Selects device to use for Arkanoid games.",
+     "values": [
+      "abs_mouse",
+      "mouse",
+      "stelladaptor",
+      "touchscreen"
+     ],
+     "labels": [
+      "Absolute mouse",
+      "Mouse",
+      "Stelladaptor",
+      "Touchscreen"
+     ],
+     "default": "mouse"
+    },
+    {
+     "key": "fceumm_mouse_sensitivity",
+     "label": "Mouse Sensitivity",
+     "labelCategorized": "",
+     "info": "Mouse sensitivity in percent.",
+     "values": [
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100",
+      "110",
+      "120",
+      "130",
+      "140",
+      "150",
+      "160",
+      "170",
+      "180",
+      "190",
+      "200"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "fceumm_up_down_allowed",
+     "label": "Allow Opposing Directions",
+     "labelCategorized": "",
+     "info": "Allows simultaneous UP+DOWN or LEFT+RIGHT button combinations, which can create different effects in some games.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "hacks",
+   "label": "Emulation Hacks",
+   "info": "Change processor overclocking and emulation accuracy settings affecting low-level performance and compatibility.",
+   "items": [
+    {
+     "key": "fceumm_nospritelimit",
+     "label": "No Sprite Limit",
+     "labelCategorized": "",
+     "info": "Removes the 8-per-scanline hardware limit. This reduces sprite flickering but can cause some games to glitch since some use this for effects.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fceumm_overclocking",
+     "label": "Overclock",
+     "labelCategorized": "",
+     "info": "Enables or disables overclocking, which can reduce slowdowns in some games. Postrender method is more compatible with every game, Vblank is more effective for games like Contra Force.",
+     "values": [
+      "disabled",
+      "2x-Postrender",
+      "2x-VBlank"
+     ],
+     "labels": [
+      "",
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "fceumm_ramstate",
+     "label": "RAM Power-On Fill (Restart Required)",
+     "labelCategorized": "",
+     "info": "RAM values on power up. Some games rely on initial RAM values for random number generation as an example.",
+     "values": [
+      "fill $ff",
+      "fill $00",
+      "random"
+     ],
+     "labels": [
+      "$FF",
+      "$00",
+      "Random"
+     ],
+     "default": "fill $ff"
+    }
+   ]
+  }
+ ],
+ "soSha256": "d5f8c455bf8fa2da24d9a6a6cfa093c7798a1b55dba92590e9e52da95fb8a9db",
+ "probedAt": "2026-09-29"
+}

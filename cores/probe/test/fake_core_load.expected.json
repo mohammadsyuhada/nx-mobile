@@ -1,0 +1,2 @@
+{"core":"fake_core_load","emulator":"Fake Load","sections":[
+{"key":"","label":"","info":"","items":[{"key":"fake_cpu","label":"CPU Clock","labelCategorized":"","info":"","values":["100","150"],"labels":["",""],"default":"100"}]}]}

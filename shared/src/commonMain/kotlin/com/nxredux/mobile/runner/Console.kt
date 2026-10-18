@@ -1,0 +1,26 @@
+package com.nxredux.mobile.runner
+
+/**
+ * A console groups the tags that run it. On the handheld a tag is "console + emulator" (`GBA` = gpsp,
+ * `MGBA` = mgba), each with its own Saves/<TAG>/; here saves are one folder per console, Saves/<console tag>/
+ * ([defaultTag], NxPaths.savesDir), and states stay per tag. [tags] are in preference order: the first is the built-in
+ * default (Settings → Default emulators picks another). A folder's tag only names its console: a game runs its own
+ * Emulator pick (`systems.txt`), else the console's Default emulators one, whichever of the console's folders holds it.
+ * [aliases] are folder names that mean this console, lowercase. [extensions] are set explicitly: the extensions this
+ * console's games use, which may be a subset of its cores' (never an archive extension, even for fbneo, whose zip/7z its
+ * core loads as is ([CoreRegistry.loadsArchive]); empty for SGB and FBN, which are reached only by folder, sidecar or
+ * menu). [rawSram]: the battery save is raw SRAM and interchangeable between the console's tags.
+ */
+data class Console(
+    val id: String,
+    val displayName: String,
+    val tags: List<String>,
+    val aliases: Set<String>,
+    val extensions: Set<String>,
+    val rawSram: Boolean,
+) {
+    val defaultTag: String get() = tags.first()
+
+    /** The tag files resolved by console use: [stored] (the user's Default emulators pick) when it is one of [tags], else [defaultTag]. */
+    fun defaultTagFor(stored: String?): String = stored?.takeIf { it in tags } ?: defaultTag
+}

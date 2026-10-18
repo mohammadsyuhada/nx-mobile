@@ -1,0 +1,2 @@
+{"core":"fake_core_v1","emulator":"Fake V1","sections":[
+{"key":"","label":"","info":"","items":[{"key":"fake_a","label":"Option A","labelCategorized":"","info":"","values":["on","off"],"labels":["",""],"default":"off"}]}]}

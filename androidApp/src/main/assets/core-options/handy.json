@@ -1,0 +1,175 @@
+{
+ "core": "handy",
+ "emulator": "Handy",
+ "sections": [
+  {
+   "key": "",
+   "label": "",
+   "info": "",
+   "items": [
+    {
+     "key": "handy_refresh_rate",
+     "label": "Video Refresh Rate",
+     "labelCategorized": "",
+     "info": "Set video update frequency. Internally, the Lynx renders at a variable rate from 0 to 75Hz. Frames that occur between video update events will be dropped. Higher rates may increase video smoothness (depending on actual game frame rate) but can cause tearing on 60Hz displays.",
+     "values": [
+      "50",
+      "60",
+      "75",
+      "100",
+      "120"
+     ],
+     "labels": [
+      "50Hz",
+      "60Hz",
+      "75Hz",
+      "100Hz",
+      "120Hz"
+     ],
+     "default": "60"
+    },
+    {
+     "key": "handy_rot",
+     "label": "Display Rotation",
+     "labelCategorized": "",
+     "info": "Rotate the virtual console screen to achieve the correct layout of 'portrait' oriented games on a conventional (landscape) display.",
+     "values": [
+      "Auto",
+      "None",
+      "270",
+      "180",
+      "90"
+     ],
+     "labels": [
+      "Auto",
+      "Disabled",
+      "Clockwise",
+      "Bottom",
+      "Anticlockwise"
+     ],
+     "default": "Auto"
+    },
+    {
+     "key": "handy_lcd_ghosting",
+     "label": "LCD Ghosting Filter",
+     "labelCategorized": "",
+     "info": "Apply an image 'ghosting' effect by blending multiple successive video frames. Mimics the display characteristics of the Lynx's LCD panel and helps to smooth the appearance of low frame rate games. Higher frame counts improve the effect at the expense of increased performance overheads.",
+     "values": [
+      "disabled",
+      "2frames",
+      "3frames",
+      "4frames"
+     ],
+     "labels": [
+      "",
+      "2 Frames",
+      "3 Frames",
+      "4 Frames"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "handy_overclock",
+     "label": "CPU Overclock Multiplier",
+     "labelCategorized": "",
+     "info": "Higher values can reduce slowdowns in games. WARNING: Can cause glitches and crashes.",
+     "values": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "1"
+    },
+    {
+     "key": "handy_frameskip",
+     "label": "Frameskip",
+     "labelCategorized": "",
+     "info": "Skip frames to avoid audio buffer under-run (crackling). Improves performance at the expense of visual smoothness. 'Auto' skips frames when advised by the frontend. 'Manual' utilizes the 'Frameskip Threshold (%)' setting.",
+     "values": [
+      "disabled",
+      "auto",
+      "manual"
+     ],
+     "labels": [
+      "",
+      "Auto",
+      "Manual"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "handy_frameskip_threshold",
+     "label": "Frameskip Threshold (%)",
+     "labelCategorized": "",
+     "info": "When 'Frameskip' is set to 'Manual', specifies the audio buffer occupancy threshold (percentage) below which frames will be skipped. Higher values reduce the risk of crackling by causing frames to be dropped more frequently.",
+     "values": [
+      "15",
+      "18",
+      "21",
+      "24",
+      "27",
+      "30",
+      "33",
+      "36",
+      "39",
+      "42",
+      "45",
+      "48",
+      "51",
+      "54",
+      "57",
+      "60"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "33"
+    }
+   ]
+  }
+ ],
+ "soSha256": "47e6394757f9f60916f95b7570cb411ccc441878e6b7c5c3c71bcd7f347b254a",
+ "probedAt": "2026-09-29"
+}

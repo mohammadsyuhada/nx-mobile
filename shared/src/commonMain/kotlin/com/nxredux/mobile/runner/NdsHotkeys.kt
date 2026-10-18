@@ -1,0 +1,170 @@
+package com.nxredux.mobile.runner
+
+import com.nxredux.mobile.ui.nx.NxButton
+import kotlin.math.hypot
+import kotlin.math.min
+
+/** A frontend action an NDS input asks for. */
+sealed interface NdsAction {
+    /** R2: the other screen becomes the big one. */
+    data object SwapScreens : NdsAction
+    /** SELECT + Left (-1) / Right (+1): the next layout for the current orientation. */
+    data class CycleLayout(val delta: Int) : NdsAction
+    /** SELECT + Up (-1) / Down (+1): the picture-in-picture inset to the next corner, clockwise. */
+    data class CycleCorner(val delta: Int) : NdsAction
+    /** L2: stylus mode turned on or off. */
+    data class Stylus(val on: Boolean) : NdsAction
+    /** L2 with the landscape pad shown: hide the pad for finger touch. */
+    data object TouchMode : NdsAction
+}
+
+/** [forward]: pass the event on to the core. [action]: what the frontend does. */
+data class NdsDecision(val forward: Boolean, val action: NdsAction? = null)
+
+/** The stylus pen in DS bottom-screen pixels (x 0..255, y 0..191), and whether it touches. */
+data class NdsPen(val x: Float, val y: Float, val pressed: Boolean) {
+    /** In 0..1 of the stacked 256x384 core frame: the bottom half. */
+    val frameX: Float get() = (x + 0.5f) / 256f
+    val frameY: Float get() = 0.5f + (y + 0.5f) / 192f * 0.5f
+}
+
+/**
+ * NX Redux's DS controls (nxredux.com/emulators/nintendo-ds), before the core: R2 swaps screens, SELECT + Left/Right
+ * cycles the layout, SELECT + Up/Down moves the inset, L2 toggles stylus mode, or, while the host says
+ * [touchModeAvailable] (the landscape pad is shown on a touchscreen), asks for touch mode instead. In stylus mode the
+ * d-pad and left stick move a pen on the bottom screen, faster the longer a direction is held (DraStic-like), and A
+ * touches at it. A release always goes where its press went. R2 and L2 never reach the core. Pure: the host feeds events and ticks, and applies actions.
+ */
+class NdsHotkeys {
+    companion object {
+        /** DS pixels per second the moment a direction is pressed. */
+        const val PEN_START_SPEED = 48f
+        /** Speed gained per second a direction is held (px/s²). */
+        const val PEN_ACCEL = 320f
+        /** Top speed, for the d-pad and a full stick (px/s). */
+        const val PEN_MAX_SPEED = 360f
+        const val STICK_DEADZONE = 0.2f
+        private const val MAX_X = 255f
+        private const val MAX_Y = 191f
+        private val START = NdsPen(128f, 96f, pressed = false)
+    }
+
+    var stylus = false
+        private set
+    /**
+     * Host-set ([NdsTouchMode.available]): the landscape on-screen pad is shown on a touchscreen, so L2 asks for
+     * [NdsAction.TouchMode]. Stylus mode wins: while it is on, L2 still turns it off.
+     */
+    var touchModeAvailable: Boolean = false
+    var pen = START
+        private set
+
+    private var selectHeld = false
+    private val consumed = HashSet<NxButton>()   // pressed and kept from the core: their releases are kept too
+    private val held = HashSet<NxButton>()       // pen directions held (stylus mode)
+    private var heldMs = 0L                      // how long a direction has been held
+    private var stickX = 0f
+    private var stickY = 0f
+
+    fun onButton(button: NxButton, down: Boolean): NdsDecision {
+        if (button == NxButton.SELECT) selectHeld = down   // SELECT itself still reaches the core
+        if (!down) {
+            val wasConsumed = consumed.remove(button)
+            if (button.isDirection) {
+                held.remove(button)
+                if (held.isEmpty()) heldMs = 0L
+            }
+            if (button == NxButton.A && wasConsumed) pen = pen.copy(pressed = false)
+            return NdsDecision(forward = !wasConsumed)
+        }
+        val decision = when {
+            button == NxButton.R2 -> NdsDecision(false, NdsAction.SwapScreens)
+            button == NxButton.L2 && touchModeAvailable && !stylus -> NdsDecision(false, NdsAction.TouchMode)
+            button == NxButton.L2 -> {
+                stylus = !stylus
+                resetPen()   // off: lift the pen; on: a stick already held does not move it at once
+                NdsDecision(false, NdsAction.Stylus(stylus))
+            }
+            selectHeld && (button == NxButton.LEFT || button == NxButton.RIGHT) ->
+                NdsDecision(false, NdsAction.CycleLayout(if (button == NxButton.RIGHT) 1 else -1))
+            selectHeld && (button == NxButton.UP || button == NxButton.DOWN) ->
+                NdsDecision(false, NdsAction.CycleCorner(if (button == NxButton.DOWN) 1 else -1))
+            stylus && button.isDirection -> {
+                if (held.isEmpty()) heldMs = 0L
+                held += button
+                NdsDecision(false)
+            }
+            stylus && button == NxButton.A -> {
+                pen = pen.copy(pressed = true)
+                NdsDecision(false)
+            }
+            else -> NdsDecision(true)
+        }
+        if (!decision.forward) consumed += button
+        return decision
+    }
+
+    /** Key repeats of [button] are kept from the core exactly when its press was. */
+    fun consumes(button: NxButton): Boolean = button in consumed
+
+    /** The left stick; true when stylus mode takes it (then it is not forwarded). */
+    fun onStick(x: Float, y: Float): Boolean {
+        stickX = x
+        stickY = y
+        return stylus
+    }
+
+    /** Moves the pen by [dtMs] of held directions and stick; true when it moved. */
+    fun tick(dtMs: Long): Boolean {
+        if (!stylus || dtMs <= 0L) return false
+        val dt = dtMs / 1000f
+        var dx = 0f
+        var dy = 0f
+        val hx = (if (NxButton.RIGHT in held) 1 else 0) - (if (NxButton.LEFT in held) 1 else 0)
+        val hy = (if (NxButton.DOWN in held) 1 else 0) - (if (NxButton.UP in held) 1 else 0)
+        if (hx != 0 || hy != 0) {
+            val speed = min(PEN_START_SPEED + PEN_ACCEL * heldMs / 1000f, PEN_MAX_SPEED)
+            heldMs += dtMs
+            dx += hx * speed * dt
+            dy += hy * speed * dt
+        }
+        val magnitude = hypot(stickX, stickY)
+        if (magnitude > STICK_DEADZONE) {
+            val speed = min(1f, (magnitude - STICK_DEADZONE) / (1f - STICK_DEADZONE)) * PEN_MAX_SPEED
+            dx += stickX / magnitude * speed * dt
+            dy += stickY / magnitude * speed * dt
+        }
+        if (dx == 0f && dy == 0f) return false
+        val x = (pen.x + dx).coerceIn(0f, MAX_X)
+        val y = (pen.y + dy).coerceIn(0f, MAX_Y)
+        if (x == pen.x && y == pen.y) return false
+        pen = pen.copy(x = x, y = y)
+        return true
+    }
+
+    /**
+     * One axis of a hardware joystick as a d-pad direction (-1, 0, 1): the hat, else the left stick, which stands in for
+     * the d-pad (the core has no left-stick input) except in stylus mode, where it is the pen ([onStick]). The host
+     * consumes its joystick events and routes these directions itself, so Android synthesises no d-pad keys from them.
+     */
+    fun joystickDirection(hat: Float, stick: Float): Int {
+        fun dir(v: Float) = if (v < -0.5f) -1 else if (v > 0.5f) 1 else 0
+        return dir(hat).takeIf { it != 0 } ?: if (stylus) 0 else dir(stick)
+    }
+
+    /** The menu opened: forget held buttons and lift the pen; stylus mode stays as it is. */
+    fun releaseAll() {
+        selectHeld = false
+        consumed.clear()
+        resetPen()
+    }
+
+    /** Stops the pen: no held direction, a centred stick, the pen lifted. Consumed presses stay consumed. */
+    private fun resetPen() {
+        held.clear()
+        heldMs = 0L
+        stickX = 0f
+        stickY = 0f
+        pen = pen.copy(pressed = false)
+    }
+}

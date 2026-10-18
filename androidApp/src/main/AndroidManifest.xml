@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Wi-Fi netplay: the Wi-Fi address, and the MulticastLock that lets discovery broadcasts in while browsing. -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- The on-screen pad's press tick (Settings → Controls → Pad vibration). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- 3b-1: All files access, for the sideloaded build (a Play build drops this line and stays on SAF): ROM sync,
+         the library read as plain paths, and the app's own folder picker. Asked in first setup; optional. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+    <!-- USB Cable netplay: the phone as USB host for a handheld or another phone (optional: the row hides without it). -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <!-- The on-screen pad and the pad layout editor are touch. Android already assumes a touchscreen; stated so it stays
+         required (a TV or touchless device cannot install). -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="true" />
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="tv.ouya.intent.category.GAME" />
+        </intent>
+    </queries>
+    <!-- appCategory game: Android 16+ ignores orientation requests on large screens (a Fold's inner screen) except for
+         games, and the pad layout editor must hold its shape's orientation there. isGame alone does not count. -->
+    <application
+        android:name=".NxApplication"
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:isGame="true"
+        android:appCategory="game"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@style/Theme.NxMobile">
+        <!-- The app icon (and the artwork notification): brings the menu's task forward as it is, so a game open over
+             the menu stays (MainActivity is singleTask: a launch of it would clear the game). Its own throwaway task. -->
+        <activity
+            android:name=".LaunchActivity"
+            android:exported="true"
+            android:taskAffinity=""
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- USB Cable netplay: a handheld or phone on the cable brings the menu forward (and, with "always", grants
+                 the USB permission). -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" android:resource="@xml/usb_nxlink" />
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" />
+            </intent-filter>
+            <meta-data android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" android:resource="@xml/usb_accessory" />
+        </activity>
+        <!-- Not exported: started only from inside the app (LaunchActivity, the hand-over to home) and as the home
+             screen through .HomeAlias, whose own exported flag governs that path. Fold/unfold (screen size, layout,
+             density) and a controller or keyboard connecting are handled in place: Compose follows the configuration,
+             so AppState, the runner and the menu's place survive. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.NxMobile.Starting"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboard|keyboardHidden|navigation|uiMode"
+            android:windowSoftInputMode="adjustResize" />
+        <!-- Settings -> Launcher -> Use as home screen enables it (AndroidAppLauncher). -->
+        <activity-alias
+            android:name=".HomeAlias"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+        <activity
+            android:name=".runner.GameActivity"
+            android:exported="false"
+            android:screenOrientation="fullUser"
+            android:launchMode="singleTop"
+            android:taskAffinity="com.nxredux.mobile.game"
+            android:autoRemoveFromRecents="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode"
+            android:theme="@style/Theme.NxMobile" />
+
+        <!-- Controls → Pad layout's editor: holds the edited shape's orientation (PadLayoutActivity). -->
+        <activity
+            android:name=".padlayout.PadLayoutActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
+            android:theme="@style/Theme.NxMobile" />
+        <service
+            android:name=".scraper.ScrapeService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+        <!-- RetroAchievements → Download all game data: keeps the download alive off screen. -->
+        <service
+            android:name=".achievements.RaDownloadService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+        <!-- Tools → Device Sync: keeps a running sync alive off screen (spec 2026-10-14-device-sync-3a). -->
+        <service
+            android:name=".sync.DeviceSyncService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+        <!-- USB Cable netplay: the VPN that carries 10.99.0.0/30 over the cable only (spec 2b.4). -->
+        <service
+            android:name=".netplay.usb.UsbLinkVpnService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

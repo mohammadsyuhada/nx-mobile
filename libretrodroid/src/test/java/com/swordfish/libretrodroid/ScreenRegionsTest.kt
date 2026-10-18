@@ -1,0 +1,68 @@
+package com.swordfish.libretrodroid
+
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class ScreenRegionsTest {
+    private val full = ScreenRect(0f, 0f, 1f, 1f)
+    private val topSrc = ScreenRect(0f, 0f, 1f, 0.5f)
+    private val bottomSrc = ScreenRect(0f, 0.5f, 1f, 1f)
+    // Portrait PiP with the bottom screen big over the view's top 60%, the top screen inset in its bottom-right corner.
+    private val big = ScreenRegion(bottomSrc, ScreenRect(0f, 0f, 1f, 0.6f), shaded = true, touch = true)
+    private val inset = ScreenRegion(topSrc, ScreenRect(0.6f, 0.35f, 0.95f, 0.55f), shaded = false, touch = false)
+
+    @Test fun a_touch_on_a_touch_region_maps_into_its_part_of_the_frame() {
+        val p = ScreenRegions.mapTouch(listOf(big, inset), full, 0.25f, 0.3f)!!
+        assertEquals(0.25f, p.x, 1e-6f)
+        assertEquals(0.75f, p.y, 1e-6f)   // halfway down the big screen = halfway down the frame's bottom half
+    }
+
+    @Test fun the_inset_over_a_touch_region_swallows_the_tap() {
+        assertNull(ScreenRegions.mapTouch(listOf(big, inset), full, 0.7f, 0.4f))
+    }
+
+    @Test fun outside_every_region_and_on_a_non_touch_region_is_nothing() {
+        assertNull(ScreenRegions.mapTouch(listOf(big, inset), full, 0.5f, 0.9f))
+        val stacked = listOf(
+            ScreenRegion(topSrc, ScreenRect(0f, 0f, 1f, 0.5f), shaded = true, touch = false),
+            ScreenRegion(bottomSrc, ScreenRect(0f, 0.5f, 1f, 1f), shaded = true, touch = true),
+        )
+        assertNull(ScreenRegions.mapTouch(stacked, full, 0.5f, 0.25f))
+        assertEquals(0.75f, ScreenRegions.mapTouch(stacked, full, 0.5f, 0.75f)!!.y, 1e-6f)
+    }
+
+    @Test fun dst_is_relative_to_the_viewport() {
+        val right = ScreenRect(0.5f, 0f, 1f, 1f)
+        val whole = listOf(ScreenRegion(bottomSrc, full, shaded = true, touch = true))
+        val p = ScreenRegions.mapTouch(whole, right, 0.75f, 0.5f)!!
+        assertEquals(0.5f, p.x, 1e-6f)
+        assertEquals(0.75f, p.y, 1e-6f)
+        assertNull(ScreenRegions.mapTouch(whole, right, 0.25f, 0.5f))
+    }
+
+    @Test fun no_regions_or_an_empty_viewport_map_nothing() {
+        assertNull(ScreenRegions.mapTouch(emptyList(), full, 0.5f, 0.5f))
+        assertNull(ScreenRegions.mapTouch(listOf(big), ScreenRect(0.5f, 0.5f, 0.5f, 0.5f), 0.5f, 0.5f))
+    }
+
+    @Test fun packs_eleven_floats_per_region_in_order() {
+        assertArrayEquals(
+            floatArrayOf(
+                0f, 0.5f, 1f, 1f, 0f, 0f, 1f, 0.6f, 1f, 1f, 1f,
+                0f, 0f, 1f, 0.5f, 0.6f, 0.35f, 0.95f, 0.55f, 0f, 0f, 1f,
+            ),
+            ScreenRegions.pack(listOf(big, inset)),
+            0f,
+        )
+        assertEquals(0, ScreenRegions.pack(emptyList()).size)
+    }
+
+    @Test fun pack_appends_alpha_last() {
+        val packed = ScreenRegions.pack(listOf(big, inset.copy(alpha = 0.5f)))
+        assertEquals(22, packed.size)
+        assertEquals(1f, packed[10], 0f)    // the default
+        assertEquals(0.5f, packed[21], 0f)
+    }
+}

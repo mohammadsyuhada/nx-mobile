@@ -1,0 +1,1854 @@
+{
+ "core": "genesis_plus_gx",
+ "emulator": "Genesis Plus GX",
+ "sections": [
+  {
+   "key": "system",
+   "label": "System",
+   "info": "Change base hardware selection, region, BIOS and Sega CD/Mega-CD save file settings.",
+   "items": [
+    {
+     "key": "genesis_plus_gx_system_hw",
+     "label": "System Hardware",
+     "labelCategorized": "",
+     "info": "Runs loaded content with a specific emulated console. 'Auto' will select the most appropriate system for the current game.",
+     "values": [
+      "auto",
+      "sg-1000",
+      "sg-1000 II",
+      "sg-1000 II + ram ext.",
+      "mark-III",
+      "master system",
+      "master system II",
+      "game gear",
+      "mega drive / genesis"
+     ],
+     "labels": [
+      "Auto",
+      "SG-1000",
+      "SG-1000 II",
+      "SG-1000 II + RAM Ext.",
+      "Mark III",
+      "Master System",
+      "Master System II",
+      "Game Gear",
+      "Mega Drive/Genesis"
+     ],
+     "default": "auto"
+    },
+    {
+     "key": "genesis_plus_gx_region_detect",
+     "label": "System Region",
+     "labelCategorized": "",
+     "info": "Specify which region the system is from. For consoles other than the Game Gear, 'PAL' is 50 Hz, while 'NTSC' is 60 Hz. Games may run faster or slower than normal if the incorrect region is selected.",
+     "values": [
+      "auto",
+      "ntsc-u",
+      "pal",
+      "ntsc-j"
+     ],
+     "labels": [
+      "Auto",
+      "NTSC-U",
+      "PAL",
+      "NTSC-J"
+     ],
+     "default": "auto"
+    },
+    {
+     "key": "genesis_plus_gx_vdp_mode",
+     "label": "Force VDP Mode",
+     "labelCategorized": "",
+     "info": "Overrides the VDP mode to force it to run at either NTSC 60Hz or PAL 50Hz, regardless of system region.",
+     "values": [
+      "auto",
+      "60hz",
+      "50hz"
+     ],
+     "labels": [
+      "Disabled",
+      "NTSC (60Hz)",
+      "PAL (50Hz)"
+     ],
+     "default": "auto"
+    },
+    {
+     "key": "genesis_plus_gx_bios",
+     "label": "System Boot ROM",
+     "labelCategorized": "",
+     "info": "Use official BIOS/bootloader for emulated hardware, if present in RetroArch's system directory. Displays console-specific start-up sequence/animation, then runs loaded content.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "genesis_plus_gx_system_bram",
+     "label": "CD System BRAM (Requires Restart)",
+     "labelCategorized": "",
+     "info": "When running Sega CD/Mega-CD content, specifies whether to share a single save file between all games from a specific region (Per-BIOS) or to create a separate save file for each game (Per-Game). Note that the Sega CD/Mega-CD has limited internal storage, sufficient only for a handful of titles. To avoid running out of space, the 'Per-Game' setting is recommended.",
+     "values": [
+      "per bios",
+      "per game"
+     ],
+     "labels": [
+      "Per-BIOS",
+      "Per-Game"
+     ],
+     "default": "per bios"
+    },
+    {
+     "key": "genesis_plus_gx_cart_bram",
+     "label": "CD Backup Cart BRAM (Requires Restart)",
+     "labelCategorized": "",
+     "info": "When running Sega CD/Mega-CD content, specifies whether to share a single backup ram cart for all games (Per-Cart) or to create a separate backup ram cart for each game (Per-Game).",
+     "values": [
+      "per cart",
+      "per game"
+     ],
+     "labels": [
+      "Per-Cart",
+      "Per-Game"
+     ],
+     "default": "per cart"
+    },
+    {
+     "key": "genesis_plus_gx_cart_size",
+     "label": "CD Backup Cart BRAM Size (Requires Restart)",
+     "labelCategorized": "",
+     "info": "Sets the backup ram cart size when running Sega CD/Mega-CD content. Useful when setting the backup ram cart to Per-Game to avoid multiple larger cart sizes.",
+     "values": [
+      "disabled",
+      "128k",
+      "256k",
+      "512k",
+      "1meg",
+      "2meg",
+      "4meg"
+     ],
+     "labels": [
+      "Disabled",
+      "128Kbit",
+      "256Kbit",
+      "512Kbit",
+      "1Mbit",
+      "2Mbit",
+      "4Mbit"
+     ],
+     "default": "4meg"
+    },
+    {
+     "key": "genesis_plus_gx_add_on",
+     "label": "CD add-on (MD mode) (Requires Restart)",
+     "labelCategorized": "",
+     "info": "Specify which add-on to use for CD audio playback with supported Mega Drive/Genesis games.",
+     "values": [
+      "auto",
+      "sega/mega cd",
+      "megasd",
+      "none"
+     ],
+     "labels": [
+      "Auto",
+      "Sega/Mega CD",
+      "MegaSD",
+      "None"
+     ],
+     "default": "auto"
+    },
+    {
+     "key": "genesis_plus_gx_lock_on",
+     "label": "Cartridge Lock-On",
+     "labelCategorized": "",
+     "info": "Lock-On Technology is a Mega Drive/Genesis feature that allowed an older game to connect to the pass-through port of a special cartridge for extended or altered gameplay. This option specifies which type of special 'lock-on' cartridge to emulate. A corresponding bios file must be present in RetroArch's system directory.",
+     "values": [
+      "disabled",
+      "game genie",
+      "action replay (pro)",
+      "sonic & knuckles"
+     ],
+     "labels": [
+      "",
+      "Game Genie",
+      "Action Replay (Pro)",
+      "Sonic & Knuckles"
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "video",
+   "label": "Video",
+   "info": "Change aspect ratio, display cropping, video filter and frame skipping settings.",
+   "items": [
+    {
+     "key": "genesis_plus_gx_aspect_ratio",
+     "label": "Core-Provided Aspect Ratio",
+     "labelCategorized": "",
+     "info": "Choose the preferred content aspect ratio. This will only apply when RetroArch's aspect ratio is set to 'Core provided' in the Video settings.",
+     "values": [
+      "auto",
+      "NTSC PAR",
+      "PAL PAR",
+      "4:3",
+      "Uncorrected"
+     ],
+     "labels": [
+      "Auto",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "auto"
+    },
+    {
+     "key": "genesis_plus_gx_overscan",
+     "label": "Borders",
+     "labelCategorized": "",
+     "info": "Enable this to display the overscan regions at the top/bottom and/or left/right of the screen. These would normally be hidden by the bezel around the edge of a standard-definition television.",
+     "values": [
+      "disabled",
+      "top/bottom",
+      "left/right",
+      "full"
+     ],
+     "labels": [
+      "",
+      "Top/Bottom",
+      "Left/Right",
+      "Full"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "genesis_plus_gx_left_border",
+     "label": "Hide Master System Side Borders",
+     "labelCategorized": "",
+     "info": "Cuts off 8 pixels from either the left side of the screen, or both left and right sides when running Master System games.",
+     "values": [
+      "disabled",
+      "left border",
+      "left & right borders"
+     ],
+     "labels": [
+      "",
+      "Left Border Only",
+      "Left & Right Borders"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "genesis_plus_gx_gg_extra",
+     "label": "Game Gear Extended Screen",
+     "labelCategorized": "",
+     "info": "Forces Game Gear titles to run in SMS mode, with an increased resolution of 256x192. May show additional content, but typically displays a border of corrupt/unwanted image data.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "genesis_plus_gx_blargg_ntsc_filter",
+     "label": "Blargg NTSC Filter",
+     "labelCategorized": "",
+     "info": "Apply a video filter to mimic various NTSC TV signals.",
+     "values": [
+      "disabled",
+      "monochrome",
+      "composite",
+      "svideo",
+      "rgb"
+     ],
+     "labels": [
+      "",
+      "Monochrome",
+      "Composite",
+      "S-Video",
+      "RGB"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "genesis_plus_gx_lcd_filter",
+     "label": "LCD Ghosting Filter",
+     "labelCategorized": "",
+     "info": "Apply an image 'ghosting' filter to mimic the display characteristics of the Game Gear and Genesis Nomad LCD panels.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "genesis_plus_gx_render",
+     "label": "Interlaced Mode 2 Output",
+     "labelCategorized": "",
+     "info": "Interlaced Mode 2 allows the Mega Drive/Genesis to output a double height (high resolution) 320x448 image by drawing alternate scan lines each frame (this is used by Sonic the Hedgehog 2 and Combat Cars multiplayer modes). 'Double Field' mimics original hardware, producing a sharp image with flickering/interlacing artifacts. 'Single Field' applies a deinterlacing filter, which stabilizes the image but causes mild blurring.",
+     "values": [
+      "single field",
+      "double field"
+     ],
+     "labels": [
+      "Single Field",
+      "Double Field"
+     ],
+     "default": "single field"
+    },
+    {
+     "key": "genesis_plus_gx_frameskip",
+     "label": "Frameskip",
+     "labelCategorized": "",
+     "info": "Skip frames to avoid audio buffer under-run (crackling). Improves performance at the expense of visual smoothness. 'Auto' skips frames when advised by the frontend. 'Manual' utilizes the 'Frameskip Threshold (%)' setting.",
+     "values": [
+      "disabled",
+      "auto",
+      "manual"
+     ],
+     "labels": [
+      "",
+      "Auto",
+      "Manual"
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "genesis_plus_gx_frameskip_threshold",
+     "label": "Frameskip Threshold (%)",
+     "labelCategorized": "",
+     "info": "When 'Frameskip' is set to 'Manual', specifies the audio buffer occupancy threshold (percentage) below which frames will be skipped. Higher values reduce the risk of crackling by causing frames to be dropped more frequently.",
+     "values": [
+      "15",
+      "18",
+      "21",
+      "24",
+      "27",
+      "30",
+      "33",
+      "36",
+      "39",
+      "42",
+      "45",
+      "48",
+      "51",
+      "54",
+      "57",
+      "60"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "33"
+    }
+   ]
+  },
+  {
+   "key": "audio",
+   "label": "Audio",
+   "info": "Change audio device settings.",
+   "items": [
+    {
+     "key": "genesis_plus_gx_ym2413",
+     "label": "Master System FM (YM2413)",
+     "labelCategorized": "",
+     "info": "Enable emulation of the FM Sound Unit used by certain Sega Mark III/Master System games for enhanced audio output.",
+     "values": [
+      "auto",
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "Auto",
+      "",
+      ""
+     ],
+     "default": "auto"
+    },
+    {
+     "key": "genesis_plus_gx_ym2413_core",
+     "label": "Master System FM (YM2413) Core",
+     "labelCategorized": "",
+     "info": "Select method used to emulate the FM Sound Unit of the Sega Mark III/Master System. 'MAME' option is fast, and runs full speed on most systems. 'Nuked' option is cycle accurate, very high quality, and has substantial CPU requirements.",
+     "values": [
+      "mame",
+      "nuked"
+     ],
+     "labels": [
+      "MAME",
+      "Nuked"
+     ],
+     "default": "mame"
+    },
+    {
+     "key": "genesis_plus_gx_ym2612",
+     "label": "Mega Drive/Genesis FM",
+     "labelCategorized": "",
+     "info": "Select method used to emulate the FM synthesizer (main sound generator) of the Mega Drive/Genesis. 'MAME' options are fast, and run full speed on most systems. 'Nuked' options are cycle accurate, very high quality, and have substantial CPU requirements. The YM2612 chip is used by the original Model 1 Mega Drive/Genesis. The YM3438 is used in later Mega Drive/Genesis revisions.",
+     "values": [
+      "mame (ym2612)",
+      "mame (asic ym3438)",
+      "mame (enhanced ym3438)",
+      "nuked (ym2612)",
+      "nuked (ym3438)"
+     ],
+     "labels": [
+      "MAME (YM2612)",
+      "MAME (ASIC YM3438)",
+      "MAME (Enhanced YM3438)",
+      "Nuked (YM2612)",
+      "Nuked (YM3438)"
+     ],
+     "default": "mame (ym2612)"
+    },
+    {
+     "key": "genesis_plus_gx_sound_output",
+     "label": "Sound Output",
+     "labelCategorized": "",
+     "info": "Select stereo or mono sound playback.",
+     "values": [
+      "stereo",
+      "mono"
+     ],
+     "labels": [
+      "Stereo",
+      "Mono"
+     ],
+     "default": "stereo"
+    },
+    {
+     "key": "genesis_plus_gx_audio_filter",
+     "label": "Audio Filter",
+     "labelCategorized": "",
+     "info": "Enable a low pass audio filter to better simulate the characteristic sound of a Model 1 Mega Drive/Genesis.",
+     "values": [
+      "disabled",
+      "low-pass",
+      "EQ"
+     ],
+     "labels": [
+      "",
+      "Low-Pass",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "genesis_plus_gx_lowpass_range",
+     "label": "Low-Pass Filter %",
+     "labelCategorized": "",
+     "info": "Specify the cut-off frequency of the audio low pass filter. A higher value increases the perceived 'strength' of the filter, since a wider range of the high frequency spectrum is attenuated.",
+     "values": [
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "60"
+    },
+    {
+     "key": "genesis_plus_gx_psg_preamp",
+     "label": "PSG Preamp Level",
+     "labelCategorized": "",
+     "info": "Set the audio preamplifier level of the emulated SN76496 4-channel Programmable Sound Generator found in the SG-1000, Sega Mark III, Master System, Game Gear and Mega Drive/Genesis.",
+     "values": [
+      "0",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95",
+      "100",
+      "105",
+      "110",
+      "115",
+      "120",
+      "125",
+      "130",
+      "135",
+      "140",
+      "145",
+      "150",
+      "155",
+      "160",
+      "165",
+      "170",
+      "175",
+      "180",
+      "185",
+      "190",
+      "195",
+      "200"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "150"
+    },
+    {
+     "key": "genesis_plus_gx_fm_preamp",
+     "label": "FM Preamp Level",
+     "labelCategorized": "",
+     "info": "Set the audio preamplifier level of the emulated Mega Drive/Genesis FM sound synthesizer or Sega Mark III/Master System FM Sound Unit.",
+     "values": [
+      "0",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95",
+      "100",
+      "105",
+      "110",
+      "115",
+      "120",
+      "125",
+      "130",
+      "135",
+      "140",
+      "145",
+      "150",
+      "155",
+      "160",
+      "165",
+      "170",
+      "175",
+      "180",
+      "185",
+      "190",
+      "195",
+      "200"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_cdda_volume",
+     "label": "CD-DA Volume",
+     "labelCategorized": "",
+     "info": "Adjust the mixing volume of the emulated CD audio playback output.",
+     "values": [
+      "0",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_pcm_volume",
+     "label": "PCM Volume",
+     "labelCategorized": "",
+     "info": "Adjust the mixing volume of the emulated Sega CD/Mega-CD RF5C164 PCM sound generator output.",
+     "values": [
+      "0",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_audio_eq_low",
+     "label": "EQ Low",
+     "labelCategorized": "",
+     "info": "Adjust the low range band of the internal audio equalizer.",
+     "values": [
+      "0",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_audio_eq_mid",
+     "label": "EQ Mid",
+     "labelCategorized": "",
+     "info": "Adjust the middle range band of the internal audio equalizer.",
+     "values": [
+      "0",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_audio_eq_high",
+     "label": "EQ High",
+     "labelCategorized": "",
+     "info": "Adjust the high range band of the internal audio equalizer.",
+     "values": [
+      "0",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30",
+      "35",
+      "40",
+      "45",
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    }
+   ]
+  },
+  {
+   "key": "input",
+   "label": "Input",
+   "info": "Change light gun and/or mouse input settings.",
+   "items": [
+    {
+     "key": "genesis_plus_gx_gun_input",
+     "label": "Light Gun Input",
+     "labelCategorized": "",
+     "info": "Use a mouse-controlled 'Light Gun' or 'Touchscreen' input.",
+     "values": [
+      "lightgun",
+      "touchscreen"
+     ],
+     "labels": [
+      "Light Gun",
+      "Touchscreen"
+     ],
+     "default": "lightgun"
+    },
+    {
+     "key": "genesis_plus_gx_gun_cursor",
+     "label": "Show Light Gun Crosshair",
+     "labelCategorized": "",
+     "info": "Display light gun crosshairs when using the MD Menacer, MD Justifiers and MS Light Phaser input device types.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "genesis_plus_gx_invert_mouse",
+     "label": "Invert Mouse Y-Axis",
+     "labelCategorized": "",
+     "info": "Inverts the Y-axis of the MD Mouse input device type.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "hacks",
+   "label": "Emulation Hacks",
+   "info": "Change processor overclocking and emulation accuracy settings that affect low-level performance and compatibility.",
+   "items": [
+    {
+     "key": "genesis_plus_gx_no_sprite_limit",
+     "label": "Remove Per-Line Sprite Limit",
+     "labelCategorized": "",
+     "info": "Removes the original sprite-per-scanline hardware limit. This reduces flickering but can cause visual glitches, as some games exploit the hardware limit to generate special effects.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "genesis_plus_gx_enhanced_vscroll",
+     "label": "Enhanced per-tile vertical scroll",
+     "labelCategorized": "",
+     "info": "Allows each individual cell to be scrolled vertically, instead of 16px 2-cell, by averaging out with the vscroll value of the neighbouring cell. This hack only applies to few games that use 2-cell vertical scroll mode.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "genesis_plus_gx_enhanced_vscroll_limit",
+     "label": "Enhanced per-tile vertical scroll limit",
+     "labelCategorized": "",
+     "info": "Only when Enhanced per-tile vertical scroll is enabled. Adjusts the limit of the vertical scroll enhancement. When the vscroll difference between neighbouring tiles is bigger than this limit, the enhancement is disabled.",
+     "values": [
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "8"
+    },
+    {
+     "key": "genesis_plus_gx_overclock",
+     "label": "CPU Speed",
+     "labelCategorized": "",
+     "info": "Overclock the emulated CPU. Can reduce slowdown, but may cause glitches.",
+     "values": [
+      "100",
+      "125",
+      "150",
+      "175",
+      "200",
+      "225",
+      "250",
+      "275",
+      "300",
+      "325",
+      "350",
+      "375",
+      "400",
+      "425",
+      "450",
+      "475",
+      "500"
+     ],
+     "labels": [
+      "100%",
+      "125%",
+      "150%",
+      "175%",
+      "200%",
+      "225%",
+      "250%",
+      "275%",
+      "300%",
+      "325%",
+      "350%",
+      "375%",
+      "400%",
+      "425%",
+      "450%",
+      "475%",
+      "500%"
+     ],
+     "default": "100%"
+    },
+    {
+     "key": "genesis_plus_gx_force_dtack",
+     "label": "System Lock-Ups",
+     "labelCategorized": "",
+     "info": "Emulate system lock-ups that occur on real hardware when performing illegal address access. This should only be disabled when playing certain demos and homebrew that rely on illegal behavior for correct operation.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "genesis_plus_gx_addr_error",
+     "label": "68K Address Error",
+     "labelCategorized": "",
+     "info": "The Mega Drive/Genesis main CPU (Motorola 68000) generates an Address Error exception (crash) when attempting to perform unaligned memory access. Enabling this will simulate this behavior. It should only be disabled when playing ROM hacks, since these are typically developed using less accurate emulators and may rely on invalid RAM access for correct operation.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "genesis_plus_gx_cd_latency",
+     "label": "CD Access Time",
+     "labelCategorized": "",
+     "info": "Simulate original CD hardware latency when initiating a read or seeking to a specific location on loaded disc. This is required by a few CD games that crash if CD data is available too soon and also fixes CD audio desync issues in some games. Disabling this can be useful with MSU-MD games as it makes CD audio tracks loops more seamless.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "genesis_plus_gx_cd_precache",
+     "label": "CD Image Cache",
+     "labelCategorized": "",
+     "info": "Load CD image to memory on startup. CHD supported only. Restart Required.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  },
+  {
+   "key": "channel_volume",
+   "label": "Advanced Channel Volume Settings",
+   "info": "Change the volume of individual hardware audio channels.",
+   "items": [
+    {
+     "key": "genesis_plus_gx_show_advanced_audio_settings",
+     "label": "Show Advanced Audio Volume Settings (Reopen menu)",
+     "labelCategorized": "",
+     "info": "Enable configuration of low-level audio channel parameters. NOTE: Quick Menu must be toggled for this setting to take effect.",
+     "values": [
+      "enabled",
+      "disabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "genesis_plus_gx_psg_channel_0_volume",
+     "label": "PSG Tone Channel 0 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the PSG Tone Channel 0.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_psg_channel_1_volume",
+     "label": "PSG Tone Channel 1 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the PSG Tone Channel 1.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_psg_channel_2_volume",
+     "label": "PSG Tone Channel 2 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the PSG Tone Channel 2.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_psg_channel_3_volume",
+     "label": "PSG Noise Channel 3 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the PSG Noise Channel 3.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_md_channel_0_volume",
+     "label": "Mega Drive/Genesis FM Channel 0 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the Mega Drive/Genesis FM Channel 0. Only works with MAME FM emulators.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_md_channel_1_volume",
+     "label": "Mega Drive/Genesis FM Channel 1 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the Mega Drive/Genesis FM Channel 1. Only works with MAME FM emulators.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_md_channel_2_volume",
+     "label": "Mega Drive/Genesis FM Channel 2 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the Mega Drive/Genesis FM Channel 2. Only works with MAME FM emulators.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_md_channel_3_volume",
+     "label": "Mega Drive/Genesis FM Channel 3 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the Mega Drive/Genesis FM Channel 3. Only works with MAME FM emulators.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_md_channel_4_volume",
+     "label": "Mega Drive/Genesis FM Channel 4 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the Mega Drive/Genesis FM Channel 4. Only works with MAME FM emulators.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_md_channel_5_volume",
+     "label": "Mega Drive/Genesis FM Channel 5 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the Mega Drive/Genesis FM Channel 5. Only works with MAME FM emulators.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_sms_fm_channel_0_volume",
+     "label": "Master System FM (YM2413) Channel 0 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the Master System FM Channel 0.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_sms_fm_channel_1_volume",
+     "label": "Master System FM (YM2413) Channel 1 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the Master System FM Channel 1.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_sms_fm_channel_2_volume",
+     "label": "Master System FM (YM2413) Channel 2 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the Master System FM Channel 2.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_sms_fm_channel_3_volume",
+     "label": "Master System FM (YM2413) Channel 3 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the Master System FM Channel 3.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_sms_fm_channel_4_volume",
+     "label": "Master System FM (YM2413) Channel 4 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the Master System FM Channel 4.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_sms_fm_channel_5_volume",
+     "label": "Master System FM (YM2413) Channel 5 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the Master System FM Channel 5.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_sms_fm_channel_6_volume",
+     "label": "Master System FM (YM2413) Channel 6 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the Master System FM Channel 6.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_sms_fm_channel_7_volume",
+     "label": "Master System FM (YM2413) Channel 7 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the Master System FM Channel 7.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "genesis_plus_gx_sms_fm_channel_8_volume",
+     "label": "Master System FM (YM2413) Channel 8 Volume %",
+     "labelCategorized": "",
+     "info": "Reduce the volume of the Master System FM Channel 8.",
+     "values": [
+      "0",
+      "10",
+      "20",
+      "30",
+      "40",
+      "50",
+      "60",
+      "70",
+      "80",
+      "90",
+      "100"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    }
+   ]
+  }
+ ],
+ "soSha256": "4e610c1d6dee841795c4f88cecf752b90fa48b6b11cdfc6bc3f8fc8dde91f7bc",
+ "probedAt": "2026-09-29"
+}

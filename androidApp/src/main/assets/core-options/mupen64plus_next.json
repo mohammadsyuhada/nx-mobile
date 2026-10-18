@@ -1,0 +1,2148 @@
+{
+ "core": "mupen64plus_next",
+ "emulator": "Mupen64Plus-Next",
+ "sections": [
+  {
+   "key": "",
+   "label": "",
+   "info": "",
+   "items": [
+    {
+     "key": "mupen64plus-rdp-plugin",
+     "label": "RDP Plugin",
+     "labelCategorized": "",
+     "info": "Select a RDP Plugin, use Angrylion (if available) for best compability, GLideN64 for Performance",
+     "values": [
+      "angrylion",
+      "parallel",
+      "gliden64"
+     ],
+     "labels": [
+      "Angrylion",
+      "ParaLLEl-RDP",
+      "GLideN64"
+     ],
+     "default": "gliden64"
+    },
+    {
+     "key": "mupen64plus-cpucore",
+     "label": "CPU Core",
+     "labelCategorized": "",
+     "info": "Select the R4300 CPU Backend, use Interpreter for best compability",
+     "values": [
+      "pure_interpreter",
+      "cached_interpreter",
+      "dynamic_recompiler"
+     ],
+     "labels": [
+      "Pure Interpreter",
+      "Cached Interpreter",
+      "Dynarec"
+     ],
+     "default": "dynamic_recompiler"
+    },
+    {
+     "key": "mupen64plus-rsp-plugin",
+     "label": "RSP Plugin",
+     "labelCategorized": "",
+     "info": "Select a RSP Plugin, use HLE for best performance, ParaLLEl for best LLE Performance and CXD4 as LLE fallback",
+     "values": [
+      "cxd4",
+      "parallel",
+      "hle"
+     ],
+     "labels": [
+      "CXD4",
+      "ParaLLEl",
+      "HLE"
+     ],
+     "default": "hle"
+    },
+    {
+     "key": "mupen64plus-FrameDuping",
+     "label": "Frame Duplication",
+     "labelCategorized": "",
+     "info": "Enable Frame duplication to improve smoothing on low-end. Different from frameskip.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-Framerate",
+     "label": "Framerate",
+     "labelCategorized": "",
+     "info": "Fullspeed will enforce Count per Op 1 and FBEmu settings, this will break some games!",
+     "values": [
+      "Original",
+      "Fullspeed"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "Original"
+    },
+    {
+     "key": "mupen64plus-virefresh",
+     "label": "VI Refresh (Overclock)",
+     "labelCategorized": "",
+     "info": "Select a VI Refresh clock, Auto does not impact behaviour, other values override CountPerScanline.",
+     "values": [
+      "Auto",
+      "1500",
+      "2200"
+     ],
+     "labels": [
+      "",
+      "",
+      ""
+     ],
+     "default": "Auto"
+    },
+    {
+     "key": "mupen64plus-ForceDisableExtraMem",
+     "label": "Disable Expansion Pak",
+     "labelCategorized": "",
+     "info": "Force disable Expansion Pak (might improve performance for some games while reducing emulation accuracy, will break games that require it).",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-IgnoreTLBExceptions",
+     "label": "Ignore emulated TLB Exceptions",
+     "labelCategorized": "",
+     "info": "(HACK) Ignore emulated TLB Exceptions, this might fix some broken romhacks. This option might be removed in the future.",
+     "values": [
+      "False",
+      "OnlyNotEnabled",
+      "AlwaysIgnoreTLB"
+     ],
+     "labels": [
+      "Don't Ignore",
+      "Ignore TLB Exceptions if not using TLB",
+      "Always Ignore TLB Exceptions"
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-CountPerOp",
+     "label": "Count Per Op",
+     "labelCategorized": "",
+     "info": "Count per Op is used to approximate the Counter reg, 0 will use the embedded Database (or default to 2). Changing this will break stuff!",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "mupen64plus-CountPerOpDenomPot",
+     "label": "Count Per Op Divider (Overclock)",
+     "labelCategorized": "",
+     "info": "Denominator for Count per Op (allowing sub-1 Count per Op in practice). Changing this can break stuff!",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    }
+   ]
+  },
+  {
+   "key": "input",
+   "label": "Pak/Controller Options",
+   "info": "Configure Core Pak/Controller Options.",
+   "items": [
+    {
+     "key": "mupen64plus-astick-deadzone",
+     "label": "Analog Deadzone (percent)",
+     "labelCategorized": "",
+     "info": "Size of the non responsive area around an analog stick.",
+     "values": [
+      "0",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "15"
+    },
+    {
+     "key": "mupen64plus-astick-sensitivity",
+     "label": "Analog Sensitivity (percent)",
+     "labelCategorized": "",
+     "info": "Adjust how far the stick needs to be moved to reach its max value.",
+     "values": [
+      "50",
+      "55",
+      "60",
+      "65",
+      "70",
+      "75",
+      "80",
+      "85",
+      "90",
+      "95",
+      "100",
+      "105",
+      "110",
+      "115",
+      "120",
+      "125",
+      "130",
+      "135",
+      "140",
+      "145",
+      "150"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "100"
+    },
+    {
+     "key": "mupen64plus-r-cbutton",
+     "label": "Right C Button",
+     "labelCategorized": "",
+     "info": "Select Right C Button mapping.",
+     "values": [
+      "C1",
+      "C2",
+      "C3",
+      "C4"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "C1"
+    },
+    {
+     "key": "mupen64plus-l-cbutton",
+     "label": "Left C Button",
+     "labelCategorized": "",
+     "info": "Select Left C Button mapping.",
+     "values": [
+      "C1",
+      "C2",
+      "C3",
+      "C4"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "C2"
+    },
+    {
+     "key": "mupen64plus-d-cbutton",
+     "label": "Down C Button",
+     "labelCategorized": "",
+     "info": "Select Down C Button mapping.",
+     "values": [
+      "C1",
+      "C2",
+      "C3",
+      "C4"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "C3"
+    },
+    {
+     "key": "mupen64plus-u-cbutton",
+     "label": "Up C Button",
+     "labelCategorized": "",
+     "info": "Select Up C Button mapping.",
+     "values": [
+      "C1",
+      "C2",
+      "C3",
+      "C4"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "C4"
+    },
+    {
+     "key": "mupen64plus-alt-map",
+     "label": "Independent C-button Controls",
+     "labelCategorized": "",
+     "info": "Use an alternate control scheme, useful for some 3rdparty controllers.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-pak1",
+     "label": "Player 1 Pak",
+     "labelCategorized": "",
+     "info": "Select Player 1 Controller Pak.",
+     "values": [
+      "none",
+      "memory",
+      "rumble",
+      "transfer"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "memory"
+    },
+    {
+     "key": "mupen64plus-pak2",
+     "label": "Player 2 Pak",
+     "labelCategorized": "",
+     "info": "Select Player 2 Controller Pak.",
+     "values": [
+      "none",
+      "memory",
+      "rumble",
+      "transfer"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "none"
+    },
+    {
+     "key": "mupen64plus-pak3",
+     "label": "Player 3 Pak",
+     "labelCategorized": "",
+     "info": "Select Player 3 Controller Pak.",
+     "values": [
+      "none",
+      "memory",
+      "rumble",
+      "transfer"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "none"
+    },
+    {
+     "key": "mupen64plus-pak4",
+     "label": "Player 4 Pak",
+     "labelCategorized": "",
+     "info": "Select Player 4 Controller Pak.",
+     "values": [
+      "none",
+      "memory",
+      "rumble",
+      "transfer"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "none"
+    }
+   ]
+  },
+  {
+   "key": "gliden64",
+   "label": "GLideN64",
+   "info": "Configure GLideN64 Options.",
+   "items": [
+    {
+     "key": "mupen64plus-43screensize",
+     "label": "4:3 Resolution",
+     "labelCategorized": "",
+     "info": "(GLN64) Select Render Viewport dimensions (4:3).",
+     "values": [
+      "320x240",
+      "640x480",
+      "960x720",
+      "1280x960",
+      "1440x1080",
+      "1600x1200",
+      "1920x1440",
+      "2240x1680",
+      "2560x1920",
+      "2880x2160",
+      "3200x2400",
+      "3520x2640",
+      "3840x2880"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "640x480"
+    },
+    {
+     "key": "mupen64plus-169screensize",
+     "label": "Wide Resolution",
+     "labelCategorized": "",
+     "info": "(GLN64) Select Render Viewport dimensions for wider resolutions.",
+     "values": [
+      "640x360",
+      "960x540",
+      "1280x720",
+      "1706x720",
+      "1366x768",
+      "1920x810",
+      "1920x1080",
+      "2560x1080",
+      "2560x1440",
+      "3414x1440",
+      "3840x2160",
+      "4096x2160",
+      "5120x1440",
+      "5120x2160",
+      "7680x3240",
+      "7680x4320",
+      "7680x2160",
+      "10240x4320"
+     ],
+     "labels": [
+      "640x360 (16:9)",
+      "960x540 (16:9)",
+      "1280x720 (16:9)",
+      "1706x720 (64:27)",
+      "1366x768 (16:9)",
+      "1920x810 (64:27)",
+      "1920x1080 (16:9)",
+      "2560x1080 (64:27)",
+      "2560x1440 (16:9)",
+      "3414x1440 (64:27)",
+      "3840x2160 (16:9)",
+      "4096x2160 (17:9)",
+      "5120x1440 (32:9)",
+      "5120x2160 (64:27)",
+      "7680x3240 (64:27)",
+      "7680x4320 (16:9)",
+      "7680x2160 (32:9)",
+      "10240x4320 (64:27)"
+     ],
+     "default": "960x540"
+    },
+    {
+     "key": "mupen64plus-aspect",
+     "label": "Aspect Ratio",
+     "labelCategorized": "",
+     "info": "(GLN64) Select the aspect ratio. 'adjusted' means essentially Widescreen hacks.",
+     "values": [
+      "4:3",
+      "16:9",
+      "16:9 adjusted"
+     ],
+     "labels": [
+      "Original (4:3)",
+      "Wide (Stretched)",
+      "Wide (Adjusted)"
+     ],
+     "default": "4:3"
+    },
+    {
+     "key": "mupen64plus-EnableNativeResFactor",
+     "label": "Native Resolution Factor",
+     "labelCategorized": "",
+     "info": "(GLN64) Render at N times the native resolution.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8"
+     ],
+     "labels": [
+      "Disabled",
+      "1x",
+      "2x",
+      "3x",
+      "4x",
+      "5x",
+      "6x",
+      "7x",
+      "8x"
+     ],
+     "default": "0"
+    },
+    {
+     "key": "mupen64plus-ThreadedRenderer",
+     "label": "Threaded Renderer",
+     "labelCategorized": "",
+     "info": "(GLN64) Use the Threaded Renderer, improves performance but increases input lag.",
+     "values": [
+      "True",
+      "False"
+     ],
+     "labels": [
+      "Enabled",
+      "Disabled"
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-BilinearMode",
+     "label": "Bilinear filtering mode",
+     "labelCategorized": "",
+     "info": "(GLN64) Select a Bilinear filtering method, 3point is the original system specific way.",
+     "values": [
+      "3point",
+      "standard"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "standard"
+    },
+    {
+     "key": "mupen64plus-HybridFilter",
+     "label": "Hybrid Filter",
+     "labelCategorized": "",
+     "info": "(GLN64) Hybrid integer scaling filter, this can be slow with low-end GPUs.",
+     "values": [
+      "True",
+      "False"
+     ],
+     "labels": [
+      "Enabled",
+      "Disabled"
+     ],
+     "default": "True"
+    },
+    {
+     "key": "mupen64plus-DitheringPattern",
+     "label": "Dithering",
+     "labelCategorized": "",
+     "info": "(GLN64) Applies dithering pattern to output image.",
+     "values": [
+      "True",
+      "False"
+     ],
+     "labels": [
+      "Enabled",
+      "Disabled"
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-DitheringQuantization",
+     "label": "Dithering Quantization",
+     "labelCategorized": "",
+     "info": "(GLN64) Dither with color quantization.",
+     "values": [
+      "True",
+      "False"
+     ],
+     "labels": [
+      "Enabled",
+      "Disabled"
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-RDRAMImageDitheringMode",
+     "label": "Image Dithering Mode",
+     "labelCategorized": "",
+     "info": "(GLN64) Dithering mode for image in RDRAM.",
+     "values": [
+      "False",
+      "Bayer",
+      "MagicSquare",
+      "BlueNoise"
+     ],
+     "labels": [
+      "Disabled",
+      "",
+      "Magic Square",
+      "Blue Noise"
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-MultiSampling",
+     "label": "MSAA level",
+     "labelCategorized": "",
+     "info": "(GLN64) Anti-Aliasing level (0 = disabled).",
+     "values": [
+      "0",
+      "2",
+      "4",
+      "8",
+      "16"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "mupen64plus-FXAA",
+     "label": "FXAA",
+     "labelCategorized": "",
+     "info": "(GLN64) Fast Approximate Anti-Aliasing shader, moderately blur textures (0 = disabled).",
+     "values": [
+      "0",
+      "1"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "mupen64plus-EnableLODEmulation",
+     "label": "LOD Emulation",
+     "labelCategorized": "",
+     "info": "(GLN64) Calculate per-pixel Level Of Details to select texture mip levels and blend them with each other using LOD fraction.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "True"
+    },
+    {
+     "key": "mupen64plus-EnableFBEmulation",
+     "label": "Framebuffer Emulation",
+     "labelCategorized": "",
+     "info": "(GLN64) Frame/depth buffer emulation. Disabling it can shorten input lag for particular games, but also break some special effects.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "True"
+    },
+    {
+     "key": "mupen64plus-EnableCopyAuxToRDRAM",
+     "label": "Copy auxiliary buffers to RDRAM",
+     "labelCategorized": "",
+     "info": "(GLN64) Copy auxiliary buffers to RDRAM (fixes some Game artifacts like Paper Mario Intro).",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-EnableCopyColorToRDRAM",
+     "label": "Color buffer to RDRAM",
+     "labelCategorized": "",
+     "info": "(GLN64) Color buffer copy to RDRAM (Off will trade compatibility for Performance).",
+     "values": [
+      "Off",
+      "Sync",
+      "Async",
+      "TripleBuffer"
+     ],
+     "labels": [
+      "",
+      "",
+      "DoubleBuffer",
+      "TripleBuffer"
+     ],
+     "default": "Async"
+    },
+    {
+     "key": "mupen64plus-EnableCopyColorFromRDRAM",
+     "label": "Enable color buffer copy from RDRAM",
+     "labelCategorized": "",
+     "info": "(GLN64) Enable color buffer copy from RDRAM.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-EnableCopyDepthToRDRAM",
+     "label": "Depth buffer to RDRAM",
+     "labelCategorized": "",
+     "info": "(GLN64) Depth buffer copy to RDRAM (Off will trade compatibility for Performance).",
+     "values": [
+      "Off",
+      "Software",
+      "FromMem"
+     ],
+     "labels": [
+      "",
+      "",
+      ""
+     ],
+     "default": "Software"
+    },
+    {
+     "key": "mupen64plus-BackgroundMode",
+     "label": "Background Mode",
+     "labelCategorized": "",
+     "info": "(GLN64) Render backgrounds mode (HLE only). One piece (fast), Stripped (precise).",
+     "values": [
+      "Stripped",
+      "OnePiece"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "OnePiece"
+    },
+    {
+     "key": "mupen64plus-EnableHWLighting",
+     "label": "Hardware per-pixel lighting",
+     "labelCategorized": "",
+     "info": "(GLN64) Standard per-vertex lighting when disabled. Slightly different rendering.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-CorrectTexrectCoords",
+     "label": "Continuous texrect coords",
+     "labelCategorized": "",
+     "info": "(GLN64) Make texrect coordinates continuous to avoid black lines between them.",
+     "values": [
+      "Off",
+      "Auto",
+      "Force"
+     ],
+     "labels": [
+      "",
+      "",
+      ""
+     ],
+     "default": "Off"
+    },
+    {
+     "key": "mupen64plus-EnableInaccurateTextureCoordinates",
+     "label": "Enable inaccurate texture coordinates",
+     "labelCategorized": "",
+     "info": "(GLN64) Enables inaccurate texture coordinate calculations. This can improve performance and texture pack compatibity at the cost of accuracy.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-EnableTexCoordBounds",
+     "label": "Enable native-res boundaries for texture coordinates",
+     "labelCategorized": "",
+     "info": "(GLN64) Bound texture rectangle texture coordinates to the values they take in native resolutions. It prevents garbage due to fetching out of texture bounds, but can result in hard edges.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-EnableNativeResTexrects",
+     "label": "Native res. 2D texrects",
+     "labelCategorized": "",
+     "info": "(GLN64) Render 2D texrects in native resolution to fix misalignment between parts of 2D image (example: Mario Kart driver selection portraits).",
+     "values": [
+      "Disabled",
+      "Unoptimized",
+      "Optimized"
+     ],
+     "labels": [
+      "",
+      "",
+      ""
+     ],
+     "default": "Disabled"
+    },
+    {
+     "key": "mupen64plus-EnableLegacyBlending",
+     "label": "Less accurate blending mode",
+     "labelCategorized": "",
+     "info": "(GLN64) Do not use shaders to emulate N64 blending modes. Works faster on slow GPU. Can cause glitches.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "True"
+    },
+    {
+     "key": "mupen64plus-EnableFragmentDepthWrite",
+     "label": "GPU shader depth write",
+     "labelCategorized": "",
+     "info": "(GLN64) Enable writing of fragment depth. Some mobile GPUs do not support it, thus it's optional. Leave enabled.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-EnableTextureCache",
+     "label": "Cache Textures",
+     "labelCategorized": "",
+     "info": "(GLN64) Save texture cache to hard disk.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "True"
+    },
+    {
+     "key": "mupen64plus-EnableOverscan",
+     "label": "Overscan",
+     "labelCategorized": "",
+     "info": "(GLN64) Crop black borders from the overscan region around the screen.",
+     "values": [
+      "Disabled",
+      "Enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "Enabled"
+    },
+    {
+     "key": "mupen64plus-OverscanTop",
+     "label": "Overscan Offset (Top)",
+     "labelCategorized": "",
+     "info": "(GLN64) Overscan Top Offset.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "20",
+      "21",
+      "22",
+      "23",
+      "24",
+      "25",
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31",
+      "32",
+      "33",
+      "34",
+      "35",
+      "36",
+      "37",
+      "38",
+      "39",
+      "40",
+      "41",
+      "42",
+      "43",
+      "44",
+      "45",
+      "46",
+      "47",
+      "48",
+      "49",
+      "50"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "mupen64plus-OverscanLeft",
+     "label": "Overscan Offset (Left)",
+     "labelCategorized": "",
+     "info": "(GLN64) Overscan Left Offset.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "20",
+      "21",
+      "22",
+      "23",
+      "24",
+      "25",
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31",
+      "32",
+      "33",
+      "34",
+      "35",
+      "36",
+      "37",
+      "38",
+      "39",
+      "40",
+      "41",
+      "42",
+      "43",
+      "44",
+      "45",
+      "46",
+      "47",
+      "48",
+      "49",
+      "50"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "mupen64plus-OverscanRight",
+     "label": "Overscan Offset (Right)",
+     "labelCategorized": "",
+     "info": "(GLN64) Overscan Right Offset.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "20",
+      "21",
+      "22",
+      "23",
+      "24",
+      "25",
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31",
+      "32",
+      "33",
+      "34",
+      "35",
+      "36",
+      "37",
+      "38",
+      "39",
+      "40",
+      "41",
+      "42",
+      "43",
+      "44",
+      "45",
+      "46",
+      "47",
+      "48",
+      "49",
+      "50"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "mupen64plus-OverscanBottom",
+     "label": "Overscan Offset (Bottom)",
+     "labelCategorized": "",
+     "info": "(GLN64) Overscan Bottom Offset.",
+     "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "20",
+      "21",
+      "22",
+      "23",
+      "24",
+      "25",
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31",
+      "32",
+      "33",
+      "34",
+      "35",
+      "36",
+      "37",
+      "38",
+      "39",
+      "40",
+      "41",
+      "42",
+      "43",
+      "44",
+      "45",
+      "46",
+      "47",
+      "48",
+      "49",
+      "50"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "mupen64plus-MaxHiResTxVramLimit",
+     "label": "Max High-Res VRAM Limit",
+     "labelCategorized": "",
+     "info": "(GLN64) Limit High-Res textures size in VRAM (in MB, 0 = no limit).",
+     "values": [
+      "0",
+      "500",
+      "1000",
+      "1500",
+      "2000",
+      "2500",
+      "3000",
+      "3500",
+      "4000"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "mupen64plus-MaxTxCacheSize",
+     "label": "Max texture cache size",
+     "labelCategorized": "",
+     "info": "(GLN64) Set Max texture cache size (in elements). Reduce it if you experience black textures leading to a crash.",
+     "values": [
+      "1500",
+      "4000",
+      "8000"
+     ],
+     "labels": [
+      "",
+      "",
+      ""
+     ],
+     "default": "8000"
+    },
+    {
+     "key": "mupen64plus-txFilterMode",
+     "label": "Texture filter",
+     "labelCategorized": "",
+     "info": "(GLN64) Select Texture Filtering mode.",
+     "values": [
+      "None",
+      "Smooth filtering 1",
+      "Smooth filtering 2",
+      "Smooth filtering 3",
+      "Smooth filtering 4",
+      "Sharp filtering 1",
+      "Sharp filtering 2"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "None"
+    },
+    {
+     "key": "mupen64plus-txEnhancementMode",
+     "label": "Texture Enhancement",
+     "labelCategorized": "",
+     "info": "(GLN64) Various Texture Filters ('As-Is' will just cache).",
+     "values": [
+      "None",
+      "As Is",
+      "X2",
+      "X2SAI",
+      "HQ2X",
+      "HQ2XS",
+      "LQ2X",
+      "LQ2XS",
+      "HQ4X",
+      "2xBRZ",
+      "3xBRZ",
+      "4xBRZ",
+      "5xBRZ",
+      "6xBRZ"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "None"
+    },
+    {
+     "key": "mupen64plus-txFilterIgnoreBG",
+     "label": "Don't filter background textures",
+     "labelCategorized": "",
+     "info": "(GLN64) Ignore filtering for Background Textures.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "True"
+    },
+    {
+     "key": "mupen64plus-txHiresEnable",
+     "label": "Use High-Res textures",
+     "labelCategorized": "",
+     "info": "(GLN64) Enable High-Res Texture packs if available.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-txCacheCompression",
+     "label": "Use High-Res Texture Cache Compression",
+     "labelCategorized": "",
+     "info": "(GLN64) Compress created texture caches.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "True"
+    },
+    {
+     "key": "mupen64plus-txHiresFullAlphaChannel",
+     "label": "Use High-Res Full Alpha Channel",
+     "labelCategorized": "",
+     "info": "(GLN64) This should be enabled unless it's a old RICE Texture pack.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-EnableEnhancedTextureStorage",
+     "label": "Use enhanced Texture Storage",
+     "labelCategorized": "",
+     "info": "(GLN64) Use in addition to Texture cache, will use lazy loading and trade memory consumption against loading speeds.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-EnableHiResAltCRC",
+     "label": "Use alternative method for High-Res Checksums",
+     "labelCategorized": "",
+     "info": "(GLN64) Use an alternative method for High-Res paletted textures CRC calculations.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-EnableEnhancedHighResStorage",
+     "label": "Use enhanced Hi-Res Storage",
+     "labelCategorized": "",
+     "info": "(GLN64) Use in addition to High-Res textures, will use lazy loading and trade memory consumption against loading speeds.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-GLideN64IniBehaviour",
+     "label": "INI Behaviour",
+     "labelCategorized": "",
+     "info": "(GLN64) Specifies INI Settings behaviour. This should really only contain essential options. Changing this can and will break ROM's, if the correct options aren't set manually. Some options may only be set via INI (fbInfoDisabled).",
+     "values": [
+      "late",
+      "early",
+      "disabled"
+     ],
+     "labels": [
+      "Prioritize INI over Core Options",
+      "Prioritize Core Options over INI",
+      "Disable INI"
+     ],
+     "default": "late"
+    }
+   ]
+  },
+  {
+   "key": "parallel_rdp",
+   "label": "ParaLLEl-RDP",
+   "info": "Configure ParaLLEl-RDP Options.",
+   "items": [
+    {
+     "key": "mupen64plus-parallel-rdp-synchronous",
+     "label": "(ParaLLEl-RDP) Synchronous RDP",
+     "labelCategorized": "Synchronous RDP",
+     "info": "Enable full accuracy for CPU accessed frame buffers.",
+     "values": [
+      "True",
+      "False"
+     ],
+     "labels": [
+      "Enabled",
+      "Disabled"
+     ],
+     "default": "True"
+    },
+    {
+     "key": "mupen64plus-parallel-rdp-overscan",
+     "label": "(ParaLLEl-RDP) Crop overscan",
+     "labelCategorized": "Crop overscan",
+     "info": "Crop pixels around edge of screen.",
+     "values": [
+      "0",
+      "2",
+      "4",
+      "6",
+      "8",
+      "10",
+      "12",
+      "14",
+      "16",
+      "18",
+      "20",
+      "22",
+      "24",
+      "26",
+      "28",
+      "30",
+      "32",
+      "34",
+      "36",
+      "38",
+      "40",
+      "42",
+      "44",
+      "46",
+      "48",
+      "50",
+      "52",
+      "54",
+      "56",
+      "58",
+      "60",
+      "62",
+      "64"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "0"
+    },
+    {
+     "key": "mupen64plus-parallel-rdp-divot-filter",
+     "label": "(ParaLLEl-RDP) VI Divot filter",
+     "labelCategorized": "VI Divot filter",
+     "info": "Allow VI divot filter, cleans up stray black pixels.",
+     "values": [
+      "True",
+      "False"
+     ],
+     "labels": [
+      "Enabled",
+      "Disabled"
+     ],
+     "default": "True"
+    },
+    {
+     "key": "mupen64plus-parallel-rdp-gamma-dither",
+     "label": "(ParaLLEl-RDP) VI Gamma dither",
+     "labelCategorized": "VI Gamma dither",
+     "info": "Allow VI gamma dither.",
+     "values": [
+      "True",
+      "False"
+     ],
+     "labels": [
+      "Enabled",
+      "Disabled"
+     ],
+     "default": "True"
+    },
+    {
+     "key": "mupen64plus-parallel-rdp-vi-aa",
+     "label": "(ParaLLEl-RDP) VI anti-aliasing",
+     "labelCategorized": "VI anti-aliasing",
+     "info": "Allow VI anti-aliased fetch filter, smooths polygon edges.",
+     "values": [
+      "True",
+      "False"
+     ],
+     "labels": [
+      "Enabled",
+      "Disabled"
+     ],
+     "default": "True"
+    },
+    {
+     "key": "mupen64plus-parallel-rdp-vi-bilinear",
+     "label": "(ParaLLEl-RDP) VI bilinear",
+     "labelCategorized": "VI bilinear",
+     "info": "Allow VI bilinear scaling on scanout.",
+     "values": [
+      "True",
+      "False"
+     ],
+     "labels": [
+      "Enabled",
+      "Disabled"
+     ],
+     "default": "True"
+    },
+    {
+     "key": "mupen64plus-parallel-rdp-dither-filter",
+     "label": "(ParaLLEl-RDP) VI dither filter",
+     "labelCategorized": "VI dither filter",
+     "info": "Allow VI de-dither filter, recovers significant color depth.",
+     "values": [
+      "True",
+      "False"
+     ],
+     "labels": [
+      "Enabled",
+      "Disabled"
+     ],
+     "default": "True"
+    },
+    {
+     "key": "mupen64plus-parallel-rdp-upscaling",
+     "label": "(ParaLLEl-RDP) Upscaling factor (restart)",
+     "labelCategorized": "Upscaling factor (restart)",
+     "info": "Apply internal upscaling factor.",
+     "values": [
+      "1x",
+      "2x",
+      "4x",
+      "8x"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "1x"
+    },
+    {
+     "key": "mupen64plus-parallel-rdp-super-sampled-read-back",
+     "label": "(ParaLLEl-RDP) SSAA framebuffer effects (restart)",
+     "labelCategorized": "SSAA framebuffer effects (restart)",
+     "info": "Super sample framebuffer effects. May introduce artifacts.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "Disabled",
+      "Enabled"
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-parallel-rdp-super-sampled-read-back-dither",
+     "label": "(ParaLLEl-RDP) Dither SSAA framebuffer effects (restart)",
+     "labelCategorized": "Dither SSAA framebuffer effects (restart)",
+     "info": "Dither super sampled framebuffer effects.",
+     "values": [
+      "True",
+      "False"
+     ],
+     "labels": [
+      "Enabled",
+      "Disabled"
+     ],
+     "default": "True"
+    },
+    {
+     "key": "mupen64plus-parallel-rdp-downscaling",
+     "label": "(ParaLLEl-RDP) Downsampling factor",
+     "labelCategorized": "Downsampling factor",
+     "info": "Downscales output after VI, equivalent to SSAA.",
+     "values": [
+      "disable",
+      "1/2",
+      "1/4",
+      "1/8"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "disable"
+    },
+    {
+     "key": "mupen64plus-parallel-rdp-native-texture-lod",
+     "label": "(ParaLLEl-RDP) Native texture LOD",
+     "labelCategorized": "Native texture LOD",
+     "info": "Use native texture LOD computation when upscaling, effectively a LOD bias.",
+     "values": [
+      "False",
+      "True"
+     ],
+     "labels": [
+      "Disabled",
+      "Enabled"
+     ],
+     "default": "False"
+    },
+    {
+     "key": "mupen64plus-parallel-rdp-native-tex-rect",
+     "label": "(ParaLLEl-RDP) Native resolution TEX_RECT",
+     "labelCategorized": "Native resolution TEX_RECT",
+     "info": "TEX_RECT primitives should generally be rendered at native resolution to avoid seams.",
+     "values": [
+      "True",
+      "False"
+     ],
+     "labels": [
+      "Enabled",
+      "Disabled"
+     ],
+     "default": "True"
+    },
+    {
+     "key": "mupen64plus-parallel-rdp-deinterlace-method",
+     "label": "(ParaLLEl-RDP) Deinterlacing method",
+     "labelCategorized": "Deinterlacing method",
+     "info": "Weave should only be used with 1x scaling factor and special CRT shaders.",
+     "values": [
+      "Bob",
+      "Weave"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "Bob"
+    }
+   ]
+  },
+  {
+   "key": "angrylion",
+   "label": "Angrylion",
+   "info": "Configure Angrylion Options.",
+   "items": [
+    {
+     "key": "mupen64plus-angrylion-vioverlay",
+     "label": "VI Overlay",
+     "labelCategorized": "",
+     "info": "(AL) Select VI Overlay filtering. 'Filtered' is the original system rendering.",
+     "values": [
+      "Filtered",
+      "AA+Blur",
+      "AA+Dedither",
+      "AA only",
+      "Unfiltered",
+      "Depth",
+      "Coverage"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "Filtered"
+    },
+    {
+     "key": "mupen64plus-angrylion-sync",
+     "label": "Thread sync level",
+     "labelCategorized": "",
+     "info": "(AL) Select Sync level (trades accuracy for performance).",
+     "values": [
+      "Low",
+      "Medium",
+      "High"
+     ],
+     "labels": [
+      "",
+      "",
+      ""
+     ],
+     "default": "Low"
+    },
+    {
+     "key": "mupen64plus-angrylion-multithread",
+     "label": "Multi-threading",
+     "labelCategorized": "",
+     "info": "(AL) Default 'all threads' is prefered to have it match your Physical CPU Core count. '1' should behave as the original angrylion, possibly fixing some bugs.",
+     "values": [
+      "all threads",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "20",
+      "21",
+      "22",
+      "23",
+      "24",
+      "25",
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31",
+      "32",
+      "33",
+      "34",
+      "35",
+      "36",
+      "37",
+      "38",
+      "39",
+      "40",
+      "41",
+      "42",
+      "43",
+      "44",
+      "45",
+      "46",
+      "47",
+      "48",
+      "49",
+      "50",
+      "51",
+      "52",
+      "53",
+      "54",
+      "55",
+      "56",
+      "57",
+      "58",
+      "59",
+      "60",
+      "61",
+      "62",
+      "63",
+      "75"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "all threads"
+    },
+    {
+     "key": "mupen64plus-angrylion-overscan",
+     "label": "Hide overscan",
+     "labelCategorized": "",
+     "info": "(AL) Hide overscan borders.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    }
+   ]
+  }
+ ],
+ "soSha256": "a0e9a39da544dab638eb776381c298d97b2977476dcc9c5d3c2d1272cd220fcc",
+ "probedAt": "2026-09-29"
+}

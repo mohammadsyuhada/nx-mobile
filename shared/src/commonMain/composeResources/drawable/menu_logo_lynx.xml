@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Logo by Dan Patrick (Platform Logos, Professionally Redrawn). Never to be sold. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="512dp"
+    android:height="57dp"
+    android:viewportWidth="3840"
+    android:viewportHeight="430.7">
+    <path
+        android:pathData="M 1.1 0 L 246.3 0 L 246.3 303.7 L 1.1 303.7 Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M 0 338.5 L 620.7 338.5 L 620.7 430.7 L 0 430.7 Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M 550.6 0 L 894.6 0 L 1114.2 165.5 L 945.5 273.9 L 550.6 0 Z"
+        android:fillType="evenOdd"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M 1752.1 0 L 2422.4 430.7 L 2561.1 430.7 L 2561.1 0 L 2438.5 0 L 2438.5 300.5 L 1986.2 0 L 1752.1 0 Z"
+        android:fillType="evenOdd"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M 1749.1 46.1 L 2014.9 216.9 L 2014.9 430.8 L 1748 430.8 L 1749.1 46.1 Z"
+        android:fillType="evenOdd"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M 1446.8 0 L 972.1 305 L 972.1 430.7 L 1219.5 430.7 L 1219.5 294 L 1644 0 L 1446.8 0 L 1446.8 0 Z"
+        android:fillType="evenOdd"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M 1760.4 5.4 L 2026.2 176.2"
+        android:fillType="evenOdd"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M 3432 430.7 L 2914 204.3 L 3029.3 162.1 L 3220.1 245.4 L 3308.9 212.9 L 3807.3 430.7 L 3435.6 430.7 L 3432 430.7 L 3432 430.7 Z"
+        android:fillType="evenOdd"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M 3204 366.6 L 3050.2 299.4 L 2689.3 430.7 L 3028.9 430.7 L 3204 366.6 Z"
+        android:fillType="evenOdd"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M 3097.2 0 L 3615.2 226.4 L 3499.9 268.6 L 3309.1 185.3 L 3220.3 217.8 L 2721.9 0 L 3093.6 0 L 3097.2 0 Z"
+        android:fillType="evenOdd"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M 3325.2 64.1 L 3479 131.3 L 3840 0 L 3500.4 0 L 3325.2 64.1 Z"
+        android:fillType="evenOdd"
+        android:fillColor="#FFFFFFFF" />
+</vector>

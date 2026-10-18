@@ -1,0 +1,112 @@
+{
+ "core": "prboom",
+ "emulator": "PrBoom",
+ "sections": [
+  {
+   "key": "",
+   "label": "",
+   "info": "",
+   "items": [
+    {
+     "key": "prboom-resolution",
+     "label": "Internal resolution (Restart Required)",
+     "labelCategorized": "",
+     "info": "Configure the resolution.",
+     "values": [
+      "320x200",
+      "640x400",
+      "960x600",
+      "1280x800",
+      "1600x1000",
+      "1920x1200",
+      "2240x1400",
+      "2560x1600"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "320x200"
+    },
+    {
+     "key": "prboom-mouse_on",
+     "label": "Mouse Active When Using Gamepad",
+     "labelCategorized": "",
+     "info": "Allows you to use mouse inputs even when User 1's device type isn't set to 'RetroKeyboard/Mouse'.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "prboom-find_recursive_on",
+     "label": "Look on Parent Folders for IWADs",
+     "labelCategorized": "",
+     "info": "Scans parent folders for IWADs. NOTE: You need to disable this if you want to run SIGIL.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "enabled"
+    },
+    {
+     "key": "prboom-rumble",
+     "label": "Rumble Effects",
+     "labelCategorized": "",
+     "info": "Enables haptic feedback when using a rumble-equipped gamepad.",
+     "values": [
+      "disabled",
+      "enabled"
+     ],
+     "labels": [
+      "",
+      ""
+     ],
+     "default": "disabled"
+    },
+    {
+     "key": "prboom-analog_deadzone",
+     "label": "Analog Deadzone (Percent)",
+     "labelCategorized": "",
+     "info": "Sets the deadzone of the gamepad analog sticks when the input device type is set to 'Gamepad Modern'.",
+     "values": [
+      "0",
+      "5",
+      "10",
+      "15",
+      "20",
+      "25",
+      "30"
+     ],
+     "labels": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     "default": "15"
+    }
+   ]
+  }
+ ],
+ "soSha256": "35f65e1a7d84d04607ba865619899581a189011948f50dcd45da1e2e661fbcac",
+ "probedAt": "2026-09-29"
+}

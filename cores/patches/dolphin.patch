@@ -1,0 +1,838 @@
+# licence: modifies libretro/dolphin (https://github.com/libretro/dolphin), GPL-2.0 or later (its COPYING and
+# LICENSES/GPL-2.0-or-later.txt; see licenses/dolphin.txt); this patch is distributed under the same licence.
+diff --git a/Source/Core/Common/DirectIOFile.cpp b/Source/Core/Common/DirectIOFile.cpp
+index b09ffd1..a0d1ece 100644
+--- a/Source/Core/Common/DirectIOFile.cpp
++++ b/Source/Core/Common/DirectIOFile.cpp
+@@ -176,6 +176,25 @@ bool DirectIOFile::Open(const std::string& path, AccessMode access_mode, OpenMod
+   return IsOpen();
+ }
+ 
++#ifdef __LIBRETRO__
++// nx-mobile 2026-10-13: a file adopted from a descriptor (a SAF fd the frontend passed for RetroAchievements hashing)
++// reads that fd directly, even while the libretro VFS is on: it has no VFS handle, and reopening it by path is refused.
++#if !defined(_WIN32)
++DirectIOFile DirectIOFile::FromFd(int fd)
++{
++  DirectIOFile result;
++  result.m_fd = fd;
++  result.m_from_fd = true;
++  return result;
++}
++#endif
++
++bool DirectIOFile::UsesVFS() const
++{
++  return !m_from_fd && Libretro::VFile::HasVFS();
++}
++#endif
++
+ bool DirectIOFile::Close()
+ {
+   if (!IsOpen())
+@@ -184,7 +203,7 @@ bool DirectIOFile::Close()
+   m_current_offset = 0;
+ 
+ #ifdef __LIBRETRO__
+-  if (Libretro::VFile::HasVFS())
++  if (UsesVFS())
+   {
+     int result = Libretro::VFile::Close(m_vfs_handle);
+     m_vfs_handle = nullptr;
+@@ -202,7 +221,7 @@ bool DirectIOFile::Close()
+ bool DirectIOFile::IsOpen() const
+ {
+ #ifdef __LIBRETRO__
+-  if (Libretro::VFile::HasVFS())
++  if (UsesVFS())
+     return m_vfs_handle != nullptr;
+ #endif
+ 
+@@ -246,7 +265,7 @@ static bool OverlappedTransfer(HANDLE handle, u64 offset, auto* data_ptr, u64 si
+ bool DirectIOFile::OffsetRead(u64 offset, u8* out_ptr, u64 size)
+ {
+ #ifdef __LIBRETRO__
+-  if (Libretro::VFile::HasVFS())
++  if (UsesVFS())
+   {
+     if (Libretro::VFile::Seek(m_vfs_handle, offset, SEEK_SET) < 0)
+       return false;
+@@ -266,7 +285,7 @@ bool DirectIOFile::OffsetRead(u64 offset, u8* out_ptr, u64 size)
+ bool DirectIOFile::OffsetWrite(u64 offset, const u8* in_ptr, u64 size)
+ {
+ #ifdef __LIBRETRO__
+-  if (Libretro::VFile::HasVFS())
++  if (UsesVFS())
+   {
+     if (Libretro::VFile::Seek(m_vfs_handle, offset, SEEK_SET) < 0)
+       return false;
+@@ -286,7 +305,7 @@ bool DirectIOFile::OffsetWrite(u64 offset, const u8* in_ptr, u64 size)
+ u64 DirectIOFile::GetSize() const
+ {
+ #ifdef __LIBRETRO__
+-  if (Libretro::VFile::HasVFS())
++  if (UsesVFS())
+     return Libretro::VFile::GetSize(m_vfs_handle);
+ #endif
+ 
+@@ -332,7 +351,7 @@ bool DirectIOFile::Seek(s64 offset, SeekOrigin origin)
+ bool DirectIOFile::Flush()
+ {
+ #ifdef __LIBRETRO__
+-  if (Libretro::VFile::HasVFS())
++  if (UsesVFS())
+     return Libretro::VFile::Flush(m_vfs_handle) == 0;
+ #endif
+ 
+@@ -353,6 +372,7 @@ void DirectIOFile::Swap(DirectIOFile& other)
+     std::swap(m_mode, other.m_mode);
+     std::swap(m_hints, other.m_hints);
+   }
++  std::swap(m_from_fd, other.m_from_fd);
+ #endif
+ 
+ #if defined(_WIN32)
+@@ -366,12 +386,15 @@ void DirectIOFile::Swap(DirectIOFile& other)
+ DirectIOFile DirectIOFile::Duplicate() const
+ {
+   DirectIOFile result;
++#ifdef __LIBRETRO__
++  result.m_from_fd = m_from_fd;
++#endif
+ 
+   if (!IsOpen())
+     return result;
+ 
+ #ifdef __LIBRETRO__
+-  if (Libretro::VFile::HasVFS())
++  if (UsesVFS())
+   {
+     // We need to reopen the file, since VFS handles cannot be duplicated.
+     result.m_vfs_handle = Libretro::VFile::Open(
+diff --git a/Source/Core/Common/DirectIOFile.h b/Source/Core/Common/DirectIOFile.h
+index 6bff9b0..51b7790 100644
+--- a/Source/Core/Common/DirectIOFile.h
++++ b/Source/Core/Common/DirectIOFile.h
+@@ -60,6 +60,11 @@ public:
+   bool Open(const std::string& path, AccessMode access_mode,
+             OpenMode open_mode = OpenMode::Default);
+ 
++#if defined(__LIBRETRO__) && !defined(_WIN32)
++  // nx-mobile: takes ownership of an open descriptor; it is read directly, never through the libretro VFS.
++  static DirectIOFile FromFd(int fd);
++#endif
++
+   bool Close();
+ 
+   bool IsOpen() const;
+@@ -126,6 +131,9 @@ public:
+ private:
+   void Swap(DirectIOFile& other);
+   DirectIOFile Duplicate() const;
++#ifdef __LIBRETRO__
++  bool UsesVFS() const;
++#endif
+ 
+ #if defined(_WIN32)
+   // A workaround to avoid including <windows.h> in this header.
+@@ -144,6 +152,7 @@ private:
+   std::string m_path;
+   unsigned m_mode{};
+   unsigned m_hints{};
++  bool m_from_fd = false;  // nx-mobile: FromFd
+ 
+   friend bool Resize(DirectIOFile& file, u64 size);
+ #endif
+diff --git a/Source/Core/Core/IOS/ES/ES.cpp b/Source/Core/Core/IOS/ES/ES.cpp
+index 5366444..4f09f2f 100644
+--- a/Source/Core/Core/IOS/ES/ES.cpp
++++ b/Source/Core/Core/IOS/ES/ES.cpp
+@@ -32,6 +32,10 @@
+ #include "Core/System.h"
+ #include "DiscIO/Enums.h"
+ 
++#ifdef __LIBRETRO__
++#include "DolphinLibretro/Common/Globals.h"
++#endif
++
+ namespace IOS::HLE
+ {
+ namespace
+@@ -431,6 +435,12 @@ bool ESDevice::LaunchPPCTitle(u64 title_id)
+                      "The emulated software will likely hang now.",
+                      title_id);
+     }
++#ifdef __LIBRETRO__
++    // nx-mobile: only the disc is booted, so leaving it (HOME menu → Wii Menu) would hang on a black screen. Ask the
++    // frontend to close the game instead, as a real Wii returns to its menu.
++    if (Libretro::environ_cb)
++      Libretro::environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr);
++#endif
+     return false;
+   }
+ 
+diff --git a/Source/Core/Core/IOS/ES/Views.cpp b/Source/Core/Core/IOS/ES/Views.cpp
+index bcb2be8..db5cb41 100644
+--- a/Source/Core/Core/IOS/ES/Views.cpp
++++ b/Source/Core/Core/IOS/ES/Views.cpp
+@@ -17,6 +17,10 @@
+ #include "Core/IOS/VersionInfo.h"
+ #include "Core/System.h"
+ 
++#ifdef __LIBRETRO__
++#include "DolphinLibretro/Common/Globals.h"
++#endif
++
+ namespace IOS::HLE
+ {
+ // HACK: Since we do not want to require users to install disc updates when launching
+@@ -59,6 +63,18 @@ IPCReply ESDevice::GetTicketViewCount(const IOCtlVRequest& request)
+     WARN_LOG_FMT(IOS_ES, "GetViewCount: Faking IOS title {:016x} being present", TitleID);
+   }
+ 
++#ifdef __LIBRETRO__
++  // nx-mobile: only the disc is booted, so the Wii Menu has no ticket. A game returning to it (HOME menu → Wii Menu,
++  // OSReturnToMenu) asks for its ticket views first and stalls on none, a black screen. Ask the frontend to close the
++  // game instead, as a real Wii returns to its menu.
++  if (TitleID == Titles::SYSTEM_MENU && view_count == 0)
++  {
++    NOTICE_LOG_FMT(IOS_ES, "GetViewCount: the Wii Menu is not installed; asking the frontend to close the game");
++    if (Libretro::environ_cb)
++      Libretro::environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, nullptr);
++  }
++#endif
++
+   INFO_LOG_FMT(IOS_ES, "IOCTL_ES_GETVIEWCNT for titleID: {:016x} (View Count = {})", TitleID,
+                view_count);
+ 
+diff --git a/Source/Core/Core/IOS/IOS.cpp b/Source/Core/Core/IOS/IOS.cpp
+index f49b82e..12f1ecf 100644
+--- a/Source/Core/Core/IOS/IOS.cpp
++++ b/Source/Core/Core/IOS/IOS.cpp
+@@ -692,7 +692,7 @@ std::optional<IPCReply> EmulationKernel::OpenDevice(OpenRequest& request)
+     constexpr std::string_view cios_devices[] = {"/dev/flash", "/dev/mload", "/dev/sdio/sdhc",
+                                                  "/dev/usb123", "/dev/usb2"};
+     static_assert(std::ranges::is_sorted(cios_devices));
+-    if (std::ranges::binary_search(cios_devices, request.path))
++    if (std::binary_search(std::begin(cios_devices), std::end(cios_devices), request.path))
+       WARN_LOG_FMT(IOS, "Possible anti-piracy check for cIOS device {}", request.path);
+     else
+       ERROR_LOG_FMT(IOS, "Unknown device: {}", request.path);
+diff --git a/Source/Core/Core/IOS/USB/Bluetooth/WiimoteDevice.cpp b/Source/Core/Core/IOS/USB/Bluetooth/WiimoteDevice.cpp
+index 4c522e3..8d5ddea 100644
+--- a/Source/Core/Core/IOS/USB/Bluetooth/WiimoteDevice.cpp
++++ b/Source/Core/Core/IOS/USB/Bluetooth/WiimoteDevice.cpp
+@@ -453,7 +453,9 @@ void WiimoteDevice::ExecuteL2capCmd(u8* ptr, u32 size)
+       m_host->SendACLPacket(GetBD(), reinterpret_cast<const u8*>(&data_frame), sizeof(data_frame));
+ 
+       // Does the wii remote reply on the control or interrupt channel in this situation?
+-      m_hid_source->InterruptDataOutput(data + sizeof(hid_type), data_size - sizeof(hid_type));
++      // nx-mobile: a state restored with more remotes linked than this session has sources
++      if (IsSourceValid())
++        m_hid_source->InterruptDataOutput(data + sizeof(hid_type), data_size - sizeof(hid_type));
+     }
+     else
+     {
+@@ -466,7 +468,11 @@ void WiimoteDevice::ExecuteL2capCmd(u8* ptr, u32 size)
+   {
+     const u8 hid_type = data[0];
+     if (hid_type == ((WiimoteCommon::HID_TYPE_DATA << 4) | WiimoteCommon::HID_PARAM_OUTPUT))
+-      m_hid_source->InterruptDataOutput(data + sizeof(hid_type), data_size - sizeof(hid_type));
++    {
++      // nx-mobile: a state restored with more remotes linked than this session has sources
++      if (IsSourceValid())
++        m_hid_source->InterruptDataOutput(data + sizeof(hid_type), data_size - sizeof(hid_type));
++    }
+     else
+       ERROR_LOG_FMT(IOS_WIIMOTE, "Unknown HID-type ({:#x}) on L2CAP_PSM_HID_INTR", hid_type);
+   }
+diff --git a/Source/Core/DiscIO/Blob.cpp b/Source/Core/DiscIO/Blob.cpp
+index aad8b60..fb60ffa 100644
+--- a/Source/Core/DiscIO/Blob.cpp
++++ b/Source/Core/DiscIO/Blob.cpp
+@@ -212,7 +212,11 @@ u32 SectorReader::ReadChunk(u8* buffer, u64 chunk_num)
+ 
+ std::unique_ptr<BlobReader> CreateBlobReader(const std::string& filename)
+ {
+-  File::DirectIOFile file(filename, File::AccessMode::Read);
++  return CreateBlobReader(File::DirectIOFile(filename, File::AccessMode::Read), filename);
++}
++
++std::unique_ptr<BlobReader> CreateBlobReader(File::DirectIOFile file, const std::string& filename)
++{
+   u32 magic;
+   if (!file.Read(Common::AsWritableU8Span(magic)))
+     return nullptr;
+diff --git a/Source/Core/DiscIO/Blob.h b/Source/Core/DiscIO/Blob.h
+index 3551c31..c43310a 100644
+--- a/Source/Core/DiscIO/Blob.h
++++ b/Source/Core/DiscIO/Blob.h
+@@ -21,6 +21,7 @@
+ #include <vector>
+ 
+ #include "Common/CommonTypes.h"
++#include "Common/DirectIOFile.h"
+ #include "Common/Swap.h"
+ 
+ namespace DiscIO
+@@ -194,6 +195,9 @@ private:
+ 
+ // Factory function - examines the path to choose the right type of BlobReader, and returns one.
+ std::unique_ptr<BlobReader> CreateBlobReader(const std::string& filename);
++// nx-mobile: the same, from an already open file. [filename] finds a format's other parts (split WBFS, NFS, a
++// directory or .partN.iso set); "" reads the one file only.
++std::unique_ptr<BlobReader> CreateBlobReader(File::DirectIOFile file, const std::string& filename);
+ 
+ using CompressCB = std::function<bool(const std::string& text, float percent)>;
+ 
+diff --git a/Source/Core/DiscIO/VolumeVerifier.cpp b/Source/Core/DiscIO/VolumeVerifier.cpp
+index 3031f14..5585683 100644
+--- a/Source/Core/DiscIO/VolumeVerifier.cpp
++++ b/Source/Core/DiscIO/VolumeVerifier.cpp
+@@ -733,7 +733,7 @@ bool VolumeVerifier::ShouldHaveChannelPartition() const
+   };
+   static_assert(std::ranges::is_sorted(channel_discs));
+ 
+-  return std::ranges::binary_search(channel_discs, m_volume.GetGameID());
++  return std::binary_search(std::begin(channel_discs), std::end(channel_discs), m_volume.GetGameID());
+ }
+ 
+ bool VolumeVerifier::ShouldHaveInstallPartition() const
+@@ -764,7 +764,7 @@ bool VolumeVerifier::ShouldBeDualLayer() const
+   };
+   static_assert(std::ranges::is_sorted(dual_layer_discs));
+ 
+-  return std::ranges::binary_search(dual_layer_discs, m_volume.GetGameID());
++  return std::binary_search(std::begin(dual_layer_discs), std::end(dual_layer_discs), m_volume.GetGameID());
+ }
+ 
+ void VolumeVerifier::CheckVolumeSize()
+diff --git a/Source/Core/DolphinLibretro/Boot.cpp b/Source/Core/DolphinLibretro/Boot.cpp
+index 14ee1c5..becb11d 100644
+--- a/Source/Core/DolphinLibretro/Boot.cpp
++++ b/Source/Core/DolphinLibretro/Boot.cpp
+@@ -366,6 +366,10 @@ bool retro_load_game(const struct retro_game_info* game)
+   Config::SetBase(Config::MAIN_CPU_THREAD,
+     Libretro::GetOption<bool>(core::MAIN_CPU_THREAD, /*def=*/true));
+ 
++  // nx-mobile: dual core's GPU thread kept in step with the CPU thread (Dolphin's "Synchronize GPU thread")
++  Config::SetBase(Config::MAIN_SYNC_GPU,
++    Libretro::GetOption<bool>(core::MAIN_SYNC_GPU, /*def=*/false));
++
+   Config::SetBase(Config::MAIN_LOAD_GAME_INTO_MEMORY,
+     Libretro::GetOption<bool>(core::MAIN_LOAD_GAME_INTO_MEMORY, /*def=*/false));
+ 
+@@ -675,6 +679,14 @@ bool retro_load_game(const struct retro_game_info* game)
+   Libretro::FrameTiming::Init();
+   Libretro::Audio::Init();
+   Libretro::Video::Init();
++  // nx-mobile 2026-10-13: hardware asked for and refused (no GLES 3 context): fail the load so the frontend says so,
++  // rather than run on the null backend behind a black screen.
++  if (Libretro::Options::GetCached<std::string>(Libretro::Options::gfx_settings::RENDERER) == "Hardware" &&
++      Libretro::Video::hw_render.context_type == RETRO_HW_CONTEXT_NONE)
++  {
++    ERROR_LOG_FMT(VIDEO, "No hardware render context was granted; refusing to load");
++    return false;
++  }
+   WindowSystemInfo wsi(WindowSystemType::Libretro, nullptr, nullptr, nullptr);
+   VideoBackendBase::PopulateBackendInfo(wsi);
+   NOTICE_LOG_FMT(VIDEO, "Using GFX backend: {}", Config::Get(Config::MAIN_GFX_BACKEND));
+diff --git a/Source/Core/DolphinLibretro/CMakeLists.txt b/Source/Core/DolphinLibretro/CMakeLists.txt
+index 50497a7..b6678f1 100644
+--- a/Source/Core/DolphinLibretro/CMakeLists.txt
++++ b/Source/Core/DolphinLibretro/CMakeLists.txt
+@@ -6,6 +6,7 @@ add_library(dolphin_libretro SHARED
+   Input.cpp
+   Log.cpp
+   Main.cpp
++  NxDisc.cpp
+   Video.cpp
+ )
+ 
+diff --git a/Source/Core/DolphinLibretro/Common/Options.cpp b/Source/Core/DolphinLibretro/Common/Options.cpp
+index 3dacade..04c8604 100644
+--- a/Source/Core/DolphinLibretro/Common/Options.cpp
++++ b/Source/Core/DolphinLibretro/Common/Options.cpp
+@@ -175,6 +175,20 @@ static struct retro_core_option_v2_definition option_defs[] = {
+     },
+     "enabled"
+   },
++  {
++    Libretro::Options::core::MAIN_SYNC_GPU,
++    "Core > Synchronize GPU Thread",
++    "Synchronize GPU Thread",
++    "Keeps the dual-core GPU thread in step with the CPU thread, which stops FIFO desyncs at some speed cost. Requires core RESTART.",
++    nullptr,
++    CATEGORY_CORE,
++    {
++      { "disabled", "Disabled" },
++      { "enabled",  "Enabled" },
++      { nullptr, nullptr }
++    },
++    "disabled"
++  },
+   {
+     Libretro::Options::core::MAIN_LOAD_GAME_INTO_MEMORY,
+     "Core > Load Whole Game Into Memory",
+@@ -950,7 +964,8 @@ static struct retro_core_option_v2_definition option_defs[] = {
+       { "2", "Async (UberShaders)" }, // ShaderCompilationMode::AsynchronousUberShaders
+       { nullptr, nullptr }
+     },
+-    STR(ShaderCompilationMode::Synchronous)
++    // nx-mobile 2026-10-13: STR() stringified the enumerator name; the default must be one of the values ("0" = Synchronous).
++    "0"
+   },
+   {
+     Libretro::Options::gfx_settings::WAIT_FOR_SHADERS,
+@@ -1149,7 +1164,8 @@ static struct retro_core_option_v2_definition option_defs[] = {
+       { "6", "Area Sampling" },
+       { nullptr, nullptr }
+     },
+-    "default"
++    // nx-mobile 2026-10-13: "default" was not one of the values; "0" is OutputResamplingMode::Default.
++    "0"
+   },
+   {
+     Libretro::Options::gfx_enhancements::FORCE_TRUE_COLOR,
+diff --git a/Source/Core/DolphinLibretro/Common/Options.h b/Source/Core/DolphinLibretro/Common/Options.h
+index 57fe3b1..15a0ff1 100644
+--- a/Source/Core/DolphinLibretro/Common/Options.h
++++ b/Source/Core/DolphinLibretro/Common/Options.h
+@@ -164,6 +164,7 @@ namespace core {
+   constexpr const char CPU_CLOCK_RATE[] = "dolphin_cpu_clock_rate";
+   constexpr const char EMULATION_SPEED[] = "dolphin_emulation_speed";
+   constexpr const char MAIN_CPU_THREAD[] = "dolphin_main_cpu_thread";
++  constexpr const char MAIN_SYNC_GPU[] = "dolphin_sync_gpu";
+   constexpr const char MAIN_LOAD_GAME_INTO_MEMORY[] = "dolphin_main_load_game_into_memory";
+   constexpr const char MAIN_PRECISION_FRAME_TIMING[] = "dolphin_precision_frame_timing";
+   constexpr const char FASTMEM[] = "dolphin_fastmem";
+diff --git a/Source/Core/DolphinLibretro/Input.cpp b/Source/Core/DolphinLibretro/Input.cpp
+index fe5f3b4..2ab99c6 100644
+--- a/Source/Core/DolphinLibretro/Input.cpp
++++ b/Source/Core/DolphinLibretro/Input.cpp
+@@ -110,6 +110,7 @@ static unsigned input_types[8];
+ static bool g_init_wiimotes = false;
+ static bool s_sensor_init_pending = false;
+ static bool sensor_enabled[NUM_CONTROLLERS_FOR_SENSORS][SENSOR_COUNT] = {};
++static bool s_sensor_registered[NUM_CONTROLLERS_FOR_SENSORS] = {};
+ static int port_max;
+ double g_accel_pos[NUM_CONTROLLERS_FOR_SENSORS][3] = {}; // x, y, z
+ double g_accel_neg[NUM_CONTROLLERS_FOR_SENSORS][3] = {}; // x, y, z
+@@ -672,6 +673,7 @@ void InitSensors()
+           auto sensor = std::make_shared<SensorDevice>(i);
+           sensor->RegisterAll();
+           g_controller_interface.AddDevice(sensor);
++          s_sensor_registered[i] = true;
+         }
+ 
+         INFO_LOG_FMT(BOOT, "Sensor interface: Port: {} ACCELEROMETER: {} GYROSCOPE: {}", i,
+@@ -683,6 +685,24 @@ void InitSensors()
+   ResetControllers(WiimoteUpdateFlags{});
+ }
+ 
++// nx-mobile 2026-10-13: asks the frontend again whether this port has sensors before its device is wired, so a frontend
++// turns motion on or off by resending the port's device (InitSensors asked only once, at the first retro_run). The Sensor
++// device is registered the first time a port gets one and kept; sensor_enabled decides whether it is bound.
++static void RefreshSensors(unsigned port)
++{
++  if (port >= NUM_CONTROLLERS_FOR_SENSORS || !sensor_interface.set_sensor_state)
++    return;
++  sensor_enabled[port][SENSOR_ACCELEROMETER] = sensor_interface.set_sensor_state(port, RETRO_SENSOR_ACCELEROMETER_ENABLE, 60);
++  sensor_enabled[port][SENSOR_GYRO] = sensor_interface.set_sensor_state(port, RETRO_SENSOR_GYROSCOPE_ENABLE, 60);
++  if ((sensor_enabled[port][SENSOR_ACCELEROMETER] || sensor_enabled[port][SENSOR_GYRO]) && !s_sensor_registered[port])
++  {
++    auto sensor = std::make_shared<SensorDevice>(port);
++    sensor->RegisterAll();
++    g_controller_interface.AddDevice(sensor);
++    s_sensor_registered[port] = true;
++  }
++}
++
+ void Shutdown()
+ {
+   if (g_init_wiimotes)
+@@ -1461,6 +1481,9 @@ void retro_set_controller_port_device_wii(unsigned port, unsigned device)
+     return;
+   }
+ 
++  if (!Libretro::Input::s_sensor_init_pending && !Config::Get(Config::MAIN_BLUETOOTH_PASSTHROUGH_ENABLED))
++    Libretro::Input::RefreshSensors(port);
++
+   bool altGCPorts = Libretro::Options::GetCached<bool>(Libretro::Options::sysconf::ALT_GC_PORTS_ON_WII);
+   if (!altGCPorts) // Disconnect GC controller to avoid conflict with Wii device
+   {
+@@ -1696,6 +1719,12 @@ void retro_set_controller_port_device_wii(unsigned port, unsigned device)
+             wmAccel->SetControlExpression(5, "`" + devSensor + ":AccelY+`");  // Backward
+           }
+         }
++        else if (auto* wmAccelOff = static_cast<ControllerEmu::IMUAccelerometer*>(
++                     wm->GetWiimoteGroup(WiimoteEmu::WiimoteGroup::IMUAccelerometer)))
++        {
++          for (int i = 0; i < 6; i++)
++            wmAccelOff->SetControlExpression(i, "");
++        }
+ 
+         // A sibling, not a child: nested, gyro-without-accelerometer bound neither.
+         if (Libretro::Input::sensor_enabled[port][SENSOR_GYRO])
+@@ -1716,9 +1745,25 @@ void retro_set_controller_port_device_wii(unsigned port, unsigned device)
+             wmGyro->SetControlExpression(5, "`" + devSensor + ":GyroZ-`");  // Yaw Right
+           }
+         }
++        else if (auto* wmGyroOff = static_cast<ControllerEmu::IMUGyroscope*>(
++                     wm->GetWiimoteGroup(WiimoteEmu::WiimoteGroup::IMUGyroscope)))
++        {
++          for (int i = 0; i < 6; i++)
++            wmGyroOff->SetControlExpression(i, "");
++        }
+       }
+       else
+       {
++        // Clear any IMU binding left from a sensor run, or Dolphin reads the unbound accelerometer as free fall.
++        auto* wmAccelOff = static_cast<ControllerEmu::IMUAccelerometer*>(
++            wm->GetWiimoteGroup(WiimoteEmu::WiimoteGroup::IMUAccelerometer));
++        auto* wmGyroOff = static_cast<ControllerEmu::IMUGyroscope*>(
++            wm->GetWiimoteGroup(WiimoteEmu::WiimoteGroup::IMUGyroscope));
++        for (int i = 0; i < 6; i++)
++        {
++          if (wmAccelOff) wmAccelOff->SetControlExpression(i, "");
++          if (wmGyroOff) wmGyroOff->SetControlExpression(i, "");
++        }
+         wmTilt->SetControlExpression(0, "`" + devAnalog + ":Y0-`");  // Forward
+         wmTilt->SetControlExpression(1, "`" + devAnalog + ":Y0+`");  // Backward
+         wmTilt->SetControlExpression(2, "`" + devAnalog + ":X0-`");  // Left
+diff --git a/Source/Core/DolphinLibretro/Main.cpp b/Source/Core/DolphinLibretro/Main.cpp
+index 09cbb16..be785c8 100644
+--- a/Source/Core/DolphinLibretro/Main.cpp
++++ b/Source/Core/DolphinLibretro/Main.cpp
+@@ -1,4 +1,5 @@
+ 
++#include <cctype>
+ #include <cstdint>
+ #include <libretro.h>
+ #include <string>
+@@ -381,8 +382,9 @@ void retro_run(void)
+       Libretro::s_refresh_rate_settled && ((old_rate > 55.0) != (new_rate > 55.0));
+     Libretro::s_refresh_rate_settled = true;
+ 
+-    if (crosses_50_60)
+-      Libretro::environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &info);
++    // nx-mobile 2026-10-13: the runner paces retro_run by the last SET_SYSTEM_AV_INFO fps, so send every rate change.
++    (void)crosses_50_60;
++    Libretro::environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &info);
+     Libretro::environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &info);
+   }
+ 
+@@ -628,9 +630,17 @@ void* retro_get_memory_data(unsigned id)
+   return NULL;
+ }
+ 
+-static void enable_cheat_by_code(bool enabled, const char* code)
++static bool enable_cheat_by_code(bool enabled, const char* code)
+ {
++  if (!code)
++    return false;
+   std::string incoming(code);
++  // nx-mobile: "ar:" marks a player's Action Replay code; match it against the AR list only, ignoring hex case.
++  const bool ar_only = incoming.rfind("ar:", 0) == 0;
++  if (ar_only)
++    incoming.erase(0, 3);
++  for (char& ch : incoming)
++    ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+   bool found = false;
+ 
+   // Match Action Replay codes
+@@ -656,7 +666,7 @@ static void enable_cheat_by_code(bool enabled, const char* code)
+   }
+ 
+   // Match Gecko codes only if not already matched
+-  if (!found)
++  if (!found && !ar_only)
+   {
+     for (auto& c : Libretro::g_gecko_codes)
+     {
+@@ -670,6 +680,8 @@ static void enable_cheat_by_code(bool enabled, const char* code)
+ 
+         serialized += line.original_line;
+       }
++      for (char& ch : serialized)
++        ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+ 
+       if (serialized == incoming)
+       {
+@@ -679,6 +691,66 @@ static void enable_cheat_by_code(bool enabled, const char* code)
+       }
+     }
+   }
++
++  return found;
++}
++
++// nx-mobile: a code not in the game INIs (the player's own .cht); "ar:" marks Action Replay, else Gecko.
++static bool add_cheat_code(const char* code)
++{
++  std::string text(code ? code : "");
++  const bool is_ar = text.rfind("ar:", 0) == 0;
++  if (is_ar)
++    text.erase(0, 3);
++
++  std::vector<std::pair<u32, u32>> ops;
++  std::vector<std::string> lines;
++  size_t start = 0;
++  while (start <= text.size())
++  {
++    size_t end = text.find('+', start);
++    if (end == std::string::npos)
++      end = text.size();
++    const std::string part = text.substr(start, end - start);
++    // Exactly two 8-digit hex words separated by spaces ("0x", signs and short tokens are rejected).
++    const auto is_word = [](const std::string& w) {
++      return w.size() == 8 && w.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
++    };
++    const size_t gap = part.find(' ');
++    const size_t second = gap == std::string::npos ? gap : part.find_first_not_of(' ', gap);
++    if (second == std::string::npos || !is_word(part.substr(0, gap)) || !is_word(part.substr(second)))
++    {
++      WARN_LOG_FMT(ACTIONREPLAY, "nx-mobile: ignoring malformed cheat code '{}'", part);
++      return false;
++    }
++    const u32 a = static_cast<u32>(std::stoul(part.substr(0, gap), nullptr, 16));
++    const u32 v = static_cast<u32>(std::stoul(part.substr(second), nullptr, 16));
++    ops.emplace_back(a, v);
++    lines.push_back(part);
++    start = end + 1;
++  }
++
++  if (is_ar)
++  {
++    ActionReplay::ARCode ar;
++    ar.name = "nx-mobile code";
++    for (const auto& [a, v] : ops)
++      ar.ops.emplace_back(a, v);
++    ar.enabled = true;
++    ar.user_defined = true;
++    Libretro::g_ar_codes.push_back(std::move(ar));
++  }
++  else
++  {
++    Gecko::GeckoCode gecko;
++    gecko.name = "nx-mobile code";
++    for (size_t i = 0; i < ops.size(); ++i)
++      gecko.codes.push_back({ops[i].first, ops[i].second, lines[i]});
++    gecko.enabled = true;
++    gecko.user_defined = true;
++    Libretro::g_gecko_codes.push_back(std::move(gecko));
++  }
++  return true;
+ }
+ 
+ // reset cheats to off
+@@ -717,8 +789,12 @@ void retro_cheat_set(unsigned index, bool enabled, const char *code)
+   const std::string& game_id = SConfig::GetInstance().GetGameID();
+   const u16 game_revision = SConfig::GetInstance().GetRevision();
+ 
+-  // Look up by code as index is unreliable
+-  enable_cheat_by_code(enabled, code);
++  if (!code)
++    return;
++
++  // Look up by code as index is unreliable. The lists are edited off the CPU thread: ApplyCodes/SetActiveCodes copy them under their own locks.
++  if (!enable_cheat_by_code(enabled, code) && enabled && !add_cheat_code(code))
++    return;
+ 
+   Core::RunOnCPUThread(Core::System::GetInstance(), [&] {
+     // Apply Action Replay
+diff --git a/Source/Core/DolphinLibretro/NxDisc.cpp b/Source/Core/DolphinLibretro/NxDisc.cpp
+new file mode 100644
+index 0000000..5a810c5
+--- /dev/null
++++ b/Source/Core/DolphinLibretro/NxDisc.cpp
+@@ -0,0 +1,57 @@
++// nx-mobile 2026-10-13: the raw disc behind any image Dolphin opens (ISO, GCM, WBFS, CISO, GCZ, WIA, RVZ), for the
++// frontend's RetroAchievements hashing (rcheevos hashes the raw disc). No emulator state is touched.
++#include <algorithm>
++#include <cstdint>
++#include <memory>
++#include <string>
++
++#include <unistd.h>
++
++#include "Common/DirectIOFile.h"
++#include "DiscIO/Blob.h"
++
++#define NX_DISC_EXPORT extern "C" __attribute__((visibility("default"), used))
++
++NX_DISC_EXPORT void* nx_disc_open(const char* path)
++{
++  if (!path)
++    return nullptr;
++  std::unique_ptr<DiscIO::BlobReader> r = DiscIO::CreateBlobReader(std::string(path));
++  return r.release();
++}
++
++// The frontend's SAF descriptor, read through a dup (the caller keeps and closes its own). The app holds no storage
++// permission, so reopening it by name (/proc/self/fd/N) can be refused. A split WBFS's other parts are not found.
++NX_DISC_EXPORT void* nx_disc_open_fd(int fd)
++{
++  if (fd < 0)
++    return nullptr;
++  const int own = dup(fd);
++  if (own < 0)
++    return nullptr;
++  std::unique_ptr<DiscIO::BlobReader> r =
++      DiscIO::CreateBlobReader(File::DirectIOFile::FromFd(own), std::string());
++  return r.release();
++}
++
++NX_DISC_EXPORT int64_t nx_disc_size(void* h)
++{
++  return h ? static_cast<int64_t>(static_cast<DiscIO::BlobReader*>(h)->GetDataSize()) : -1;
++}
++
++NX_DISC_EXPORT int64_t nx_disc_read(void* h, uint64_t offset, void* buf, int64_t len)
++{
++  if (!h || !buf || len < 0)
++    return -1;
++  auto* r = static_cast<DiscIO::BlobReader*>(h);
++  const uint64_t size = r->GetDataSize();
++  if (offset >= size || len == 0)
++    return 0;
++  const uint64_t n = std::min<uint64_t>(static_cast<uint64_t>(len), size - offset);
++  return r->Read(offset, n, static_cast<uint8_t*>(buf)) ? static_cast<int64_t>(n) : -1;
++}
++
++NX_DISC_EXPORT void nx_disc_close(void* h)
++{
++  delete static_cast<DiscIO::BlobReader*>(h);
++}
+diff --git a/Source/Core/DolphinLibretro/VideoContexts/GLContextLR.cpp b/Source/Core/DolphinLibretro/VideoContexts/GLContextLR.cpp
+index 1a42fb7..29319f9 100644
+--- a/Source/Core/DolphinLibretro/VideoContexts/GLContextLR.cpp
++++ b/Source/Core/DolphinLibretro/VideoContexts/GLContextLR.cpp
+@@ -7,6 +7,11 @@
+ #include "DolphinLibretro/VideoContexts/ContextStatus.h"
+ #include "DolphinLibretro/Video.h"
+ 
++namespace Libretro
++{
++extern retro_environment_t environ_cb;
++}
++
+ GLContextLR::GLContextLR()
+ {
+ }
+@@ -58,3 +63,46 @@ void GLContextLR::Shutdown()
+ {
+   m_initialized = false;
+ }
++
++// nx-mobile 2026-10-13: the async shader compiler's worker contexts. libretro has no shared-context call; the nx-mobile
++// runner offers one (NX_ENVIRONMENT_GET_SHARED_GL). Any other frontend: null, and Dolphin compiles on the GPU thread.
++namespace
++{
++class GLContextLRShared final : public GLContext
++{
++public:
++  GLContextLRShared(const nx_shared_gl_interface& gl, void* handle, Mode mode) : m_gl(gl), m_handle(handle)
++  {
++    m_opengl_mode = mode;
++    m_is_shared = true;
++  }
++  ~GLContextLRShared() override { m_gl.destroy(m_handle); }
++  bool IsHeadless() const override { return true; }
++  bool MakeCurrent() override { return m_gl.make_current(m_handle); }
++  bool ClearCurrent() override
++  {
++    m_gl.release(m_handle);
++    return true;
++  }
++  void* GetFuncAddress(const std::string& name) override
++  {
++    return (void*)Libretro::Video::hw_render.get_proc_address(name.c_str());
++  }
++
++private:
++  nx_shared_gl_interface m_gl;
++  void* m_handle;
++};
++}  // namespace
++
++std::unique_ptr<GLContext> GLContextLR::CreateSharedContext()
++{
++  nx_shared_gl_interface gl{};
++  if (!Libretro::environ_cb(NX_ENVIRONMENT_GET_SHARED_GL, &gl) ||
++      gl.version < NX_SHARED_GL_INTERFACE_VERSION || !gl.create)
++    return nullptr;
++  void* handle = gl.create();
++  if (!handle)
++    return nullptr;
++  return std::make_unique<GLContextLRShared>(gl, handle, m_opengl_mode);
++}
+diff --git a/Source/Core/DolphinLibretro/VideoContexts/GLContextLR.h b/Source/Core/DolphinLibretro/VideoContexts/GLContextLR.h
+index 84238cb..da560b4 100644
+--- a/Source/Core/DolphinLibretro/VideoContexts/GLContextLR.h
++++ b/Source/Core/DolphinLibretro/VideoContexts/GLContextLR.h
+@@ -1,7 +1,9 @@
+ #pragma once
+ 
+ #include <libretro.h>
++#include <memory>
+ #include "Common/GL/GLContext.h"
++#include "DolphinLibretro/VideoContexts/nxsharedgl.h"
+ 
+ /* retroGL interface*/
+ class GLContextLR : public GLContext
+@@ -15,6 +17,7 @@ public:
+   void* GetFuncAddress(const std::string& name) override;
+   bool Initialize(const WindowSystemInfo& wsi, bool stereo, bool core) override;
+   bool IsInitialized() const { return m_initialized; }
++  std::unique_ptr<GLContext> CreateSharedContext() override;
+   void Shutdown();
+ 
+ private:
+diff --git a/Source/Core/DolphinLibretro/VideoContexts/nxsharedgl.h b/Source/Core/DolphinLibretro/VideoContexts/nxsharedgl.h
+new file mode 100644
+index 0000000..0a71c03
+--- /dev/null
++++ b/Source/Core/DolphinLibretro/VideoContexts/nxsharedgl.h
+@@ -0,0 +1,13 @@
++#pragma once
++#include <stdbool.h>
++// nx-mobile private libretro environment call: the frontend fills *data (struct nx_shared_gl_interface*) and returns true.
++// Only the nx-mobile runner answers it; only nx-mobile's patched cores send it.
++#define NX_ENVIRONMENT_GET_SHARED_GL (0x20000 /* RETRO_ENVIRONMENT_PRIVATE */ | 0x4e58)
++#define NX_SHARED_GL_INTERFACE_VERSION 1
++struct nx_shared_gl_interface {
++    unsigned version;                     // set by the frontend: NX_SHARED_GL_INTERFACE_VERSION
++    void* (*create)(void);                // GL thread: a context sharing the core's objects, or NULL
++    bool (*make_current)(void* handle);   // any one thread at a time
++    void (*release)(void* handle);        // unbinds it from the calling thread
++    void (*destroy)(void* handle);        // releases first if current on the calling thread
++};
+diff --git a/Source/Core/UICommon/GameFile.cpp b/Source/Core/UICommon/GameFile.cpp
+index c24bb62..c33c66d 100644
+--- a/Source/Core/UICommon/GameFile.cpp
++++ b/Source/Core/UICommon/GameFile.cpp
+@@ -613,7 +613,7 @@ bool GameFile::CheckIfTwoDiscGame(const std::string& game_id) const
+   static_assert(std::ranges::is_sorted(two_disc_game_id_prefixes));
+ 
+   std::string_view game_id_prefix(game_id.data(), GAME_ID_PREFIX_SIZE);
+-  return std::ranges::binary_search(two_disc_game_id_prefixes, game_id_prefix);
++  return std::binary_search(std::begin(two_disc_game_id_prefixes), std::end(two_disc_game_id_prefixes), game_id_prefix);
+ }
+ 
+ std::string GameFile::GetNetPlayName(const Core::TitleDatabase& title_database) const
+diff --git a/Source/Core/VideoCommon/VertexManagerBase.cpp b/Source/Core/VideoCommon/VertexManagerBase.cpp
+index 2bc6d58..02ecc54 100644
+--- a/Source/Core/VideoCommon/VertexManagerBase.cpp
++++ b/Source/Core/VideoCommon/VertexManagerBase.cpp
+@@ -953,7 +953,9 @@ void VertexManagerBase::OnDraw()
+ 
+   // Check if this draw is scheduled to kick a command buffer.
+   // The draw counters will always be sorted so a binary search is possible here.
+-  if (std::ranges::binary_search(m_scheduled_command_buffer_kicks, m_draw_counter))
++  // Not std::ranges::binary_search: NDK r26's libc++ compares against the first element, so every draw
++  // between the first and last kick would flush (about 600 glFlush a frame in Super Mario Galaxy).
++  if (std::binary_search(std::begin(m_scheduled_command_buffer_kicks), std::end(m_scheduled_command_buffer_kicks), m_draw_counter))
+   {
+     // Kick a command buffer on the background thread.
+     g_gfx->Flush();

@@ -1,0 +1,181 @@
+# licence: modifies Azahar (https://github.com/azahar-emu/azahar), GPL-2.0 or later (its source files; license.txt is
+# the GPLv2 text; see LICENSES/azahar.txt); this patch is distributed under the same licence.
+diff --git a/src/citra_libretro/core_settings.cpp b/src/citra_libretro/core_settings.cpp
+index 53fb164..d51f45e 100644
+--- a/src/citra_libretro/core_settings.cpp
++++ b/src/citra_libretro/core_settings.cpp
+@@ -1123,7 +1123,9 @@ static void ParseInputOptions(void) {
+             "port:0,sensitivity:" + std::to_string(LibRetro::settings.motion_sensitivity) +
+             ",engine:libretro";
+     } else {
+-        Settings::values.current_input_profile.motion_device = "engine:motion_emu";
++        // nx-mobile 2026-10-14: no motion device. motion_emu (upstream's fallback) is the Qt
++        // frontend's mouse emulation, never registered here ("Unknown engine name: motion_emu").
++        Settings::values.current_input_profile.motion_device = "engine:null";
+     }
+ }
+ 
+diff --git a/src/common/file_util.cpp b/src/common/file_util.cpp
+index 3168a26..510b7fd 100644
+--- a/src/common/file_util.cpp
++++ b/src/common/file_util.cpp
+@@ -155,6 +155,21 @@ static void StripTailDirSlashes(std::string& fname) {
+     fname.resize(i);
+ }
+ 
++#ifdef HAVE_LIBRETRO_VFS
++// nx-mobile 2026-10-14: a file only the frontend's VFS serves (the game as /rom/<name>, read from the descriptor the
++// app holds: it has no storage permission, so there is no path to stat) is missed by a plain stat. Ask the VFS by
++// opening it: its size, or -1 when the VFS has no such file either.
++static int64_t VfsOnlySize(const std::string& filename) {
++    RFILE* f = filestream_open(filename.c_str(), RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
++    if (f == nullptr) {
++        return -1;
++    }
++    const int64_t size = filestream_get_size(f);
++    filestream_close(f);
++    return size;
++}
++#endif
++
+ bool Exists(const std::string& filename) {
+     std::string copy(filename);
+     StripTailDirSlashes(copy);
+@@ -178,6 +193,11 @@ bool Exists(const std::string& filename) {
+     struct stat file_info;
+     int result = stat(copy.c_str(), &file_info);
+ #endif
++#ifdef HAVE_LIBRETRO_VFS
++    if (result != 0 && VfsOnlySize(copy) >= 0) {
++        result = 0;
++    }
++#endif
+ 
+     return (result == 0);
+ }
+@@ -542,6 +562,11 @@ u64 GetSize(const std::string& filename) {
+         LOG_TRACE(Common_Filesystem, "{}: {}", filename, buf.st_size);
+         return buf.st_size;
+     }
++#ifdef HAVE_LIBRETRO_VFS
++    if (const int64_t size = VfsOnlySize(filename); size >= 0) {
++        return static_cast<u64>(size);
++    }
++#endif
+ 
+     LOG_ERROR(Common_Filesystem, "Stat failed {}: {}", filename, GetLastErrorMsg());
+     return 0;
+diff --git a/src/core/file_sys/savedata_archive.cpp b/src/core/file_sys/savedata_archive.cpp
+index 4a6b7e9..d72c12e 100644
+--- a/src/core/file_sys/savedata_archive.cpp
++++ b/src/core/file_sys/savedata_archive.cpp
+@@ -35,6 +35,11 @@ public:
+     SERIALIZE_DELAY_GENERATOR
+ };
+ 
++SaveDataArchive::SaveDataArchive(const std::string& mount_point_, bool allow_zero_size_create_)
++    : mount_point(mount_point_), allow_zero_size_create(allow_zero_size_create_) {
++    delay_generator = std::make_unique<SaveDataDelayGenerator>();
++}
++
+ ResultVal<std::unique_ptr<FileBackend>> SaveDataArchive::OpenFile(const Path& path,
+                                                                   const Mode& mode,
+                                                                   u32 attributes) {
+diff --git a/src/core/file_sys/savedata_archive.h b/src/core/file_sys/savedata_archive.h
+index bfe8ed9..45ca0a9 100644
+--- a/src/core/file_sys/savedata_archive.h
++++ b/src/core/file_sys/savedata_archive.h
+@@ -15,8 +15,9 @@ namespace FileSys {
+ /// Archive backend for general save data archive type (SaveData and SystemSaveData)
+ class SaveDataArchive : public ArchiveBackend {
+ public:
+-    explicit SaveDataArchive(const std::string& mount_point_, bool allow_zero_size_create_ = true)
+-        : mount_point(mount_point_), allow_zero_size_create(allow_zero_size_create_) {}
++    // nx-mobile 2026-10-14: sets the save data delay generator (savedata_archive.cpp); without one
++    // an open fell back to the RomFS default delay (~9.4 ms against ~0.27 ms) and logged an error.
++    explicit SaveDataArchive(const std::string& mount_point_, bool allow_zero_size_create_ = true);
+ 
+     std::string GetName() const override {
+         return "SaveDataArchive: " + mount_point;
+diff --git a/src/core/hle/service/nim/nim_aoc.cpp b/src/core/hle/service/nim/nim_aoc.cpp
+index 27137a2..dd6e725 100644
+--- a/src/core/hle/service/nim/nim_aoc.cpp
++++ b/src/core/hle/service/nim/nim_aoc.cpp
+@@ -3,6 +3,7 @@
+ // Refer to the license.txt file included.
+ 
+ #include "common/archives.h"
++#include "core/hle/ipc_helpers.h"
+ #include "core/hle/service/nim/nim_aoc.h"
+ 
+ SERIALIZE_EXPORT_IMPL(Service::NIM::NIM_AOC)
+@@ -17,7 +18,7 @@ NIM_AOC::NIM_AOC() : ServiceFramework("nim:aoc", 2) {
+         {0x0009, nullptr, "ListContentSetsEx"},
+         {0x0018, nullptr, "GetBalance"},
+         {0x001D, nullptr, "GetCustomerSupportCode"},
+-        {0x0021, nullptr, "Initialize"},
++        {0x0021, &NIM_AOC::Initialize, "Initialize"},
+         {0x0024, nullptr, "CalculateContentsRequiredSize"},
+         {0x0025, nullptr, "RefreshServerTime"},
+         // clang-format on
+@@ -27,4 +28,13 @@ NIM_AOC::NIM_AOC() : ServiceFramework("nim:aoc", 2) {
+ 
+ NIM_AOC::~NIM_AOC() = default;
+ 
++// nx-mobile 2026-10-14: stubbed as success (what the unimplemented path already answered, but
++// logged as an error on every boot of a game that checks for DLC).
++void NIM_AOC::Initialize(Kernel::HLERequestContext& ctx) {
++    IPC::RequestParser rp(ctx);
++    IPC::RequestBuilder rb = rp.MakeBuilder(1, 0);
++    rb.Push(ResultSuccess);
++    LOG_WARNING(Service_NIM, "(STUBBED) called");
++}
++
+ } // namespace Service::NIM
+diff --git a/src/core/hle/service/nim/nim_aoc.h b/src/core/hle/service/nim/nim_aoc.h
+index 003b3fd..b8b7ee4 100644
+--- a/src/core/hle/service/nim/nim_aoc.h
++++ b/src/core/hle/service/nim/nim_aoc.h
+@@ -14,6 +14,8 @@ public:
+     ~NIM_AOC();
+ 
+ private:
++    void Initialize(Kernel::HLERequestContext& ctx);
++
+     SERVICE_SERIALIZATION_SIMPLE
+ };
+ 
+diff --git a/src/core/hle/service/nwm/nwm_uds.cpp b/src/core/hle/service/nwm/nwm_uds.cpp
+index e602bd3..b76b22c 100644
+--- a/src/core/hle/service/nwm/nwm_uds.cpp
++++ b/src/core/hle/service/nwm/nwm_uds.cpp
+@@ -1735,7 +1735,13 @@ NWM_UDS::NWM_UDS(Core::System& system) : ServiceFramework("nwm::UDS"), system(sy
+         wifi_packet_received = room_member->BindOnWifiPacketReceived(
+             [this](const Network::WifiPacket& packet) { OnWifiPacketReceived(packet); });
+     } else {
++#ifdef HAVE_LIBRETRO
++        // nx-mobile 2026-10-14: the libretro core has no multiplayer rooms (Network::Init is the
++        // Qt/Android frontends'), so no room member is the expected state here, not an error.
++        LOG_INFO(Service_NWM, "No multiplayer room member (libretro): local wireless unavailable");
++#else
+         LOG_ERROR(Service_NWM, "Network isn't initalized");
++#endif
+     }
+ }
+ 
+diff --git a/src/video_core/renderer_vulkan/renderer_vulkan.cpp b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
+index 5221fdf..bc7f4ed 100644
+--- a/src/video_core/renderer_vulkan/renderer_vulkan.cpp
++++ b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
+@@ -253,6 +253,11 @@ void RendererVulkan::RenderToWindow(PresentWindow& window, const Layout::Framebu
+ 
+         DrawScreens(frame, layout, flipped);
+         scheduler.Flush(frame->render_ready);
++#ifdef HAVE_LIBRETRO
++        // nx-mobile: the libretro frontend copies the presented image on its own queue right after this; wait for the
++        // worker to submit the frame first, or the copy can run before the frame is rendered.
++        scheduler.WaitWorker();
++#endif
+         window.Present(frame);
+         if ((secondaryWindowEnabled && isSecondaryWindow) || (!secondaryWindowEnabled)) {
+             Core::PerfStats::game_frames_updated = false;

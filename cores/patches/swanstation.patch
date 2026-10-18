@@ -1,0 +1,37 @@
+diff --git a/src/common/cd_image_pbp.cpp b/src/common/cd_image_pbp.cpp
+index a1dd840..c1f6919 100644
+--- a/src/common/cd_image_pbp.cpp
++++ b/src/common/cd_image_pbp.cpp
+@@ -524,6 +524,32 @@ bool CDImagePBP::OpenDisc(uint32_t index, Common::Error* error)
+   // iso_header_start + 0x12D4, 0x12D6, 0x12D8 supposedly contain data on block size, num clusters, and num blocks
+   // Might be useful for error checking, but probably not that important as of now
+ 
++  // nx-mobile: some converters leave the whole TOC zeroed (Tekken 3, SLPS-01300). PCSX-ReARMed falls back to one data
++  // track for such a disc; do the same with the TOC a single data track has: first and last track 1, the sectors on file
++  // (from the block table, 16 per block) in A2, and track 1's 2-second pregap not on file. A disc that had audio tracks
++  // opens as its data track only (it failed to open before).
++  if (std::all_of(reinterpret_cast<const uint8_t*>(m_toc.data()),
++                  reinterpret_cast<const uint8_t*>(m_toc.data() + m_toc.size()), [](uint8_t b) { return b == 0; }))
++  {
++    uint32_t blocks = 0;
++    while (blocks < BLOCK_TABLE_NUM_ENTRIES && m_blockinfo_table[blocks].size != 0)
++      blocks++;
++
++    const LBA sectors = blocks * (DECOMPRESSED_BLOCK_SIZE / RAW_SECTOR_SIZE);
++    if (blocks == 0 || sectors >= 99 * FRAMES_PER_MINUTE)   // A2 is BCD minutes: past 99 it would wrap
++    {
++      Log_ErrorPrintf("Empty TOC and an unusable block table (%u blocks)", blocks);
++      return false;
++    }
++
++    Log_WarningPrintf("Empty TOC: assuming one data track of %u blocks", blocks);
++    const auto [lm, ls, lf] = Position::FromLBA(sectors).ToBCD();
++    m_toc[0] = TOCEntry{0x41, 0, 0xA0, {}, 0, {0x01, 0x20, 0x00}};
++    m_toc[1] = TOCEntry{0x01, 0, 0xA1, {}, 0, {0x01, 0x00, 0x00}};
++    m_toc[2] = TOCEntry{0x01, 0, 0xA2, {}, 0, {lm, ls, lf}};
++    m_toc[3] = TOCEntry{0x41, 0, 0x01, {0x00, 0x00, 0x00}, 0, {0x00, 0x02, 0x00}};
++  }
++
+   // Ignore track types for first three TOC entries, these don't seem to be consistent, but check that the points are
+   // valid. Not sure what m_toc[0].userdata_start.s encodes on homebrew EBOOTs though, so ignore that
+   if (m_toc[0].point != 0xA0 || m_toc[1].point != 0xA1 || m_toc[2].point != 0xA2)

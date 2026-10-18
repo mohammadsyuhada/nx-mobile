@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A folder outline, as the handheld's file lists draw it (nx-redux skeleton/SYSTEM/res/icon-folder.png). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M4,20Q3.175,20 2.588,19.413Q2,18.825 2,18V6Q2,5.175 2.588,4.588Q3.175,4 4,4H10L12,6H20Q20.825,6 21.413,6.588Q22,7.175 22,8V18Q22,18.825 21.413,19.413Q20.825,20 20,20ZM4,18H20V8H11.175L9.175,6H4ZM4,18V6V8Z" />
+</vector>

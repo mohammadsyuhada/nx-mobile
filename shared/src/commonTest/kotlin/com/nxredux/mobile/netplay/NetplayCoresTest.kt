@@ -1,0 +1,138 @@
+package com.nxredux.mobile.netplay
+
+import com.nxredux.mobile.runner.CoreRegistry
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class NetplayCoresTest {
+    private val pico = "picodrive"
+    private val gpgx = "genesis_plus_gx"
+
+    @Test fun the_table_is_the_handhelds_paks_default_first() {
+        val want = mapOf(
+            "FC" to listOf("fceumm"), "FDS" to listOf("fceumm"),
+            "SFC" to listOf("snes9x", "mednafen_supafaust"), "SUPA" to listOf("mednafen_supafaust", "snes9x"),
+            "MD" to listOf(pico, gpgx), "SMS" to listOf(pico, gpgx), "GG" to listOf(pico, gpgx), "SG1000" to listOf(pico, gpgx), "SEGACD" to listOf(pico, gpgx),
+            "GPGX" to listOf(gpgx, pico), "32X" to listOf(pico),
+            "PS" to listOf("pcsx_rearmed", "swanstation"), "PSX" to listOf("swanstation", "pcsx_rearmed"),
+            "FBN" to listOf("fbneo"),
+            "GB" to listOf("gambatte"), "GBC" to listOf("gambatte"), "GBA" to listOf("gpsp", "mgba"), "MGBA" to listOf("mgba", "gpsp"),
+        )
+        want.forEach { (tag, cores) ->
+            assertEquals(cores, NetplayCores.offered(tag), tag)
+            assertEquals(cores.first(), NetplayCores.defaultCore(tag), tag)
+        }
+        for (tag in listOf("N64", "SGB", "DC")) assertFalse(NetplayCores.supported(tag), tag)
+        assertTrue(NetplayCores.supported("sfc"))
+        assertNull(NetplayCores.defaultCore("N64"))
+    }
+
+    @Test fun every_offered_core_is_registered() {
+        listOf("FC", "SFC", "SUPA", "MD", "GG", "GPGX", "32X", "PS", "PSX", "FBN", "GB", "GBC", "GBA", "MGBA").flatMap(NetplayCores::offered).forEach {
+            assertTrue(CoreRegistry.forId(it) != null, it)
+        }
+    }
+
+    @Test fun link_cores_and_the_usb_only_tag() {
+        assertEquals(NetplayLinkKind.GBLINK, NetplayCores.link("gambatte"))
+        assertEquals(NetplayLinkKind.NETPACKET, NetplayCores.link("gpsp"))
+        assertEquals(NetplayLinkKind.NETPACKET, NetplayCores.link("mgba"))
+        assertNull(NetplayCores.link("snes9x"))
+        assertTrue(NetplayCores.isLink("gpsp"))
+        assertFalse(NetplayCores.isLink("picodrive"))
+        assertTrue(NetplayCores.usbOnly("MGBA"))
+        assertTrue(NetplayCores.usbOnly(" mgba "))
+        for (tag in listOf("GBA", "GB", "GBC", "SFC")) assertFalse(NetplayCores.usbOnly(tag), tag)
+        assertTrue(NetplayCores.cableOnly("mgba"))
+        assertFalse(NetplayCores.cableOnly("gpsp"))
+    }
+
+    @Test fun without_the_cable_mgba_is_never_offered() {
+        assertEquals(listOf("gpsp", "mgba"), NetplayCores.offered("GBA"))
+        assertEquals(listOf("gpsp"), NetplayCores.offered("GBA", usb = false))
+        assertEquals(listOf("mgba", "gpsp"), NetplayCores.offered("MGBA"))
+        assertEquals(listOf("gpsp"), NetplayCores.offered("MGBA", usb = false))
+        assertEquals(listOf(pico, gpgx), NetplayCores.offered("MD", usb = false))
+        assertNull(NetplayCores.joinerRun("GBA", "gpsp", null, "mgba", usb = false))
+        assertEquals("mgba", NetplayCores.joinerRun("GBA", "gpsp", null, "mgba", usb = true))
+        assertNull(NetplayCores.joinerRetry("GBA", null, "mgba", mayRetry = true, usb = false))
+        assertEquals("mgba", NetplayCores.joinerRetry("GBA", null, "mgba", mayRetry = true, usb = true))
+        assertNull(NetplayCores.hostRun("GBA", "gpsp", null, "mgba", "MGBA", joinerAuto = false, usb = false))
+        assertEquals("The host is using\nmGBA (MGBA folder).\n\nPick the game from the same\nfolder on both devices.",
+            NetplayCores.refusal("GBA", "gpsp", "mgba", "MGBA", usb = false))
+        assertEquals("mGBA links over the USB cable only.\n\nPick USB Cable, or another emulator.", NetplayText.cableOnly("mGBA"))
+    }
+
+    @Test fun phone_hosts_follow_the_handheld_and_keep_their_core_for_a_phone_on_auto() {
+        // Phone <-> phone, both on Auto: the host keeps its core; the joiner switches to it.
+        assertEquals("gpsp", NetplayCores.hostRun("GBA", "gpsp", null, "mgba", "MGBA", joinerAuto = true, usb = true))
+        assertEquals("mgba", NetplayCores.hostRun("MGBA", "mgba", null, "gpsp", "GBA", joinerAuto = true, usb = true))
+        assertEquals(pico, NetplayCores.hostRun("MD", pico, null, gpgx, "GPGX", joinerAuto = true, usb = false))
+        // A handheld joiner (no auto): the host adopts its core.
+        assertEquals("mgba", NetplayCores.hostRun("GBA", "gpsp", null, "mgba", "MGBA", joinerAuto = false, usb = true))
+        // A pinned phone joiner sends no auto either: the host adopts.
+        assertEquals(gpgx, NetplayCores.hostRun("MD", pico, null, gpgx, "MD", joinerAuto = false, usb = false))
+        // The host pinned: refuse, keep waiting.
+        assertNull(NetplayCores.hostRun("GBA", "gpsp", "gpsp", "mgba", "MGBA", joinerAuto = true, usb = true))
+        assertNull(NetplayCores.hostRun("GBA", "gpsp", "gpsp", "mgba", "MGBA", joinerAuto = false, usb = true))
+        // An auto joiner whose folder does not offer the host's core, or names no folder: adopt the joiner's.
+        assertEquals(gpgx, NetplayCores.hostRun("MD", pico, null, gpgx, "XX", joinerAuto = true, usb = false))
+        assertEquals(gpgx, NetplayCores.hostRun("MD", pico, null, gpgx, null, joinerAuto = true, usb = false))
+        // Over Wi-Fi a host never adopts mGBA.
+        assertNull(NetplayCores.hostRun("GBA", "gpsp", null, "mgba", null, joinerAuto = false, usb = false))
+    }
+
+    @Test fun picodrive_runs_every_sega_netplay_extension() {
+        val ext = CoreRegistry.forId(pico)!!.extensions
+        for (e in listOf("md", "gen", "smd", "bin", "32x", "sms", "sg", "cue", "iso", "chd", "m3u")) assertTrue(e in ext, e)
+    }
+
+    @Test fun names_come_from_the_registry() {
+        assertEquals("PicoDrive", NetplayCores.name(pico))
+        assertEquals("Genesis Plus GX", NetplayCores.name(gpgx))
+        assertEquals("SwanStation", NetplayCores.name("swanstation"))
+        assertEquals("vba_next", NetplayCores.name("vba_next"))
+    }
+
+    @Test fun joiner_keeps_its_core_switches_on_auto_or_refuses() {
+        assertEquals(pico, NetplayCores.joinerRun("MD", pico, null, null, usb = false))     // an older handheld names none
+        assertEquals(pico, NetplayCores.joinerRun("MD", pico, null, pico, usb = false))
+        assertEquals(gpgx, NetplayCores.joinerRun("MD", pico, null, gpgx, usb = false))     // Auto and offered: switch
+        assertNull(NetplayCores.joinerRun("MD", pico, pico, gpgx, usb = false))            // pinned: refuse
+        assertNull(NetplayCores.joinerRun("SFC", "snes9x", null, "fbneo", usb = false))    // not offered: refuse
+    }
+
+    @Test fun joiner_retries_once_on_auto_with_an_offered_core() {
+        assertEquals(gpgx, NetplayCores.joinerRetry("MD", null, gpgx, mayRetry = true, usb = false))
+        assertNull(NetplayCores.joinerRetry("MD", null, gpgx, mayRetry = false, usb = false))
+        assertNull(NetplayCores.joinerRetry("MD", pico, gpgx, mayRetry = true, usb = false))
+        assertNull(NetplayCores.joinerRetry("SFC", null, "fbneo", mayRetry = true, usb = false))
+    }
+
+    @Test fun host_adopts_the_joiners_core_on_auto_or_refuses() {
+        assertEquals(pico, NetplayCores.hostRun("MD", pico, null, null, null, joinerAuto = false, usb = false))
+        assertEquals(pico, NetplayCores.hostRun("MD", pico, null, pico, null, joinerAuto = false, usb = false))
+        assertEquals(gpgx, NetplayCores.hostRun("MD", pico, null, gpgx, null, joinerAuto = false, usb = false))
+        assertNull(NetplayCores.hostRun("MD", pico, pico, gpgx, null, joinerAuto = false, usb = false))
+        assertNull(NetplayCores.hostRun("SFC", "snes9x", null, "fbneo", null, joinerAuto = false, usb = false))
+        assertEquals("swanstation", NetplayCores.hostRun("PS", "pcsx_rearmed", null, "swanstation", null, joinerAuto = false, usb = false))
+    }
+
+    @Test fun refusals_name_the_hosts_core() {
+        assertEquals("The host is using PicoDrive.\nSet Emulator to PicoDrive.", NetplayCores.refusal("MD", gpgx, pico, "MD", usb = false))
+        assertEquals("The host is using\nGenesis Plus GX (GPGX folder).\n\nPick the game from the same\nfolder on both devices.",
+            NetplayCores.refusal("MD", null, gpgx, "GPGX", usb = false))
+        assertEquals("The host is using\nSwanStation.\n\nPick the game from the same\nfolder on both devices.",
+            NetplayCores.refusal("SFC", null, "swanstation", null, usb = false))
+    }
+
+    @Test fun new_texts_are_exact() {
+        assertEquals("A player using PicoDrive was turned away.", NetplayText.coreTurnedAway("PicoDrive"))
+        assertEquals("Saves not copied - playing on empty saves.", NetplayText.SAVES_NOT_COPIED)
+        assertEquals("The host is using Snes9x.\nSet Emulator to Snes9x.", NetplayText.setEmulator("Snes9x"))
+        assertEquals(setOf("nxsave.srm", "nxsave.sav"), NetplaySaves.WIRE_NAMES)
+    }
+}
