@@ -46,10 +46,32 @@ class SaveArchiveTest {
         assertEquals("Exported 2 saves and 3 states (1.5 MB)", ExportSummary(2, 3, 1_572_864).text())
         assertEquals("Nothing to export", ExportSummary(0, 0, 0).text())
     }
+    @Test fun the_states_note_names_their_emulators() {
+        assertEquals(emptyList<String>(), ImportSummary(saves = 2).statesNote())
+        assertEquals(
+            listOf(
+                "Save states load only in the emulator that made them. These are for mGBA: switch the game to mGBA " +
+                    "before you launch it, in Default emulators or the game's Emulator option.",
+                "If a state still won't load, its BIOS may differ. RetroArch often makes states without a BIOS file: if " +
+                    "you've added one to this app, turn off the emulator's real-BIOS option, such as mGBA's Use BIOS File " +
+                    "if Found. Otherwise, use the battery save.",
+            ),
+            ImportSummary(states = 2, stateEmulators = setOf("mGBA")).statesNote(),
+        )
+        assertTrue(
+            ImportSummary(states = 2, stateEmulators = setOf("mGBA", "PCSX-ReARMed")).statesNote().first().startsWith(
+                "Save states load only in the emulator that made them. These are for mGBA and PCSX-ReARMed: switch each " +
+                    "game to its emulator before you launch it",
+            ),
+        )
+        assertEquals(setOf("mGBA", "Gambatte"), (ImportSummary(states = 1, stateEmulators = setOf("mGBA")) +
+            ImportSummary(states = 1, stateEmulators = setOf("Gambatte"))).stateEmulators)
+    }
+
     @Test fun import_summary_lines() {
         val skipped = listOf(SkippedFile("Zelda.srm", SkipReason.NO_GAME), SkippedFile("Old.srm", SkipReason.PHONE_NEWER))
         assertEquals(
-            listOf("Imported 37 saves and 1 state", "12 already here", "2 replaced (kept as .bak)", "2 skipped", "4 other files ignored", ImportSummary.STATES_NOTE),
+            listOf("Imported 37 saves and 1 state", "12 already here", "2 replaced (kept as .bak)", "2 skipped", "4 other files ignored"),
             ImportSummary(saves = 37, states = 1, markers = 9, identical = 12, replaced = 2, ignored = 4, skipped = skipped).lines(),
         )
         assertEquals(listOf("Imported 0 saves and 0 states", "1 other file ignored"), ImportSummary(ignored = 1).lines())

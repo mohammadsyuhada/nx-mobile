@@ -1745,7 +1745,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         // The three imports, then (in place) a running one's progress with the rows waiting, or its summary and skipped files.
         OnboardingStep.IMPORT_SAVES -> when (val r = onboardingImported) {
             is ImportResult.Done -> Triple(
-                "Bring your saves", r.summary.lines(), r.summary.skipped.map { NxRow(it.text()) } + NxRow("Continue"),
+                "Bring your saves", r.summary.lines() + r.summary.statesNote(), r.summary.skipped.map { NxRow(it.text()) } + NxRow("Continue"),
             )
             else -> Triple(
                 "Bring your saves",
@@ -3195,6 +3195,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             "For every game of the console, whichever of its folders holds it. A per-game Emulator choice still wins.",
             "The tag is where saves and settings are kept.",
         )
+        SettingsSection.IMPORT_RESULT -> importResult?.statesNote().orEmpty()   // wraps, unlike the one-line rows
         else -> emptyList()
     }
 

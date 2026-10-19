@@ -139,6 +139,7 @@ class SaveImporter(
             val marker = if (area == SaveArea.MARKERS) markerTag(path) else null
             val picture = marker?.let { StateNames.picture(name) }
             val nextUi = if (area == SaveArea.STATES) nextUiState(path) else null
+            var emulator: String? = nextUi?.let { CoreRegistry.forId(path.split('/')[2].substringAfter('-'))?.name }   // a state's, for the note
             val result = when {
                 picture != null -> {
                     runCatching { pictures += stage(e, path, File(staging, "${pictures.size}.bmp"), slotKey(marker, picture.stem, picture.slot)) }
@@ -175,6 +176,7 @@ class SaveImporter(
                         val core = RetroArchCores.coreOf(folderOf(path)) ?: if (retroArch) onlyCoreOf(m.console) else null
                         val tag = core?.let { c -> RetroArchCores.tagsOf(c).firstOrNull { t -> m.console.tags.any { it.equals(t, ignoreCase = true) } } }
                         if (core == null || tag == null) { skipped += SkippedFile(name, SkipReason.NO_CORE); continue }
+                        emulator = core.name
                         runCatching { takeLooseState(e, name, state, NxPaths(tag, core.id, m.rom, naming)) }
                     }
                 }
@@ -185,6 +187,7 @@ class SaveImporter(
                 continue
             }
             s = count(s, action, area ?: if (state != null) SaveArea.STATES else SaveArea.SAVES, name, skipped)
+            if (action == ImportAction.NEW && emulator != null) s = s.copy(stateEmulators = s.stateEmulators + emulator)
             onFile(path)
         }
         for (p in pictures) {

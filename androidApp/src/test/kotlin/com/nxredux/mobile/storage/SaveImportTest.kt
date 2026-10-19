@@ -58,7 +58,7 @@ class SaveImportTest {
         for (p in listOf("New.srm", "Same.srm", "Newer.srm", "Older.srm")) assertTrue(p, File(src, "Saves/GBA/$p").exists())
         assertTrue(File(src, ".userdata/shared/game_time.db").exists())
         val skipped = listOf(SkippedFile("Older.srm", SkipReason.PHONE_NEWER))
-        assertEquals(ImportSummary(saves = 2, states = 1, identical = 1, replaced = 1, ignored = 1, skipped = skipped), summary)
+        assertEquals(ImportSummary(saves = 2, states = 1, identical = 1, replaced = 1, ignored = 1, skipped = skipped, stateEmulators = setOf("gpSP")), summary)
     }
 
     /** `Saves/GPGX` holds several consoles' saves: each goes to its game's console by the library's ROM names, else Genesis. */
@@ -397,7 +397,7 @@ class SaveImportTest {
         val landed = File(sd, "$states/Pokemon - Lazarus.state")
         assertTrue(raw.contentEquals(landed.readBytes()))
         assertEquals(t0, landed.lastModified() / 1000 * 1000)
-        assertEquals(ImportSummary(states = 1), summary)
+        assertEquals(ImportSummary(states = 1, stateEmulators = setOf("mGBA")), summary)
         assertTrue(File(src, "states/mGBA/Pokemon - Lazarus.state").exists())
     }
 
@@ -419,7 +419,7 @@ class SaveImportTest {
         val summary = importRa(src, sd)
         assertEquals("mine", File(sd, "$states/Pokemon - Lazarus.state").readText())
         assertTrue(raw.contentEquals(File(sd, "$states/Pokemon - Lazarus.state1").readBytes()))
-        assertEquals(ImportSummary(states = 1), summary)
+        assertEquals(ImportSummary(states = 1, stateEmulators = setOf("mGBA")), summary)
     }
 
     @Test fun a_slot_taken_under_another_format_is_taken() {
@@ -493,7 +493,7 @@ class SaveImportTest {
         bytes(src, "states/Pokemon - Crystal.state1", raw)
         val summary = SaveImporter(sd, naming = ra, matcher = SaveMatcher(index("GBC" to listOf("Pokemon - Crystal.gbc"))))
             .run(DirImportFiles(src), retroArch = true)
-        assertEquals(ImportSummary(states = 1), summary)
+        assertEquals(ImportSummary(states = 1, stateEmulators = setOf("Gambatte")), summary)
         assertTrue(raw.contentEquals(File(sd, ".userdata/shared/GBC-gambatte/Pokemon - Crystal.state1").readBytes()))
     }
 
@@ -532,7 +532,7 @@ class SaveImportTest {
         assertEquals("incoming", File(sd, "$states/X.state1").readText())
         assertEquals("my picture", File(sd, ".userdata/shared/.minui/MGBA/X.gba.0.bmp").readText())
         assertEquals("its picture", File(sd, ".userdata/shared/.minui/MGBA/X.gba.1.bmp").readText())
-        assertEquals(ImportSummary(states = 1, markers = 1), summary)
+        assertEquals(ImportSummary(states = 1, markers = 1, stateEmulators = setOf("mGBA")), summary)
         assertFalse(File(sd, ".userdata/android/.import-staging").exists())
     }
 
@@ -590,7 +590,7 @@ class SaveImportTest {
         try {
             org.junit.Assume.assumeFalse(mine.canRead())   // root reads anything
             val summary = SaveImporter(sd).run(DirImportFiles(src))
-            assertEquals(ImportSummary(states = 1), summary)
+            assertEquals(ImportSummary(states = 1, stateEmulators = setOf("mGBA")), summary)
             assertEquals("incoming state", File(sd, "$states/X.state1").readText())
         } finally {
             mine.setReadable(true)

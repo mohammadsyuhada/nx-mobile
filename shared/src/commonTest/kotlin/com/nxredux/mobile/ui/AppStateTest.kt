@@ -9787,6 +9787,18 @@ class AppStateTest {
         assertNull(st.notice.value)
     }
 
+    @Test fun import_results_with_states_carry_the_states_note() = runTest {
+        val summary = ImportSummary(states = 1, stateEmulators = setOf("mGBA"))
+        val st = state(MemorySettings(ContentRef("Home")), saveTransfer = RecordingTransfer(ImportResult.Done(summary)))
+        st.load()
+        st.openSettings(SettingsSection.IMPORT_SAVES)
+        st.onButton(NxButton.A)
+        assertEquals(summary.statesNote(), assertIs<Screen.Settings>(st.screen.value).details)
+        val onboarding = atImportStep(RecordingTransfer(ImportResult.Done(summary)))
+        onboarding.select(0); onboarding.onButton(NxButton.A)
+        assertEquals(listOf("Bring your saves") + summary.lines() + summary.statesNote(), assertIs<Screen.Onboarding>(onboarding.screen.value).details)
+    }
+
     @Test fun import_results_ambiguous_reason_names_the_consoles() = runTest {
         val skipped = SkippedFile("Pokemon.srm", SkipReason.AMBIGUOUS, "Game Boy and Game Boy Advance")
         val st = state(MemorySettings(ContentRef("Home")), saveTransfer = RecordingTransfer(ImportResult.Done(ImportSummary(skipped = listOf(skipped)))))

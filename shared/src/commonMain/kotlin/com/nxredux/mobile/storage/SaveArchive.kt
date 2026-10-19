@@ -79,6 +79,8 @@ data class SkippedFile(val name: String, val reason: SkipReason, val detail: Str
 data class ImportSummary(
     val saves: Int = 0, val states: Int = 0, val markers: Int = 0, val identical: Int = 0, val replaced: Int = 0,
     val ignored: Int = 0, val skipped: List<SkippedFile> = emptyList(),
+    /** The emulators (core names, such as mGBA) the imported states are for: [statesNote] names them. */
+    val stateEmulators: Set<String> = emptySet(),
 ) {
     /** Nothing found at all: no file imported, already here, ignored or skipped. */
     val isEmpty: Boolean get() = saves + states + markers + identical + replaced + ignored == 0 && skipped.isEmpty()
@@ -92,19 +94,33 @@ data class ImportSummary(
             if (replaced > 0) add("$replaced replaced (kept as .bak)")
             if (skipped.isNotEmpty()) add("${skipped.size} skipped")
             if (ignored > 0) add("$ignored other ${plural(ignored, "file")} ignored")
-            if (states > 0) add(STATES_NOTE)
         }
     }
 
-    companion object {
-        /** Shown when states came in: a state from another emulator, its version or BIOS setting may refuse to load. */
-        const val STATES_NOTE = "A state loads only in the emulator that made it, with the same BIOS setting. If one won't load, use the battery save."
+    /**
+     * The results page's caption when states came in (empty otherwise): they show only under the emulator that made
+     * them ([stateEmulators]), and one made with another BIOS (RetroArch often runs without a BIOS file) may still refuse.
+     */
+    fun statesNote(): List<String> {
+        if (states == 0) return emptyList()
+        val names = stateEmulators.sortedBy { it.lowercase() }
+        val which = when (names.size) {
+            0 -> "Save states load only in the emulator that made them: switch each game to its emulator before you launch it"
+            1 -> "Save states load only in the emulator that made them. These are for ${names[0]}: switch the game to ${names[0]} before you launch it"
+            else -> "Save states load only in the emulator that made them. These are for ${names.dropLast(1).joinToString(", ")} and ${names.last()}: switch each game to its emulator before you launch it"
+        }
+        return listOf(
+            "$which, in Default emulators or the game's Emulator option.",
+            "If a state still won't load, its BIOS may differ. RetroArch often makes states without a BIOS file: if you've " +
+                "added one to this app, turn off the emulator's real-BIOS option, such as mGBA's Use BIOS File if Found. " +
+                "Otherwise, use the battery save.",
+        )
     }
 
     /** Both imports' counts added up, their skipped files one after the other (RetroArch reads several roots). */
     operator fun plus(other: ImportSummary) = ImportSummary(
         saves + other.saves, states + other.states, markers + other.markers, identical + other.identical,
-        replaced + other.replaced, ignored + other.ignored, skipped + other.skipped,
+        replaced + other.replaced, ignored + other.ignored, skipped + other.skipped, stateEmulators + other.stateEmulators,
     )
 }
 

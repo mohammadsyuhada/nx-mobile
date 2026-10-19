@@ -22,7 +22,7 @@ class TreeImportFilesTest {
         file(card, "Saves/GBA/Other.srm.part", "cut short")
         file(card, "Roms/GBA/Game #1 (100%).gba", "rom")
         val summary = SaveImporter(sd, now = { t0 }).run(TreeImportFiles(FileImportTree, FileRefs.of(card.absolutePath)))
-        assertEquals(ImportSummary(saves = 1, states = 1, ignored = 1), summary)   // the ROM is only counted
+        assertEquals(ImportSummary(saves = 1, states = 1, ignored = 1, stateEmulators = setOf("gpSP")), summary)   // the ROM is only counted
         assertEquals("s", File(sd, "Saves/GBA/Game #1 (100%).srm").readText())
         assertEquals("st", File(sd, ".userdata/shared/GBA-gpsp/Game #1 (100%).state").readText())
         assertFalse(File(sd, "Saves/GBA/Other.srm.part").exists())            // a part is never imported
