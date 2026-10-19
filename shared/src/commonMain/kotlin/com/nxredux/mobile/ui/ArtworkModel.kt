@@ -104,10 +104,13 @@ internal fun progressHeader(state: ScrapeState, starting: Boolean = false): Stri
     }
 }
 
-/** The progress page's rows: every game while the job runs; once it has ended only those to look at (not found, errors). */
+/**
+ * The progress page's rows: while the job runs or is paused, every game not yet done (a done game leaves the list, the
+ * summary counts it); once it has ended only those to look at (not found, errors).
+ */
 internal fun artworkProgressRows(state: ScrapeState): List<ScrapeItem> =
     if (state.phase == JobPhase.DONE || state.phase == JobPhase.CANCELLED) state.items.filter { it.status == ItemStatus.NOT_FOUND || it.status == ItemStatus.ERROR }
-    else state.items
+    else state.items.filter { it.status != ItemStatus.DONE }
 
 /** The progress page's second line: what the games came to, "12 fetched · 2 partial · 3 not found · 20 not fetched" (none left out). */
 internal fun artworkSummary(state: ScrapeState): String {
