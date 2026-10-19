@@ -93,10 +93,18 @@ index f8cfb2c..3c3f006 100644
      return {baseX, baseY, emulated_pointer};
  }
 diff --git a/src/citra_libretro/input/mouse_tracker.cpp b/src/citra_libretro/input/mouse_tracker.cpp
-index a4ba964..91b661b 100644
+index a4ba964..dbae95d 100644
 --- a/src/citra_libretro/input/mouse_tracker.cpp
 +++ b/src/citra_libretro/input/mouse_tracker.cpp
-@@ -133,8 +133,11 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
+@@ -12,6 +12,7 @@
+ #include "citra_libretro/input/mouse_tracker.h"
+ #include "common/settings.h"
+ #include "core/frontend/framebuffer_layout.h"
++#include "video_core/cursor_dot.h"
+ 
+ #ifdef ENABLE_OPENGL
+ #include <glad/glad.h>
+@@ -133,8 +134,11 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
                            const Layout::FramebufferLayout& layout) {
      bool state = false;
      bool wasMoved = false;
@@ -109,7 +117,7 @@ index a4ba964..91b661b 100644
          // Check mouse input
          state |= LibRetro::CheckInput(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT);
  
-@@ -161,7 +164,7 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
+@@ -161,7 +165,7 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
          }
      }
  
@@ -118,6 +126,175 @@ index a4ba964..91b661b 100644
          // Check touchscreen input
          state |= LibRetro::CheckInput(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
  
+@@ -280,12 +284,16 @@ OpenGLCursorRenderer::OpenGLCursorRenderer() {
+         vertex += fragment_shader_precision_OES;
+     }
+ 
++    // nx-mobile: a colour per vertex, for the pen dot (video_core/cursor_dot.h).
+     vertex += R"(
+         in vec2 position;
++        in vec4 vertexColor;
++        out vec4 dotColor;
+ 
+         void main()
+         {
+             gl_Position = vec4(position, 0.0, 1.0);
++            dotColor = vertexColor;
+         }
+     )";
+ 
+@@ -294,11 +302,12 @@ OpenGLCursorRenderer::OpenGLCursorRenderer() {
+         fragment += fragment_shader_precision_OES;
+     }
+     fragment += R"(
++        in vec4 dotColor;
+         out vec4 color;
+ 
+         void main()
+         {
+-            color = vec4(1.0, 1.0, 1.0, 1.0);
++            color = dotColor;
+         }
+     )";
+ 
+@@ -310,10 +319,14 @@ OpenGLCursorRenderer::OpenGLCursorRenderer() {
+ 
+     shader.Create(vertex.c_str(), fragment.c_str());
+ 
++    const GLsizei stride = sizeof(float) * CursorDot::kFloatsPerVertex;
+     auto positionVariable = (GLuint)glGetAttribLocation(shader.handle, "position");
+     glEnableVertexAttribArray(positionVariable);
+-
+-    glVertexAttribPointer(positionVariable, 2, GL_FLOAT, GL_FALSE, 0, 0);
++    glVertexAttribPointer(positionVariable, 2, GL_FLOAT, GL_FALSE, stride, nullptr);
++    auto colorVariable = (GLuint)glGetAttribLocation(shader.handle, "vertexColor");
++    glEnableVertexAttribArray(colorVariable);
++    glVertexAttribPointer(colorVariable, 4, GL_FLOAT, GL_FALSE, stride,
++                          reinterpret_cast<const void*>(sizeof(float) * 2));
+ }
+ 
+ OpenGLCursorRenderer::~OpenGLCursorRenderer() {
+@@ -325,43 +338,22 @@ OpenGLCursorRenderer::~OpenGLCursorRenderer() {
+ void OpenGLCursorRenderer::Render(int bufferWidth, int bufferHeight, float projectedX,
+                                   float projectedY, float renderRatio,
+                                   const Layout::FramebufferLayout& layout, void* framebuffer_data) {
+-    // Use shared coordinate calculation
+-    CursorCoordinates coords(bufferWidth, bufferHeight, projectedX, projectedY, renderRatio,
+-                             layout);
++    // nx-mobile: the pen dot (video_core/cursor_dot.h); GL's y points up, so the centre's flips.
++    const float cx = (projectedX / bufferWidth) * 2 - 1;
++    const float cy = -((projectedY / bufferHeight) * 2 - 1);
++    const std::vector<float> dot =
++        CursorDot::Vertices(cx, cy, renderRatio / bufferWidth * 2, renderRatio / bufferHeight * 2);
+ 
+     glUseProgram(shader.handle);
+-
+     glBindVertexArray(vao.handle);
+ 
+-    // clang-format off
+-    GLfloat cursor[] = {
+-            // | in the cursor
+-            coords.verticalLeft,  coords.verticalTop,
+-            coords.verticalRight, coords.verticalTop,
+-            coords.verticalRight, coords.verticalBottom,
+-
+-            coords.verticalLeft,  coords.verticalTop,
+-            coords.verticalRight, coords.verticalBottom,
+-            coords.verticalLeft,  coords.verticalBottom,
+-
+-            // - in the cursor
+-            coords.horizontalLeft,  coords.horizontalTop,
+-            coords.horizontalRight, coords.horizontalTop,
+-            coords.horizontalRight, coords.horizontalBottom,
+-
+-            coords.horizontalLeft,  coords.horizontalTop,
+-            coords.horizontalRight, coords.horizontalBottom,
+-            coords.horizontalLeft,  coords.horizontalBottom
+-    };
+-    // clang-format on
+-
+     glEnable(GL_BLEND);
+-    glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE_MINUS_SRC_COLOR);
++    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+ 
+     glBindBuffer(GL_ARRAY_BUFFER, vbo.handle);
+-    glBufferData(GL_ARRAY_BUFFER, sizeof(cursor), cursor, GL_STATIC_DRAW);
++    glBufferData(GL_ARRAY_BUFFER, dot.size() * sizeof(float), dot.data(), GL_STREAM_DRAW);
+ 
+-    glDrawArrays(GL_TRIANGLES, 0, 12);
++    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(dot.size() / CursorDot::kFloatsPerVertex));
+ 
+     glBindVertexArray(0);
+     glUseProgram(0);
+@@ -393,49 +385,28 @@ void SoftwareCursorRenderer::Render(int bufferWidth, int bufferHeight, float pro
+         return; // No framebuffer data available
+     }
+ 
+-    // Convert coordinates to screen space
+-    int centerX = static_cast<int>(projectedX);
+-    int centerY = static_cast<int>(projectedY);
+-    int radius = static_cast<int>(renderRatio);
+-
+-    // Calculate cursor dimensions within bounds
+-    int verticalLeft = std::max(centerX - radius / 5, static_cast<int>(layout.bottom_screen.left));
+-    int verticalRight =
+-        std::min(centerX + radius / 5, static_cast<int>(layout.bottom_screen.right));
+-    int verticalTop = std::max(centerY - radius, static_cast<int>(layout.bottom_screen.top));
+-    int verticalBottom = std::min(centerY + radius, static_cast<int>(layout.bottom_screen.bottom));
+-
+-    int horizontalLeft = std::max(centerX - radius, static_cast<int>(layout.bottom_screen.left));
+-    int horizontalRight = std::min(centerX + radius, static_cast<int>(layout.bottom_screen.right));
+-    int horizontalTop = std::max(centerY - radius / 5, static_cast<int>(layout.bottom_screen.top));
+-    int horizontalBottom =
+-        std::min(centerY + radius / 5, static_cast<int>(layout.bottom_screen.bottom));
+-
+-    // Draw cursor directly to framebuffer (assuming RGBA8888 format)
++    // nx-mobile: the pen dot (video_core/cursor_dot.h): the dark ring's disc, then the light disc, kept to the bottom
++    // screen. Both colours are grey, so the pixel's channel order does not matter.
++    const float r = renderRatio;
+     uint32_t* pixels = static_cast<uint32_t*>(framebuffer_data);
+-    const uint32_t cursorColor = 0xFFFFFFFF; // White cursor
+-
+-    // Draw vertical line of cursor
+-    for (int y = verticalTop; y < verticalBottom; ++y) {
+-        for (int x = verticalLeft; x < verticalRight; ++x) {
+-            if (x >= 0 && x < bufferWidth && y >= 0 && y < bufferHeight) {
+-                int pixelIndex = y * bufferWidth + x;
+-                // XOR blend for visibility on any background
+-                pixels[pixelIndex] ^= cursorColor;
+-            }
+-        }
+-    }
+-
+-    // Draw horizontal line of cursor
+-    for (int y = horizontalTop; y < horizontalBottom; ++y) {
+-        for (int x = horizontalLeft; x < horizontalRight; ++x) {
+-            if (x >= 0 && x < bufferWidth && y >= 0 && y < bufferHeight) {
+-                int pixelIndex = y * bufferWidth + x;
+-                // XOR blend for visibility on any background
+-                pixels[pixelIndex] ^= cursorColor;
++    const auto disc = [&](float radius, uint32_t colour) {
++        const int left = std::max(static_cast<int>(projectedX - radius), static_cast<int>(layout.bottom_screen.left));
++        const int right = std::min(static_cast<int>(projectedX + radius) + 1, static_cast<int>(layout.bottom_screen.right));
++        const int top = std::max(static_cast<int>(projectedY - radius), static_cast<int>(layout.bottom_screen.top));
++        const int bottom = std::min(static_cast<int>(projectedY + radius) + 1, static_cast<int>(layout.bottom_screen.bottom));
++        for (int y = top; y < bottom; ++y) {
++            for (int x = left; x < right; ++x) {
++                const float dx = x + 0.5f - projectedX;
++                const float dy = y + 0.5f - projectedY;
++                if (dx * dx + dy * dy <= radius * radius && x >= 0 && x < bufferWidth && y >= 0 &&
++                    y < bufferHeight) {
++                    pixels[y * bufferWidth + x] = colour;
++                }
+             }
+         }
+-    }
++    };
++    disc(r, 0xFF000000);
++    disc(r * CursorDot::kInnerShare, 0xFFD8D8D8);
+ }
+ 
+ } // namespace Input
 diff --git a/src/common/file_util.cpp b/src/common/file_util.cpp
 index 3168a26..510b7fd 100644
 --- a/src/common/file_util.cpp
@@ -337,11 +514,97 @@ index e602bd3..b76b22c 100644
      }
  }
  
+diff --git a/src/video_core/cursor_dot.h b/src/video_core/cursor_dot.h
+new file mode 100644
+index 0000000..bb33f02
+--- /dev/null
++++ b/src/video_core/cursor_dot.h
+@@ -0,0 +1,41 @@
++// Copyright 2026 NX Redux
++// Licensed under GPLv2 or any later version
++// Refer to the license.txt file included.
++
++// nx-mobile: the stylus cursor drawn as NX Redux's DS pen dot (a light #D8D8D8 disc in a dark ring) instead of the
++// upstream white crosshair, by every cursor renderer (OpenGL, Vulkan, software).
++
++#pragma once
++
++#include <cmath>
++#include <vector>
++
++namespace CursorDot {
++
++constexpr int kSegments = 24;
++/// The light disc's radius as a share of the dot's: the dark ring is the rest (the DS pen: 14 dp with a 2 dp ring).
++constexpr float kInnerShare = 5.0f / 7.0f;
++constexpr float kInk = 216.0f / 255.0f;
++constexpr int kFloatsPerVertex = 6; // x, y, r, g, b, a
++
++/// Triangles for a dot centred at (cx, cy) with an outer radius of rx by ry, all in the caller's device coordinates:
++/// the ring's disc first, the light disc over it. Each vertex is kFloatsPerVertex floats.
++inline std::vector<float> Vertices(float cx, float cy, float rx, float ry) {
++    std::vector<float> v;
++    v.reserve(2 * kSegments * 3 * kFloatsPerVertex);
++    const auto disc = [&](float sx, float sy, float c, float a) {
++        const auto push = [&](float x, float y) { v.insert(v.end(), {x, y, c, c, c, a}); };
++        for (int i = 0; i < kSegments; ++i) {
++            const float a0 = 6.2831853f * i / kSegments;
++            const float a1 = 6.2831853f * (i + 1) / kSegments;
++            push(cx, cy);
++            push(cx + sx * std::cos(a0), cy + sy * std::sin(a0));
++            push(cx + sx * std::cos(a1), cy + sy * std::sin(a1));
++        }
++    };
++    disc(rx, ry, 0.0f, 0.85f);
++    disc(rx * kInnerShare, ry * kInnerShare, kInk, 0.95f);
++    return v;
++}
++
++} // namespace CursorDot
+diff --git a/src/video_core/host_shaders/vulkan_cursor.frag b/src/video_core/host_shaders/vulkan_cursor.frag
+index e83cd2e..b9b273f 100644
+--- a/src/video_core/host_shaders/vulkan_cursor.frag
++++ b/src/video_core/host_shaders/vulkan_cursor.frag
+@@ -5,8 +5,9 @@
+ #version 450 core
+ #extension GL_ARB_separate_shader_objects : enable
+ 
++layout (location = 0) in vec4 frag_color; // nx-mobile: the pen dot's colour
+ layout (location = 0) out vec4 color;
+ 
+ void main() {
+-    color = vec4(1.0, 1.0, 1.0, 1.0);
++    color = frag_color;
+ }
+diff --git a/src/video_core/host_shaders/vulkan_cursor.vert b/src/video_core/host_shaders/vulkan_cursor.vert
+index 7ff2cfe..5ba2a78 100644
+--- a/src/video_core/host_shaders/vulkan_cursor.vert
++++ b/src/video_core/host_shaders/vulkan_cursor.vert
+@@ -6,7 +6,11 @@
+ #extension GL_ARB_separate_shader_objects : enable
+ 
+ layout (location = 0) in vec2 vert_position;
++layout (location = 1) in vec4 vert_color; // nx-mobile: the pen dot's per-vertex colour (video_core/cursor_dot.h)
++
++layout (location = 0) out vec4 frag_color;
+ 
+ void main() {
+     gl_Position = vec4(vert_position, 0.0, 1.0);
++    frag_color = vert_color;
+ }
 diff --git a/src/video_core/renderer_vulkan/renderer_vulkan.cpp b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
-index 5221fdf..bc7f4ed 100644
+index 5221fdf..b050db2 100644
 --- a/src/video_core/renderer_vulkan/renderer_vulkan.cpp
 +++ b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
-@@ -253,6 +253,11 @@ void RendererVulkan::RenderToWindow(PresentWindow& window, const Layout::Framebu
+@@ -20,6 +20,7 @@
+ #include "video_core/host_shaders/vulkan_present_interlaced_frag.h"
+ #include "video_core/host_shaders/vulkan_present_vert.h"
+ 
++#include "video_core/cursor_dot.h"
+ #include "video_core/host_shaders/vulkan_cursor_frag.h"
+ #include "video_core/host_shaders/vulkan_cursor_vert.h"
+ 
+@@ -253,6 +254,11 @@ void RendererVulkan::RenderToWindow(PresentWindow& window, const Layout::Framebu
  
          DrawScreens(frame, layout, flipped);
          scheduler.Flush(frame->render_ready);
@@ -353,3 +616,112 @@ index 5221fdf..bc7f4ed 100644
          window.Present(frame);
          if ((secondaryWindowEnabled && isSecondaryWindow) || (!secondaryWindowEnabled)) {
              Core::PerfStats::game_frames_updated = false;
+@@ -487,24 +493,33 @@ void RendererVulkan::BuildPipelines() {
+ 
+     // Build cursor pipeline (simple position-only, inverted color blending)
+     {
++        // nx-mobile: position and colour per vertex (the pen dot, video_core/cursor_dot.h).
+         const vk::VertexInputBindingDescription cursor_binding = {
+             .binding = 0,
+-            .stride = sizeof(float) * 2,
++            .stride = sizeof(float) * CursorDot::kFloatsPerVertex,
+             .inputRate = vk::VertexInputRate::eVertex,
+         };
+ 
+-        const vk::VertexInputAttributeDescription cursor_attribute = {
+-            .location = 0,
+-            .binding = 0,
+-            .format = vk::Format::eR32G32Sfloat,
+-            .offset = 0,
++        const std::array cursor_attributes = {
++            vk::VertexInputAttributeDescription{
++                .location = 0,
++                .binding = 0,
++                .format = vk::Format::eR32G32Sfloat,
++                .offset = 0,
++            },
++            vk::VertexInputAttributeDescription{
++                .location = 1,
++                .binding = 0,
++                .format = vk::Format::eR32G32B32A32Sfloat,
++                .offset = sizeof(float) * 2,
++            },
+         };
+ 
+         const vk::PipelineVertexInputStateCreateInfo cursor_vertex_input = {
+             .vertexBindingDescriptionCount = 1,
+             .pVertexBindingDescriptions = &cursor_binding,
+-            .vertexAttributeDescriptionCount = 1,
+-            .pVertexAttributeDescriptions = &cursor_attribute,
++            .vertexAttributeDescriptionCount = static_cast<u32>(cursor_attributes.size()),
++            .pVertexAttributeDescriptions = cursor_attributes.data(),
+         };
+ 
+         const vk::PipelineInputAssemblyStateCreateInfo cursor_input_assembly = {
+@@ -528,8 +543,8 @@ void RendererVulkan::BuildPipelines() {
+ 
+         const vk::PipelineColorBlendAttachmentState cursor_blend_attachment = {
+             .blendEnable = true,
+-            .srcColorBlendFactor = vk::BlendFactor::eOneMinusDstColor,
+-            .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcColor,
++            .srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,          // nx-mobile: the pen dot over the picture
++            .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
+             .colorBlendOp = vk::BlendOp::eAdd,
+             .srcAlphaBlendFactor = vk::BlendFactor::eOne,
+             .dstAlphaBlendFactor = vk::BlendFactor::eZero,
+@@ -1081,45 +1096,21 @@ void RendererVulkan::DrawCursor(const Layout::FramebufferLayout& layout) {
+     const float rw = ratio / buf_w;
+     const float rh = ratio / buf_h;
+ 
+-    // Bottom screen bounds in NDC
+-    const float bl = (layout.bottom_screen.left / buf_w) * 2.0f - 1.0f;
+-    const float bt = (layout.bottom_screen.top / buf_h) * 2.0f - 1.0f;
+-    const float br = (layout.bottom_screen.right / buf_w) * 2.0f - 1.0f;
+-    const float bb = (layout.bottom_screen.bottom / buf_h) * 2.0f - 1.0f;
+-
+-    // Crosshair geometry clamped to bottom screen bounds
+-    const float vl = std::fmax(cx - rw / 5.0f, bl);
+-    const float vr = std::fmin(cx + rw / 5.0f, br);
+-    const float vt = std::fmax(cy - rh, bt);
+-    const float vb = std::fmin(cy + rh, bb);
++    // nx-mobile: the pen dot (video_core/cursor_dot.h) instead of the crosshair.
++    const std::vector<float> vertices = CursorDot::Vertices(cx, cy, rw * 2.0f, rh * 2.0f);
++    const u32 vertex_count = static_cast<u32>(vertices.size() / CursorDot::kFloatsPerVertex);
+ 
+-    const float hl = std::fmax(cx - rw, bl);
+-    const float hr = std::fmin(cx + rw, br);
+-    const float ht = std::fmax(cy - rh / 5.0f, bt);
+-    const float hb = std::fmin(cy + rh / 5.0f, bb);
+-
+-    // 12 vertices = 4 triangles (2 for vertical bar, 2 for horizontal bar)
+-    // clang-format off
+-    const float vertices[] = {
+-        // Vertical bar
+-        vl, vt,  vr, vt,  vr, vb,
+-        vl, vt,  vr, vb,  vl, vb,
+-        // Horizontal bar
+-        hl, ht,  hr, ht,  hr, hb,
+-        hl, ht,  hr, hb,  hl, hb,
+-    };
+-    // clang-format on
+-
+-    const u64 size = sizeof(vertices);
++    const u64 size = vertices.size() * sizeof(float);
+     auto [data, offset, invalidate] = vertex_buffer.Map(size, 16);
+-    std::memcpy(data, vertices, size);
++    std::memcpy(data, vertices.data(), size);
+     vertex_buffer.Commit(size);
+ 
+-    scheduler.Record([this, offset = offset, pipeline = cursor_pipeline](vk::CommandBuffer cmdbuf) {
++    scheduler.Record([this, offset = offset, vertex_count,
++                      pipeline = cursor_pipeline](vk::CommandBuffer cmdbuf) {
+         cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+-        cmdbuf.bindVertexBuffers(0, vertex_buffer.Handle(), {0});
+-        const u32 first_vertex = static_cast<u32>(offset) / (sizeof(float) * 2);
+-        cmdbuf.draw(12, 1, first_vertex, 0);
++        // The mapped offset is 16-aligned, not a multiple of the 24-byte vertex: bind at it.
++        cmdbuf.bindVertexBuffers(0, vertex_buffer.Handle(), {static_cast<vk::DeviceSize>(offset)});
++        cmdbuf.draw(vertex_count, 1, 0, 0);
+     });
+ }
+ 
