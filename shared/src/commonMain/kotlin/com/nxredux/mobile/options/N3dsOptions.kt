@@ -42,6 +42,14 @@ object N3dsOptions {
 
     fun touchMainOnly(padOverGame: Boolean): String = if (padOverGame) "enabled" else "disabled"
 
+    /**
+     * While stylus mode is on the core keeps its touch cursor shown however long it is left still, like the DS's pen dot;
+     * off, it hides after its idle timeout (nx-mobile's core patch; not declared, never shown or saved).
+     */
+    const val CURSOR_VISIBLE = "citra_cursor_visible"
+
+    fun cursorVisible(stylus: Boolean): String = if (stylus) "enabled" else "disabled"
+
     /** SELECT + Right walks this order (Left the other way), wrapping. */
     val LAYOUT_CYCLE = listOf("default", "large_screen", "side_by_side", "single_screen")
     private val LABELS = mapOf(

@@ -31,10 +31,10 @@ index 8a65f9d..ec47bbc 100644
          !!LibRetro::CheckInput(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3);
      if (screen_swap_btn != screen_swap_button_state) {
 diff --git a/src/citra_libretro/core_settings.cpp b/src/citra_libretro/core_settings.cpp
-index 53fb164..5f0aaaf 100644
+index 53fb164..8e07396 100644
 --- a/src/citra_libretro/core_settings.cpp
 +++ b/src/citra_libretro/core_settings.cpp
-@@ -1043,6 +1043,18 @@ static void ParseLayoutOptions(void) {
+@@ -1043,6 +1043,21 @@ static void ParseLayoutOptions(void) {
      auto large_screen_proportion =
          LibRetro::FetchVariable(config::layout::large_screen_proportion, "4.00");
      Settings::values.large_screen_proportion = std::stof(large_screen_proportion);
@@ -50,10 +50,13 @@ index 53fb164..5f0aaaf 100644
 +    // nx-mobile 2026-10-20: set by the app while its on-screen buttons are over the game.
 +    Settings::values.touch_main_only =
 +        LibRetro::FetchVariable("citra_touch_main_only", "disabled") == "enabled";
++    // nx-mobile 2026-10-20: set by the app while its stylus mode is on.
++    Settings::values.cursor_always_visible =
++        LibRetro::FetchVariable("citra_cursor_visible", "disabled") == "enabled";
  }
  
  static void ParseStorageOptions(void) {
-@@ -1123,7 +1135,9 @@ static void ParseInputOptions(void) {
+@@ -1123,7 +1138,9 @@ static void ParseInputOptions(void) {
              "port:0,sensitivity:" + std::to_string(LibRetro::settings.motion_sensitivity) +
              ",engine:libretro";
      } else {
@@ -93,7 +96,7 @@ index f8cfb2c..3c3f006 100644
      return {baseX, baseY, emulated_pointer};
  }
 diff --git a/src/citra_libretro/input/mouse_tracker.cpp b/src/citra_libretro/input/mouse_tracker.cpp
-index a4ba964..dbae95d 100644
+index a4ba964..52f5c30 100644
 --- a/src/citra_libretro/input/mouse_tracker.cpp
 +++ b/src/citra_libretro/input/mouse_tracker.cpp
 @@ -12,6 +12,7 @@
@@ -126,7 +129,17 @@ index a4ba964..dbae95d 100644
          // Check touchscreen input
          state |= LibRetro::CheckInput(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
  
-@@ -280,12 +284,16 @@ OpenGLCursorRenderer::OpenGLCursorRenderer() {
+@@ -263,7 +267,8 @@ Frontend::EmuWindow::CursorInfo MouseTracker::GetCursorInfo() {
+     uint64_t since_last_moved =
+         std::chrono::duration_cast<std::chrono::seconds>(current - last_moved).count();
+     constexpr auto timeout_secs = 4; // TODO: Make this configurable maybe? -OS
+-    if (LibRetro::settings.enable_touch_pointer_timeout && since_last_moved >= timeout_secs) {
++    if (LibRetro::settings.enable_touch_pointer_timeout && since_last_moved >= timeout_secs &&
++        !Settings::values.cursor_always_visible) { // nx-mobile: stylus mode keeps it shown
+         visible = false;
+     }
+     return {visible, projectedX, projectedY};
+@@ -280,12 +285,16 @@ OpenGLCursorRenderer::OpenGLCursorRenderer() {
          vertex += fragment_shader_precision_OES;
      }
  
@@ -143,7 +156,7 @@ index a4ba964..dbae95d 100644
          }
      )";
  
-@@ -294,11 +302,12 @@ OpenGLCursorRenderer::OpenGLCursorRenderer() {
+@@ -294,11 +303,12 @@ OpenGLCursorRenderer::OpenGLCursorRenderer() {
          fragment += fragment_shader_precision_OES;
      }
      fragment += R"(
@@ -157,7 +170,7 @@ index a4ba964..dbae95d 100644
          }
      )";
  
-@@ -310,10 +319,14 @@ OpenGLCursorRenderer::OpenGLCursorRenderer() {
+@@ -310,10 +320,14 @@ OpenGLCursorRenderer::OpenGLCursorRenderer() {
  
      shader.Create(vertex.c_str(), fragment.c_str());
  
@@ -174,7 +187,7 @@ index a4ba964..dbae95d 100644
  }
  
  OpenGLCursorRenderer::~OpenGLCursorRenderer() {
-@@ -325,43 +338,22 @@ OpenGLCursorRenderer::~OpenGLCursorRenderer() {
+@@ -325,43 +339,22 @@ OpenGLCursorRenderer::~OpenGLCursorRenderer() {
  void OpenGLCursorRenderer::Render(int bufferWidth, int bufferHeight, float projectedX,
                                    float projectedY, float renderRatio,
                                    const Layout::FramebufferLayout& layout, void* framebuffer_data) {
@@ -226,7 +239,7 @@ index a4ba964..dbae95d 100644
  
      glBindVertexArray(0);
      glUseProgram(0);
-@@ -393,49 +385,28 @@ void SoftwareCursorRenderer::Render(int bufferWidth, int bufferHeight, float pro
+@@ -393,49 +386,28 @@ void SoftwareCursorRenderer::Render(int bufferWidth, int bufferHeight, float pro
          return; // No framebuffer data available
      }
  
@@ -346,10 +359,10 @@ index 3168a26..510b7fd 100644
      LOG_ERROR(Common_Filesystem, "Stat failed {}: {}", filename, GetLastErrorMsg());
      return 0;
 diff --git a/src/common/settings.h b/src/common/settings.h
-index c83f322..b7ce4c4 100644
+index c83f322..2c5a18e 100644
 --- a/src/common/settings.h
 +++ b/src/common/settings.h
-@@ -575,6 +575,13 @@ struct Values {
+@@ -575,6 +575,16 @@ struct Values {
      SwitchableSetting<float, true> large_screen_proportion{4.f, 1.f, 16.f,
                                                             Keys::large_screen_proportion};
      SwitchableSetting<int> screen_gap{0, Keys::screen_gap};
@@ -360,6 +373,9 @@ index c83f322..b7ce4c4 100644
 +    // bottom screen only while it is the main one (swapped). The libretro core reads it from
 +    // citra_touch_main_only. The right-stick cursor (R3) still touches anywhere.
 +    bool touch_main_only = false;
++    // nx-mobile: the frontend's stylus mode is on, so the touch cursor stays visible however long it
++    // is left still (citra_cursor_visible); otherwise it hides after its idle timeout.
++    bool cursor_always_visible = false;
      SwitchableSetting<SmallScreenPosition> small_screen_position{SmallScreenPosition::BottomRight,
                                                                   Keys::small_screen_position};
      Setting<u16> custom_top_x{0, Keys::custom_top_x};

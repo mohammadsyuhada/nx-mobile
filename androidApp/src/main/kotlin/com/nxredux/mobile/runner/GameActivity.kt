@@ -1114,6 +1114,7 @@ class GameActivity : ComponentActivity() {
             if (N3dsOptions.appliesTo(tag)) listOf(
                 Variable(N3dsOptions.STACKED_SMALL_PROPORTION, N3dsOptions.stackedSmallProportion(isLandscape())),
                 Variable(N3dsOptions.TOUCH_MAIN_ONLY, N3dsOptions.touchMainOnly(overlayPadShown.value)),
+                Variable(N3dsOptions.CURSOR_VISIBLE, N3dsOptions.cursorVisible(false)),   // stylus mode is off at launch
                 // The locked core layout ([N3dsOptions.LAYOUT]) from the row in use; the descriptor's default is replaced.
                 Variable(N3dsOptions.LAYOUT, N3dsOptions.layoutFor(frontendValues, isLandscape(), ndsControllerMode())),
             ) else emptyList()
@@ -1834,14 +1835,16 @@ class GameActivity : ComponentActivity() {
     }
 
     /**
-     * 3DS: the core's layout from the row in use (orientation, controller), and, with the clusters over the game, a finger
-     * touching the bottom screen only while it is the main one (the core's rule). A value the core has is not sent again.
+     * 3DS: the core's layout from the row in use (orientation, controller); with the clusters over the game, a finger
+     * touching the bottom screen only while it is the main one (the core's rule); and the cursor kept shown in stylus mode.
+     * A value the core has is not sent again.
      */
     private fun syncN3dsCore() {
         if (!isN3ds) return
         applyOptions(listOf(
             Variable(N3dsOptions.LAYOUT, N3dsOptions.layoutFor(frontendValues, isLandscape(), ndsControllerMode())),
             Variable(N3dsOptions.TOUCH_MAIN_ONLY, N3dsOptions.touchMainOnly(overlayPadShown.value)),
+            Variable(N3dsOptions.CURSOR_VISIBLE, N3dsOptions.cursorVisible(n3dsHotkeys.stylus)),
         ))
     }
 
@@ -2811,6 +2814,7 @@ class GameActivity : ComponentActivity() {
             }
             is N3dsAction.Stylus -> {
                 n3dsStylusOn.value = action.on
+                syncN3dsCore()   // the cursor stays shown while stylus mode is on
                 // On: the d-pad, left stick and A now drive the cursor, so the core must not keep what they held. Off: the
                 // hotkeys lift a touch held, and syncN3dsCursor gives the right stick back.
                 if (action.on) releaseStylusInputs()
