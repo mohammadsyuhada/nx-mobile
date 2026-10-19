@@ -14,8 +14,6 @@ sealed interface NdsAction {
     data class CycleCorner(val delta: Int) : NdsAction
     /** L2: stylus mode turned on or off. */
     data class Stylus(val on: Boolean) : NdsAction
-    /** L2 with the landscape pad shown: hide the pad for finger touch. */
-    data object TouchMode : NdsAction
 }
 
 /** [forward]: pass the event on to the core. [action]: what the frontend does. */
@@ -30,8 +28,7 @@ data class NdsPen(val x: Float, val y: Float, val pressed: Boolean) {
 
 /**
  * NX Redux's DS controls (nxredux.com/emulators/nintendo-ds), before the core: R2 swaps screens, SELECT + Left/Right
- * cycles the layout, SELECT + Up/Down moves the inset, L2 toggles stylus mode, or, while the host says
- * [touchModeAvailable] (the landscape pad is shown on a touchscreen), asks for touch mode instead. In stylus mode the
+ * cycles the layout, SELECT + Up/Down moves the inset, L2 toggles stylus mode. In stylus mode the
  * d-pad and left stick move a pen on the bottom screen, faster the longer a direction is held (DraStic-like), and A
  * touches at it. A release always goes where its press went. R2 and L2 never reach the core. Pure: the host feeds events and ticks, and applies actions.
  */
@@ -51,11 +48,6 @@ class NdsHotkeys {
 
     var stylus = false
         private set
-    /**
-     * Host-set ([NdsTouchMode.available]): the landscape on-screen pad is shown on a touchscreen, so L2 asks for
-     * [NdsAction.TouchMode]. Stylus mode wins: while it is on, L2 still turns it off.
-     */
-    var touchModeAvailable: Boolean = false
     var pen = START
         private set
 
@@ -79,7 +71,6 @@ class NdsHotkeys {
         }
         val decision = when {
             button == NxButton.R2 -> NdsDecision(false, NdsAction.SwapScreens)
-            button == NxButton.L2 && touchModeAvailable && !stylus -> NdsDecision(false, NdsAction.TouchMode)
             button == NxButton.L2 -> {
                 stylus = !stylus
                 resetPen()   // off: lift the pen; on: a stick already held does not move it at once
