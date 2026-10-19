@@ -90,6 +90,14 @@ class N3dsHotkeys {
 
     private val selectCancelled: Boolean get() = selectMs > SELECT_CANCEL_MS
 
+    /** Stylus mode on or off: SELECT + L1, or the pad's STYLUS pill. Off lifts a touch held. */
+    fun toggleStylus(): N3dsAction.Stylus {
+        stylus = !stylus
+        resetCursor()
+        if (!stylus) liftTouch()
+        return N3dsAction.Stylus(stylus)
+    }
+
     fun onButton(button: NxButton, down: Boolean): N3dsDecision {
         if (button == NxButton.SELECT) {
             onSelect(down)
@@ -111,12 +119,7 @@ class N3dsHotkeys {
         var key: N3dsKey? = null
         val decision = when {
             chord && button == NxButton.R1 -> { key = N3dsKey.L3; N3dsDecision(false) }
-            chord && button == NxButton.L1 -> {
-                stylus = !stylus
-                resetCursor()
-                if (!stylus) liftTouch()
-                N3dsDecision(false, N3dsAction.Stylus(stylus))
-            }
+            chord && button == NxButton.L1 -> N3dsDecision(false, toggleStylus())
             chord -> N3dsDecision(false, N3dsAction.CycleLayout(if (button == NxButton.RIGHT) 1 else -1))
             stylus && button.isDirection -> {
                 if (held.isEmpty()) heldMs = 0L

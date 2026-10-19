@@ -11,10 +11,10 @@ import kotlin.test.assertTrue
 class N3dsHotkeysTest {
     private fun N3dsHotkeys.down(b: NxButton) = onButton(b, down = true)
     private fun N3dsHotkeys.up(b: NxButton) = onButton(b, down = false)
-    private fun N3dsHotkeys.toggleStylus() = also {
+    private fun N3dsHotkeys.chordStylus() = also {
         down(NxButton.SELECT); down(NxButton.L1); up(NxButton.L1); up(NxButton.SELECT); takeKeys()
     }
-    private fun stylusOn() = N3dsHotkeys().toggleStylus()
+    private fun stylusOn() = N3dsHotkeys().chordStylus()
     private fun near(expected: Float, actual: Float) = assertTrue(abs(expected - actual) < 0.001f, "expected $expected, got $actual")
     private fun press(k: N3dsKey) = N3dsKeyEvent(k, true)
     private fun release(k: N3dsKey) = N3dsKeyEvent(k, false)
@@ -313,10 +313,10 @@ class N3dsHotkeysTest {
     @Test fun turning_the_stylus_on_or_off_stops_the_cursor() {
         val h = N3dsHotkeys()
         h.onStick(1f, 0f)
-        h.toggleStylus()
+        h.chordStylus()
         assertNull(h.cursor)                                                    // a stick already held does not move it at once
         h.down(NxButton.RIGHT)
-        h.toggleStylus()
+        h.chordStylus()
         assertNull(h.cursor)
     }
 
@@ -361,5 +361,14 @@ class N3dsHotkeysTest {
         assertEquals(1, h.joystickDirection(1f))
         assertEquals(-1, h.joystickDirection(-0.8f))
         assertEquals(0, h.joystickDirection(0.3f))
+    }
+
+    @Test fun the_stylus_pill_toggles_like_select_l1() {
+        val h = N3dsHotkeys()
+        assertEquals(N3dsAction.Stylus(true), h.toggleStylus())
+        assertTrue(h.stylus)
+        assertEquals(N3dsAction.Stylus(false), h.toggleStylus())
+        assertFalse(h.stylus)
+        assertEquals(emptyList(), h.takeKeys())   // nothing held, nothing to lift
     }
 }

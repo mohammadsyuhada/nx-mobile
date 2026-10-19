@@ -382,7 +382,7 @@ private fun PadButton(
     shape: Shape = PadStyle.faceShape,
     label: String = button.glyph(),
     width: Dp = size,
-    fontSize: TextUnit = NxTextSizes.padLabel,
+    fontSize: TextUnit = LocalPadLabelSize.current,
     face: PadFace? = null,
     labelColor: Color? = null,
     icon: PadIcon? = null,
@@ -729,7 +729,7 @@ private fun ToggleButton(label: String, onClick: () -> Unit, height: Dp, width: 
             color = LocalPadColors.current.label,
             fontFamily = LocalNxFont.current,
             fontWeight = FontWeight.SemiBold,
-            fontSize = NxTextSizes.padLabel.pinned(),
+            fontSize = LocalPadLabelSize.current.pinned(),
         )
     }
 }
@@ -769,10 +769,73 @@ private fun MotionButton(motion: PadMotion, height: Dp, width: Dp) {
             color = LocalPadColors.current.label,
             fontFamily = LocalNxFont.current,
             fontWeight = FontWeight.SemiBold,
-            fontSize = NxTextSizes.padLabel.pinned(),
+            fontSize = LocalPadLabelSize.current.pinned(),
         )
     }
 }
+
+/** The pad's small labels' size: [NxTextSizes.padLabel], bigger in the clusters over the game ([NxTextSizes.padLabelOverGame]). */
+val LocalPadLabelSize = staticCompositionLocalOf { NxTextSizes.padLabel }
+
+/**
+ * The 3DS pad's own STYLUS and SWAP pills, the on-screen forms of its SELECT + L1 / SELECT + R1 chords: [stylusOn] says
+ * whether stylus mode is on (the pill stays pressed in), a STYLUS tap flips it ([onStylus]), and SWAP holds the core's
+ * swap-screens key while pressed ([onSwap] down, then up), so it works in Azahar's toggle and hold swap modes alike.
+ */
+data class PadTools(val stylusOn: Boolean, val onStylus: () -> Unit, val onSwap: (Boolean) -> Unit)
+
+/** A [PadTools] pill: [label] on the pill face, pressed in while [latched]; [onDown] / [onUp] around a press, [onTap] after a tap. */
+@Composable
+private fun ToolButton(
+    label: String,
+    height: Dp,
+    width: Dp,
+    latched: Boolean = false,
+    onTap: () -> Unit = {},
+    onDown: () -> Unit = {},
+    onUp: () -> Unit = {},
+) {
+    val haptic = rememberPadHaptic()
+    val latestTap by rememberUpdatedState(onTap)
+    val latestDown by rememberUpdatedState(onDown)
+    val latestUp by rememberUpdatedState(onUp)
+    var pressed by remember { mutableStateOf(false) }
+    NeuSurface(
+        shape = PadStyle.pillShape,
+        face = LocalPadColors.current.pill,
+        pressed = pressed || latched,
+        modifier = Modifier.width(width).height(height).pointerInput(Unit) {
+            detectTapGestures(
+                onPress = {
+                    pressed = true
+                    haptic()
+                    latestDown()
+                    try { tryAwaitRelease() } finally {
+                        pressed = false
+                        latestUp()
+                    }
+                },
+                onTap = { latestTap() },
+            )
+        },
+    ) {
+        Text(
+            label,
+            color = LocalPadColors.current.label,
+            fontFamily = LocalNxFont.current,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = LocalPadLabelSize.current.pinned(),
+        )
+    }
+}
+
+@Composable
+private fun StylusButton(tools: PadTools, height: Dp, width: Dp) =
+    ToolButton("STYLUS", height, width, latched = tools.stylusOn, onTap = tools.onStylus)
+
+@Composable
+private fun SwapButton(tools: PadTools, height: Dp, width: Dp) =
+    ToolButton("SWAP", height, width, onDown = { tools.onSwap(true) }, onUp = { tools.onSwap(false) })
 
 /**
  * The d-pad / stick choice per game for the process's life. A host that rebuilds the pad per layout (rotate, fold: a
@@ -835,6 +898,7 @@ fun VirtualPad(
     latched: Set<NxButton> = emptySet(),
     layout: PadLayout = PadLayout.EMPTY,
     onGroupBounds: PadGroupBoundsListener? = null,
+    tools: PadTools? = null,
 ) {
     // Track which buttons this pad currently holds so we can release them if the pad
     // leaves composition mid-hold. A duplicate Up (also emitted by the gesture's finally
@@ -920,12 +984,20 @@ fun VirtualPad(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     PadGroupBox(PadGroup.SYSTEM_LEFT) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (tools != null) {
+                                StylusButton(tools, sysH, sysW)
+                                Spacer(Modifier.width(12.dp))
+                            }
                             PadButton(NxButton.MENU, sysH, emit, shape = PadStyle.pillShape, width = sysW)
                             Spacer(Modifier.width(12.dp))
                             ToggleButton(if (stick.useJoystick) "D-PAD" else "STICK", stick::toggle, sysH, sysW)
                             if (motion != null && profile.motionButton) {
                                 Spacer(Modifier.width(12.dp))
                                 MotionButton(motion, sysH, sysW)
+                            }
+                            if (tools != null) {
+                                Spacer(Modifier.width(12.dp))
+                                SwapButton(tools, sysH, sysW)
                             }
                         }
                     }
@@ -1312,11 +1384,15 @@ fun VirtualPadLeft(
     latched: Set<NxButton> = emptySet(),
     layout: PadLayout = PadLayout.EMPTY,
     onGroupBounds: PadGroupBoundsListener? = null,
+    tools: PadTools? = null,
 ) {
     val emit = rememberEmit(onEvent)
     val stick = rememberStickChoice(useJoystick, onUseJoystickChange)
     // Always Charcoal: the clusters sit translucent over the game, whatever the portrait Pad theme.
-    CompositionLocalProvider(LocalPadColors provides CharcoalPadColors) {
+    CompositionLocalProvider(
+        LocalPadColors provides CharcoalPadColors,
+        LocalPadLabelSize provides if (overGame) NxTextSizes.padLabelOverGame else NxTextSizes.padLabel,
+    ) {
         BoxWithConstraints(modifier.fillMaxSize().padding(CLUSTER_PADDING.dp)) {
             val unit = clusterUnit(maxWidth.value, maxHeight.value).dp
             val arrange = rememberPadArrange(layout, with(LocalDensity.current) { unit.toPx() }, onGroupBounds)
@@ -1335,10 +1411,16 @@ fun VirtualPadLeft(
                     if (i > 0) Spacer(rowSpacer(i == flex, gap))
                     when (row) {
                         PadRow.SYSTEM -> PadGroupBox(PadGroup.SYSTEM_LEFT, Modifier.padding(start = nudge)) {
-                            SystemRow(
-                                padSystemRow(PadSide.LEFT, profile, motion != null), emit, profile, sysH, sysW, stick.useJoystick,
-                                stick::toggle, motion,
-                            )
+                            Column(horizontalAlignment = Alignment.Start) {
+                                SystemRow(
+                                    padSystemRow(PadSide.LEFT, profile, motion != null), emit, profile, sysH, sysW, stick.useJoystick,
+                                    stick::toggle, motion,
+                                )
+                                if (tools != null) {   // under MENU
+                                    Spacer(Modifier.height(gap))
+                                    StylusButton(tools, sysH, sysW)
+                                }
+                            }
                         }
                         PadRow.SHOULDERS -> PadGroupBox(PadGroup.L_SHOULDERS, Modifier.padding(start = nudge)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1373,10 +1455,14 @@ fun VirtualPadRight(
     latched: Set<NxButton> = emptySet(),
     layout: PadLayout = PadLayout.EMPTY,
     onGroupBounds: PadGroupBoundsListener? = null,
+    tools: PadTools? = null,
 ) {
     val emit = rememberEmit(onEvent)
     // Always Charcoal: the clusters sit translucent over the game, whatever the portrait Pad theme.
-    CompositionLocalProvider(LocalPadColors provides CharcoalPadColors) {
+    CompositionLocalProvider(
+        LocalPadColors provides CharcoalPadColors,
+        LocalPadLabelSize provides if (overGame) NxTextSizes.padLabelOverGame else NxTextSizes.padLabel,
+    ) {
         BoxWithConstraints(modifier.fillMaxSize().padding(CLUSTER_PADDING.dp)) {
             val unit = clusterUnit(maxWidth.value, maxHeight.value).dp
             val arrange = rememberPadArrange(layout, with(LocalDensity.current) { unit.toPx() }, onGroupBounds)
@@ -1396,9 +1482,21 @@ fun VirtualPadRight(
                     if (i > 0) Spacer(rowSpacer(i == flex, gap))
                     when (row) {
                         PadRow.SYSTEM -> PadGroupBox(PadGroup.SYSTEM_RIGHT, Modifier.padding(end = nudge)) {
-                            SystemRow(padSystemRow(PadSide.RIGHT, profile), emit, profile, sysH, sysW, false, {}, null)
+                            Column(horizontalAlignment = Alignment.End) {
+                                SystemRow(padSystemRow(PadSide.RIGHT, profile), emit, profile, sysH, sysW, false, {}, null)
+                                if (tools != null) {   // under START
+                                    Spacer(Modifier.height(gap))
+                                    SwapButton(tools, sysH, sysW)
+                                }
+                            }
                         }
-                        PadRow.SHOULDERS -> PadGroupBox(PadGroup.R_SHOULDERS, Modifier.padding(end = nudge)) {
+                        // With the C-stick the face cluster is C_STICK_LANDSCAPE_DROP taller, which would lift the shoulders
+                        // above the left cluster's: drawn that much lower, level with L / ZL (right of the stick, above X).
+                        PadRow.SHOULDERS -> PadGroupBox(
+                            PadGroup.R_SHOULDERS,
+                            Modifier.padding(end = nudge)
+                                .offset(y = if (profile.cStick && onCStick != null) unit * C_STICK_LANDSCAPE_DROP else 0.dp),
+                        ) {
                             Row(horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                                 ShoulderButtons(padShoulders(PadSide.RIGHT, profile), profile, bumper, trigger, emit, latched)
                             }

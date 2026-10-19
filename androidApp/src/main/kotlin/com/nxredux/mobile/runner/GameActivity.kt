@@ -203,6 +203,7 @@ import com.nxredux.mobile.ui.nx.SlotUi
 import com.nxredux.mobile.ui.nx.PadStickModes
 import com.nxredux.mobile.ui.nx.VirtualPad
 import com.nxredux.mobile.ui.nx.PadMotion
+import com.nxredux.mobile.ui.nx.PadTools
 import com.nxredux.mobile.ui.nx.CLUSTER_MAX_WIDTH_SHARE
 import com.nxredux.mobile.ui.nx.VirtualPadLeft
 import com.nxredux.mobile.ui.nx.VirtualPadRight
@@ -572,6 +573,7 @@ class GameActivity : ComponentActivity() {
     private var n3dsHwRight = 0f to 0f          // the hardware right stick as last read
     private var n3dsPadRight = 0f to 0f         // the on-screen C-stick as last moved (New 3DS controls)
     private var n3dsSentRight = 0f to 0f        // the right stick as last sent to the core
+    private val n3dsStylusOn = mutableStateOf(false)   // stylus mode, as the pad's STYLUS pill shows it
     private var n3dsTickJob: Job? = null        // ticks the hotkeys while they ask ([N3dsHotkeys.ticking])
     private val isN3ds: Boolean get() = N3dsOptions.appliesTo(gameTag)
     private val isDc: Boolean get() = DcInput.appliesTo(gameTag)
@@ -1771,7 +1773,7 @@ class GameActivity : ComponentActivity() {
             ).apply { bottomMargin = bandPx; topMargin = cutoutTop }
             if (bandPx > 0) {
                 val bandLayout = padLayout(PadShape.PORTRAIT)
-                val pad = composePad { PadThemeProvider(padTheme) { VirtualPad(::onPad, Modifier.fillMaxSize(), analog = true, onStick = ::onStick, profile = padProfile(), useJoystick = PadStickModes[padStickKey, padProfile().stickByDefault], onUseJoystickChange = ::onPadStickMode, onCStick = padCStick(), motion = padMotion(), latched = gcLatched.value, layout = bandLayout) } }
+                val pad = composePad { PadThemeProvider(padTheme) { VirtualPad(::onPad, Modifier.fillMaxSize(), analog = true, onStick = ::onStick, profile = padProfile(), useJoystick = PadStickModes[padStickKey, padProfile().stickByDefault], onUseJoystickChange = ::onPadStickMode, onCStick = padCStick(), motion = padMotion(), latched = gcLatched.value, layout = bandLayout, tools = padTools()) } }
                 addPad(root, pad, FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT, bandPx, Gravity.BOTTOM))
             } else if (layoutPadHidden && names.isEmpty()) {
@@ -1817,10 +1819,10 @@ class GameActivity : ComponentActivity() {
         val overlayLayout = padLayout(PadShape.OVERLAY)
         val left = composePad {
             VirtualPadLeft(::onPad, ::onStick, Modifier.fillMaxSize().clearOfCutoutBothSides(WindowInsetsSides.Start).alpha(padLandscapeAlpha.value), profile = padProfile(),
-                useJoystick = PadStickModes[padStickKey, padProfile().stickByDefault], onUseJoystickChange = ::onPadStickMode, overGame = true, motion = padMotion(), latched = gcLatched.value, layout = overlayLayout)
+                useJoystick = PadStickModes[padStickKey, padProfile().stickByDefault], onUseJoystickChange = ::onPadStickMode, overGame = true, motion = padMotion(), latched = gcLatched.value, layout = overlayLayout, tools = padTools())
         }
         val right = composePad {
-            VirtualPadRight(::onPad, Modifier.fillMaxSize().clearOfCutoutBothSides(WindowInsetsSides.End).alpha(padLandscapeAlpha.value), profile = padProfile(), overGame = true, onCStick = padCStick(), latched = gcLatched.value, layout = overlayLayout)
+            VirtualPadRight(::onPad, Modifier.fillMaxSize().clearOfCutoutBothSides(WindowInsetsSides.End).alpha(padLandscapeAlpha.value), profile = padProfile(), overGame = true, onCStick = padCStick(), latched = gcLatched.value, layout = overlayLayout, tools = padTools())
         }
         addPad(root, left, FrameLayout.LayoutParams(halfW, height, Gravity.START or Gravity.BOTTOM))
         addPad(root, right, FrameLayout.LayoutParams(halfW, height, Gravity.END or Gravity.BOTTOM))
@@ -2230,6 +2232,21 @@ class GameActivity : ComponentActivity() {
     /** The pad's motion button ([PadMotion]): Wiimote types on a phone with both sensors; none without them. */
     private fun padMotion(): PadMotion? =
         if (isWii && padProfile().motionButton && motionSensors?.hasSensors == true) PadMotion(wiiMotionOn, ::toggleWiiMotion, ::recenterWiiMotion) else null
+
+    /** The 3DS pad's STYLUS and SWAP pills ([PadTools]); none on other consoles. Read in composition: the stylus pill follows [n3dsStylusOn]. */
+    private fun padTools(): PadTools? =
+        if (N3dsOptions.appliesTo(layoutTag())) PadTools(n3dsStylusOn.value, ::toggleN3dsStylus, ::onN3dsSwap) else null
+
+    /** The STYLUS pill: SELECT + L1's stylus toggle. */
+    private fun toggleN3dsStylus() {
+        applyN3dsAction(n3dsHotkeys.toggleStylus())
+        syncN3dsCursor()
+    }
+
+    /** The SWAP pill: Azahar's swap-screens key (L3), held as long as the pill. */
+    private fun onN3dsSwap(down: Boolean) {
+        retroView?.sendKeyEvent(if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BUTTON_THUMBL)
+    }
 
     /** The pad's small right stick: the New 3DS C-stick, or on Wii the Classic Controller's right stick only. */
     private fun padCStick(): ((Float, Float) -> Unit)? = when {
@@ -2770,6 +2787,7 @@ class GameActivity : ComponentActivity() {
                 persistGameKey(key, value)
             }
             is N3dsAction.Stylus -> {
+                n3dsStylusOn.value = action.on
                 // On: the d-pad, left stick and A now drive the cursor, so the core must not keep what they held. Off: the
                 // hotkeys lift a touch held, and syncN3dsCursor gives the right stick back.
                 if (action.on) releaseStylusInputs()
