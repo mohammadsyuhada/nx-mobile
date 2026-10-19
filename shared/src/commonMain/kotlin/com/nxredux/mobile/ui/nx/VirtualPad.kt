@@ -1302,13 +1302,12 @@ internal fun padShoulders(side: PadSide, profile: PadProfile = PadProfile.STANDA
 @Composable
 private fun ShoulderButtons(
     buttons: List<NxButton>, profile: PadProfile, bumper: Dp, trigger: Dp, emit: (PadEvent) -> Unit, latched: Set<NxButton>,
-    overGame: Boolean = false,
 ) {
     buttons.forEachIndexed { i, button ->
         if (i > 0) Spacer(Modifier.width(8.dp))
         val size = if (button == NxButton.L1 || button == NxButton.R1) bumper else trigger
-        // Over the game the shoulders are big see-through discs: the label follows the disc, not the small pill size.
-        val font = if (overGame) (size.value * SHOULDER_LABEL_OF_DISC).sp else LocalPadLabelSize.current
+        // The shoulders are big discs, on the band as over the game: the label follows the disc, not the small pill size.
+        val font = (size.value * SHOULDER_LABEL_OF_DISC).sp
         PadButton(button, size, emit, shape = PadStyle.pillShape, label = profile.label(button), fontSize = font, lit = button in latched)
     }
 }
@@ -1319,7 +1318,7 @@ private fun ShoulderButtons(
  */
 private const val C_STICK_SHOULDER_DROP = 0.41f
 
-/** An over-the-game shoulder label's size as a share of its disc ([ShoulderButtons]). */
+/** A shoulder label's size as a share of its disc ([ShoulderButtons]). */
 private const val SHOULDER_LABEL_OF_DISC = 0.36f
 
 /**
@@ -1438,7 +1437,7 @@ fun VirtualPadLeft(
                         }
                         PadRow.SHOULDERS -> PadGroupBox(PadGroup.L_SHOULDERS, Modifier.padding(start = nudge)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                ShoulderButtons(padShoulders(PadSide.LEFT, profile), profile, bumper, trigger, emit, latched, overGame)
+                                ShoulderButtons(padShoulders(PadSide.LEFT, profile), profile, bumper, trigger, emit, latched)
                             }
                         }
                         PadRow.CLUSTER -> PadGroupBox(PadGroup.DPAD, Modifier.padding(start = nudge)) {
@@ -1512,7 +1511,7 @@ fun VirtualPadRight(
                                 .offset(y = if (profile.cStick && onCStick != null) unit * C_STICK_SHOULDER_DROP else 0.dp),
                         ) {
                             Row(horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                                ShoulderButtons(padShoulders(PadSide.RIGHT, profile), profile, bumper, trigger, emit, latched, overGame)
+                                ShoulderButtons(padShoulders(PadSide.RIGHT, profile), profile, bumper, trigger, emit, latched)
                             }
                         }
                         PadRow.CLUSTER -> PadGroupBox(PadGroup.FACE, Modifier.padding(end = nudge)) {
