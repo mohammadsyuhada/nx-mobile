@@ -77,9 +77,12 @@ data class ImportSummary(
     val saves: Int = 0, val states: Int = 0, val markers: Int = 0, val identical: Int = 0, val replaced: Int = 0,
     val ignored: Int = 0, val skipped: List<SkippedFile> = emptyList(),
 ) {
+    /** Nothing found at all: no file imported, already here, ignored or skipped. */
+    val isEmpty: Boolean get() = saves + states + markers + identical + replaced + ignored == 0 && skipped.isEmpty()
+
     /** The results page's summary lines, or just "Nothing to import". */
     fun lines(): List<String> {
-        if (saves + states + markers + identical + replaced + ignored == 0 && skipped.isEmpty()) return listOf("Nothing to import")
+        if (isEmpty) return listOf("Nothing to import")
         return buildList {
             add("Imported ${count(saves, "save")} and ${count(states, "state")}")
             if (identical > 0) add("$identical already here")

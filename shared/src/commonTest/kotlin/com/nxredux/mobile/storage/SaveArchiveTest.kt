@@ -2,7 +2,9 @@ package com.nxredux.mobile.storage
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class SaveArchiveTest {
     @Test fun the_three_areas() {
@@ -52,6 +54,12 @@ class SaveArchiveTest {
         )
         assertEquals(listOf("Imported 0 saves and 0 states", "1 other file ignored"), ImportSummary(ignored = 1).lines())
         assertEquals(listOf("Nothing to import"), ImportSummary().lines())
+    }
+    @Test fun an_import_summary_is_empty_only_when_nothing_was_found() {
+        assertTrue(ImportSummary().isEmpty)
+        assertFalse(ImportSummary(identical = 1).isEmpty)
+        assertFalse(ImportSummary(ignored = 1).isEmpty)
+        assertFalse(ImportSummary(skipped = listOf(SkippedFile("A.srm", SkipReason.NO_GAME))).isEmpty)
     }
     @Test fun import_summaries_add_up() {
         val a = ImportSummary(saves = 1, states = 2, markers = 3, identical = 4, replaced = 5, ignored = 6, skipped = listOf(SkippedFile("A.srm", SkipReason.NO_GAME)))

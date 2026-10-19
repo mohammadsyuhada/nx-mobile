@@ -99,7 +99,7 @@ class AndroidSaveTransfer(
                     val roots = retroArchRoots()
                     if (roots.isEmpty()) return@importWork ImportResult.Message(RetroArchFolders.NOT_FOUND)
                     val importer = importer()
-                    ImportResult.Done(roots.map { importer.run(DirImportFiles(it, RetroArchFolders.TOPS)) }.reduce(ImportSummary::plus))
+                    retroArchResult(roots.map { importer.run(DirImportFiles(it, RetroArchFolders.TOPS)) }.reduce(ImportSummary::plus))
                 }
             } else pickers.openFolder { ref ->
                 ref ?: return@openFolder
@@ -107,11 +107,15 @@ class AndroidSaveTransfer(
                     val tree = ImportTree.of(resolver, ref)
                     val start = treeStart(ref)
                     if (RetroArchFolders.TOPS.none { tree.child(start, it)?.isDirectory == true }) return@importWork ImportResult.Message(RetroArchFolders.NOT_FOUND)
-                    ImportResult.Done(importer().run(TreeImportFiles(tree, start, RetroArchFolders.TOPS)))
+                    retroArchResult(importer().run(TreeImportFiles(tree, start, RetroArchFolders.TOPS)))
                 }
             }
         }
     }
+
+    /** RetroArch creates empty `saves`/`states` folders on install: an empty summary says nothing was found there. */
+    private fun retroArchResult(summary: ImportSummary): ImportResult =
+        if (summary.isEmpty) ImportResult.Message(RetroArchFolders.NOT_FOUND) else ImportResult.Done(summary)
 
     /** The RetroArch roots on shared storage that hold `saves` or `states`, in [RetroArchFolders.ROOTS] order. */
     @Suppress("DEPRECATION")   // the shared storage root itself, read with All files access
