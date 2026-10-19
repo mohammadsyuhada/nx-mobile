@@ -10,36 +10,36 @@ import kotlin.test.assertTrue
 
 class CoreRegistryTest {
     @Test fun nds_maps_to_melondsds_case_insensitively() {
-        assertEquals("melondsds_libretro_android.so", CoreRegistry.forTag("NDS")!!.libraryFileName)
-        assertEquals("melondsds_libretro_android.so", CoreRegistry.forTag("nds")!!.libraryFileName)
+        assertEquals("libmelondsds_libretro_android.so", CoreRegistry.forTag("NDS")!!.libraryFileName)
+        assertEquals("libmelondsds_libretro_android.so", CoreRegistry.forTag("nds")!!.libraryFileName)
     }
     @Test fun gb_and_gbc_share_gambatte() {
         assertEquals(CoreRegistry.forTag("GB"), CoreRegistry.forTag("GBC"))
-        assertEquals("gambatte_libretro_android.so", CoreRegistry.forTag("GB")!!.libraryFileName)
+        assertEquals("libgambatte_libretro_android.so", CoreRegistry.forTag("GB")!!.libraryFileName)
     }
     @Test fun gba_runs_gpsp_and_mgba_runs_mgba() {
-        assertEquals("gpsp_libretro_android.so", CoreRegistry.forTag("GBA")!!.libraryFileName)
+        assertEquals("libgpsp_libretro_android.so", CoreRegistry.forTag("GBA")!!.libraryFileName)
         assertEquals("mgba", CoreRegistry.forTag("MGBA")!!.id)
         assertNotEquals(CoreRegistry.forTag("GBA"), CoreRegistry.forTag("MGBA"))
     }
     @Test fun every_new_tag_maps_to_its_library() {
-        val gpgx = "genesis_plus_gx_libretro_android.so"
-        val pico = "picodrive_libretro_android.so"
+        val gpgx = "libgenesis_plus_gx_libretro_android.so"
+        val pico = "libpicodrive_libretro_android.so"
         val expected = mapOf(
-            "FDS" to "fceumm_libretro_android.so", "SGB" to "mgba_libretro_android.so",
-            "SUPA" to "mednafen_supafaust_libretro_android.so",
+            "FDS" to "libfceumm_libretro_android.so", "SGB" to "libmgba_libretro_android.so",
+            "SUPA" to "libmednafen_supafaust_libretro_android.so",
             "GPGX" to gpgx, "MD" to pico, "SMS" to pico, "GG" to pico, "SG1000" to pico, "SEGACD" to pico, "32X" to pico,
-            "PS" to "pcsx_rearmed_libretro_android.so",
-            "NGP" to "race_libretro_android.so", "NGPC" to "race_libretro_android.so",
-            "PCE" to "mednafen_pce_fast_libretro_android.so", "VB" to "mednafen_vb_libretro_android.so",
-            "LYNX" to "handy_libretro_android.so", "A2600" to "stella2014_libretro_android.so",
-            "A5200" to "a5200_libretro_android.so", "A7800" to "prosystem_libretro_android.so",
-            "PKM" to "pokemini_libretro_android.so", "WSC" to "mednafen_wswan_libretro_android.so",
-            "P8" to "fake08_libretro_android.so", "PRBOOM" to "prboom_libretro_android.so",
+            "PS" to "libpcsx_rearmed_libretro_android.so",
+            "NGP" to "librace_libretro_android.so", "NGPC" to "librace_libretro_android.so",
+            "PCE" to "libmednafen_pce_fast_libretro_android.so", "VB" to "libmednafen_vb_libretro_android.so",
+            "LYNX" to "libhandy_libretro_android.so", "A2600" to "libstella2014_libretro_android.so",
+            "A5200" to "liba5200_libretro_android.so", "A7800" to "libprosystem_libretro_android.so",
+            "PKM" to "libpokemini_libretro_android.so", "WSC" to "libmednafen_wswan_libretro_android.so",
+            "P8" to "libfake08_libretro_android.so", "PRBOOM" to "libprboom_libretro_android.so",
         )
         for ((tag, so) in expected) assertEquals(so, CoreRegistry.forTag(tag)?.libraryFileName, tag)
         for (core in CoreRegistry.all) {
-            val so = if (core.id == "mupen64plus_next") "mupen64plus_next_gles3_libretro_android.so" else "${core.id}_libretro_android.so"
+            val so = if (core.id == "mupen64plus_next") "libmupen64plus_next_gles3_libretro_android.so" else "lib${core.id}_libretro_android.so"
             assertEquals(so, core.libraryFileName, core.id)
         }
     }
@@ -100,7 +100,7 @@ class CoreRegistryTest {
         for (tag in listOf("PORTS", "")) assertNull(CoreRegistry.forTag(tag), tag)
     }
     @Test fun n64_uses_gles3_build_and_psp_needs_assets() {
-        assertEquals("mupen64plus_next_gles3_libretro_android.so", CoreRegistry.forTag("N64")!!.libraryFileName)
+        assertEquals("libmupen64plus_next_gles3_libretro_android.so", CoreRegistry.forTag("N64")!!.libraryFileName)
         assertTrue(CoreRegistry.forTag("PSP")!!.biosFiles.contains("PPSSPP/"))
     }
     @Test fun cores_read_file_descriptors_except_prboom_and_picodrive() {

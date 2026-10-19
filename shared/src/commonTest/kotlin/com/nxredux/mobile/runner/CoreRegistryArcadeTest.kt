@@ -8,9 +8,9 @@ import kotlin.test.assertTrue
 
 class CoreRegistryArcadeTest {
     @Test fun the_three_new_tags_have_their_cores() {
-        assertEquals("picodrive_libretro_android.so", CoreRegistry.forTag("32X")!!.libraryFileName)
-        assertEquals("gearcoleco_libretro_android.so", CoreRegistry.forTag("coleco")!!.libraryFileName)
-        assertEquals("fbneo_libretro_android.so", CoreRegistry.forTag("FBN")!!.libraryFileName)
+        assertEquals("libpicodrive_libretro_android.so", CoreRegistry.forTag("32X")!!.libraryFileName)
+        assertEquals("libgearcoleco_libretro_android.so", CoreRegistry.forTag("coleco")!!.libraryFileName)
+        assertEquals("libfbneo_libretro_android.so", CoreRegistry.forTag("FBN")!!.libraryFileName)
     }
     @Test fun archives_are_content_only_for_cores_that_list_them() {
         assertTrue(CoreRegistry.loadsArchive("FBN", "mslug.zip"))

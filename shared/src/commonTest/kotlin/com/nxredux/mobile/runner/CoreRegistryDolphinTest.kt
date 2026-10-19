@@ -12,7 +12,7 @@ class CoreRegistryDolphinTest {
     @Test fun one_core_two_descriptors() {
         assertEquals("dolphin", wii.id)
         assertEquals("dolphin", gc.id)
-        assertEquals("dolphin_libretro_android.so", wii.libraryFileName)
+        assertEquals("libdolphin_libretro_android.so", wii.libraryFileName)
         assertEquals(LoadMode.FILE_DESCRIPTOR, wii.loadMode)   // through the runner's VFS, not a cache copy
         assertEquals(1, CoreRegistry.all.count { it.id == "dolphin" })
         assertEquals(listOf("WII", "GC"), CoreRegistry.tagsSharingCore("GC"))

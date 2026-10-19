@@ -34,7 +34,7 @@ class AndroidRaHasher(private val context: Context, private val source: RomsSour
     init {
         // Dolphin's disc reader hashes Wii/GameCube images in any format. Both the library sweep and the launch build a
         // hasher, so this is the one place that runs before either hashes; the call is idempotent.
-        LibretroAchievements.setDiscLibrary(context.applicationInfo.nativeLibraryDir + "/dolphin_libretro_android.so")
+        LibretroAchievements.setDiscLibrary(context.applicationInfo.nativeLibraryDir + "/libdolphin_libretro_android.so")
     }
 
     override suspend fun hash(tag: String, ref: String, fileName: String, folder: String): String? {

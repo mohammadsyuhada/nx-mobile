@@ -10,7 +10,7 @@ object CoreRegistry {
     // optional (built-in free ones); Bios/NDS/ is copied into the system dir when present. GL resolution defaults to 2x;
     // the renderer's default comes from the device's GLES version at load (NdsRenderer).
     private val melondsds = CoreDescriptor(
-        "melondsds", "melondsds_libretro_android.so", setOf("nds", "ids", "dsi"),
+        "melondsds", "libmelondsds_libretro_android.so", setOf("nds", "ids", "dsi"),
         defaultOptions = mapOf(
             "melonds_touch_mode" to "touch",
             "melonds_number_of_screen_layouts" to "1",
@@ -32,7 +32,7 @@ object CoreRegistry {
         name = "melonDS DS",
     )
     private val mupen64plusNext = CoreDescriptor(
-        "mupen64plus_next", "mupen64plus_next_gles3_libretro_android.so", setOf("n64", "z64", "v64"),
+        "mupen64plus_next", "libmupen64plus_next_gles3_libretro_android.so", setOf("n64", "z64", "v64"),
         // Independent C-button Controls: every N64 input on its own RetroPad id, so N64Input can map by name (NX Redux).
         // The plugins follow Graphics API: GLideN64 on HLE for OpenGL ES, ParaLLEl-RDP with its ParaLLEl-RSP for Vulkan (the
         // RDP cannot run on HLE). The GLES pair is the default, so a locked key always has a value.
@@ -53,7 +53,7 @@ object CoreRegistry {
         name = "Mupen64Plus-Next",
     )
     private val ppsspp = CoreDescriptor(
-        "ppsspp", "ppsspp_libretro_android.so", setOf("iso", "cso", "chd", "pbp", "elf", "prx"),
+        "ppsspp", "libppsspp_libretro_android.so", setOf("iso", "cso", "chd", "pbp", "elf", "prx"),
         biosFiles = listOf("PPSSPP/"),
         // The backend is locked to "auto", which asks GET_PREFERRED_HW_RENDER, so Graphics API picks GL or Vulkan; "none"
         // (software context) is hidden. retro_cheat_set only works with ppsspp_cheats enabled (off by default), so it is
@@ -66,9 +66,9 @@ object CoreRegistry {
         // PPSSPP writes SAVEDATA/ under the save dir.
         name = "PPSSPP",
     )
-    private val gambatte = CoreDescriptor("gambatte", "gambatte_libretro_android.so", setOf("gb", "gbc", "dmg"), name = "Gambatte")
+    private val gambatte = CoreDescriptor("gambatte", "libgambatte_libretro_android.so", setOf("gb", "gbc", "dmg"), name = "Gambatte")
     private val mgba = CoreDescriptor(
-        "mgba", "mgba_libretro_android.so", setOf("gba"),
+        "mgba", "libmgba_libretro_android.so", setOf("gba"),
         restartOnlyOptions = RestartOnlyOptions.mgba,
         name = "mGBA",
     )
@@ -79,19 +79,19 @@ object CoreRegistry {
         defaultOptions = mapOf("mgba_gb_model" to "Super Game Boy", "mgba_sgb_borders" to "ON"),
     )
     private val fceumm = CoreDescriptor(
-        "fceumm", "fceumm_libretro_android.so", setOf("nes", "fds", "unf", "unif"),
+        "fceumm", "libfceumm_libretro_android.so", setOf("nes", "fds", "unf", "unif"),
         biosFiles = listOf("disksys.rom"),
         players = 2,
         name = "FCEUmm",
     )
     private val snes9x = CoreDescriptor(
-        "snes9x", "snes9x_libretro_android.so", setOf("sfc", "smc", "fig", "swc", "bs", "st"),
+        "snes9x", "libsnes9x_libretro_android.so", setOf("sfc", "smc", "fig", "swc", "bs", "st"),
         restartOnlyOptions = RestartOnlyOptions.snes9x,
         players = 2,
         name = "Snes9x",
     )
     private val genesisPlusGx = CoreDescriptor(
-        "genesis_plus_gx", "genesis_plus_gx_libretro_android.so",
+        "genesis_plus_gx", "libgenesis_plus_gx_libretro_android.so",
         setOf("md", "gen", "smd", "bin", "sms", "gg", "sg", "68k", "chd", "cue", "iso", "m3u"),
         // Sega CD backup RAM as <stem>.brm beside the game's .srm, so each game keeps its own (the default
         // scd_<region>.brm is shared by every game).
@@ -106,13 +106,13 @@ object CoreRegistry {
     // fbneo, whose zip/7z is the game (loadsArchive); for every other core the app unpacks zip/7z at launch and checks the
     // inner file (Names.ARCHIVE_EXTENSIONS). Defaults are the Brick paks' default.cfg values.
     private val gpsp = CoreDescriptor(
-        "gpsp", "gpsp_libretro_android.so", setOf("gba", "bin", "agb", "gbz", "u1"),
+        "gpsp", "libgpsp_libretro_android.so", setOf("gba", "bin", "agb", "gbz", "u1"),
         biosFiles = listOf("gba_bios.bin"),   // optional: an open BIOS is built in
         keepLoaded = true,   // its recompiler cache is mapped once near the core and kept (cores/patches/gpsp.patch)
         name = "gpSP",
     )
     private val pcsxRearmed = CoreDescriptor(
-        "pcsx_rearmed", "pcsx_rearmed_libretro_android.so",
+        "pcsx_rearmed", "libpcsx_rearmed_libretro_android.so",
         setOf("bin", "cue", "img", "mdf", "pbp", "toc", "cbn", "m3u", "chd", "iso", "exe"),
         defaultOptions = mapOf("pcsx_rearmed_dithering" to "enabled"),
         biosFiles = listOf("psxonpsp660.bin", "scph101.bin", "scph5501.bin", "scph7001.bin", "scph1001.bin"),   // optional: HLE built in
@@ -126,7 +126,7 @@ object CoreRegistry {
     // (CoreDescriptor.SWANSTATION_DUALSHOCK): the Brick's 517 (minarch_gamepad_type 1) is swanstation's Analog Joystick, a
     // flight stick most games ignore (Marvel Super Heroes took no buttons). Netplay with a handheld on 517 mismatches.
     private val swanstation = CoreDescriptor(
-        "swanstation", "swanstation_libretro_android.so",
+        "swanstation", "libswanstation_libretro_android.so",
         setOf("exe", "psexe", "cue", "bin", "img", "iso", "chd", "pbp", "ecm", "mds", "psf", "m3u"),
         biosFiles = listOf("scph5500.bin", "scph5501.bin", "scph5502.bin"),
         controllerPort0 = CoreDescriptor.SWANSTATION_DUALSHOCK,
@@ -141,35 +141,35 @@ object CoreRegistry {
         name = "SwanStation",
     )
     private val race = CoreDescriptor(
-        "race", "race_libretro_android.so", setOf("ngp", "ngc", "ngpc", "npc"),
+        "race", "librace_libretro_android.so", setOf("ngp", "ngc", "ngpc", "npc"),
         defaultOptions = mapOf("race_dark_filter_level" to "50"),
         cheats = false,   // retro_cheat_set is empty
         name = "RACE",
     )
     private val pceFast = CoreDescriptor(
-        "mednafen_pce_fast", "mednafen_pce_fast_libretro_android.so", setOf("pce", "cue", "ccd", "chd", "toc", "m3u"),
+        "mednafen_pce_fast", "libmednafen_pce_fast_libretro_android.so", setOf("pce", "cue", "ccd", "chd", "toc", "m3u"),
         biosFiles = listOf("syscard3.pce"),   // CD content only
         players = 4,
         name = "Beetle PCE Fast",
     )
     private val vb = CoreDescriptor(
-        "mednafen_vb", "mednafen_vb_libretro_android.so", setOf("vb", "vboy", "bin"),
+        "mednafen_vb", "libmednafen_vb_libretro_android.so", setOf("vb", "vboy", "bin"),
         defaultOptions = mapOf("vb_3dmode" to "anaglyph"),
         cheats = false,   // retro_cheat_set is empty
         name = "Beetle VB",
     )
-    private val handy = CoreDescriptor("handy", "handy_libretro_android.so", setOf("lnx", "lyx", "o"), biosFiles = listOf("lynxboot.img"), cheats = false, name = "Handy")   // retro_cheat_set is empty
-    private val stella2014 = CoreDescriptor("stella2014", "stella2014_libretro_android.so", setOf("a26", "bin"), players = 2, cheats = false, name = "Stella 2014")   // retro_cheat_set is empty
+    private val handy = CoreDescriptor("handy", "libhandy_libretro_android.so", setOf("lnx", "lyx", "o"), biosFiles = listOf("lynxboot.img"), cheats = false, name = "Handy")   // retro_cheat_set is empty
+    private val stella2014 = CoreDescriptor("stella2014", "libstella2014_libretro_android.so", setOf("a26", "bin"), players = 2, cheats = false, name = "Stella 2014")   // retro_cheat_set is empty
     private val prosystem = CoreDescriptor(
-        "prosystem", "prosystem_libretro_android.so", setOf("a78", "bin", "cdf"),
+        "prosystem", "libprosystem_libretro_android.so", setOf("a78", "bin", "cdf"),
         biosFiles = listOf("7800 BIOS (U).rom", "7800 BIOS (E).rom"),   // optional
         players = 2,
         cheats = false,   // retro_cheat_set is empty
         name = "ProSystem",
     )
-    private val a5200 = CoreDescriptor("a5200", "a5200_libretro_android.so", setOf("a52", "bin"), biosFiles = listOf("5200.rom"), players = 2, cheats = false, name = "a5200")   // optional: Altirra OS built in; retro_cheat_set is empty
+    private val a5200 = CoreDescriptor("a5200", "liba5200_libretro_android.so", setOf("a52", "bin"), biosFiles = listOf("5200.rom"), players = 2, cheats = false, name = "a5200")   // optional: Altirra OS built in; retro_cheat_set is empty
     private val pokemini = CoreDescriptor(
-        "pokemini", "pokemini_libretro_android.so", setOf("min"),
+        "pokemini", "libpokemini_libretro_android.so", setOf("min"),
         defaultOptions = mapOf(
             "pokemini_60hz_mode" to "enabled", "pokemini_palette" to "Old",
             "pokemini_piezofilter" to "disabled", "pokemini_lowpass_filter" to "enabled",
@@ -178,12 +178,12 @@ object CoreRegistry {
         cheats = false,   // retro_cheat_set is empty
         name = "PokeMini",
     )
-    private val wswan = CoreDescriptor("mednafen_wswan", "mednafen_wswan_libretro_android.so", setOf("ws", "wsc", "pc2"), name = "Beetle WonderSwan")
+    private val wswan = CoreDescriptor("mednafen_wswan", "libmednafen_wswan_libretro_android.so", setOf("ws", "wsc", "pc2"), name = "Beetle WonderSwan")
     // The Brick's SUPA.pak pins thread affinity for its four cores; not carried (phones are big.LITTLE). The core's own
     // defaults pin too (emu 0x2, PPU 0x1), and Android has no pthread_setaffinity_np, so mednafen's Thread_SetAffinity
     // throws in retro_load_game and aborts the app: 0x0 turns both off.
     private val supafaust = CoreDescriptor(
-        "mednafen_supafaust", "mednafen_supafaust_libretro_android.so", setOf("smc", "swc", "sfc", "fig"),
+        "mednafen_supafaust", "libmednafen_supafaust_libretro_android.so", setOf("smc", "swc", "sfc", "fig"),
         defaultOptions = mapOf(
             "supafaust_pixel_format" to "rgb565",
             "supafaust_thread_affinity_emu" to "0x0", "supafaust_thread_affinity_ppu" to "0x0",
@@ -194,9 +194,9 @@ object CoreRegistry {
         players = 2,
         name = "Supafaust",
     )
-    private val fake08 = CoreDescriptor("fake08", "fake08_libretro_android.so", setOf("p8", "png"), cheats = false, name = "fake-08")   // retro_cheat_set is empty
+    private val fake08 = CoreDescriptor("fake08", "libfake08_libretro_android.so", setOf("p8", "png"), cheats = false, name = "fake-08")   // retro_cheat_set is empty
     private val prboom = CoreDescriptor(
-        "prboom", "prboom_libretro_android.so", setOf("wad", "iwad", "pwad", "lmp"),
+        "prboom", "libprboom_libretro_android.so", setOf("wad", "iwad", "pwad", "lmp"),
         // prboom looks for IWADs and prboom.wad in the WAD's own folder, then <system>/prboom/, then <system>/, so it gets a
         // real path: the cache copy, with IWADs from Bios/PRBOOM/ and the bundled prboom.wad in <system>/.
         loadMode = LoadMode.REAL_PATH,
@@ -209,7 +209,7 @@ object CoreRegistry {
     // The Sega consoles' default emulator, as on the Brick (MD, SMS, GG, SG1000, SEGACD and 32X paks). 68k is listed by
     // its valid_extensions (sc, sgd and pco too, which no console here owns).
     private val picodrive = CoreDescriptor(
-        "picodrive", "picodrive_libretro_android.so", setOf("32x", "bin", "md", "gen", "smd", "68k", "sms", "gg", "sg", "cue", "iso", "chd", "m3u"),
+        "picodrive", "libpicodrive_libretro_android.so", setOf("32x", "bin", "md", "gen", "smd", "68k", "sms", "gg", "sg", "cue", "iso", "chd", "m3u"),
         // Its NDK build has no libretro VFS (plain fopen on the path): give it a real file.
         loadMode = LoadMode.REAL_PATH,
         // The Brick's MD, SEGACD and 32X paks' values (the rest of theirs are the core's defaults); picodrive_input1 and
@@ -230,7 +230,7 @@ object CoreRegistry {
     private val picodriveSms = picodrive8bit.copy(defaultOptions = picodrive8bit.defaultOptions + ("picodrive_smstype" to "Master System"))
     private val picodriveGg = picodrive8bit.copy(defaultOptions = picodrive8bit.defaultOptions + ("picodrive_smstype" to "Game Gear"))
     private val gearcoleco = CoreDescriptor(
-        "gearcoleco", "gearcoleco_libretro_android.so", setOf("col", "cv", "bin", "rom"),
+        "gearcoleco", "libgearcoleco_libretro_android.so", setOf("col", "cv", "bin", "rom"),
         biosFiles = listOf("colecovision.rom", "coleco.rom"),
         cheats = false,
         players = 2,
@@ -239,7 +239,7 @@ object CoreRegistry {
     // Its extensions are archives (flycast also lists them): an arcade set's zip/7z IS the game (loadsArchive). Parents and BIOS
     // come beside it as companions (ArcadeCompanions) or from <system>/ and <system>/fbneo/ (Bios/FBN/).
     private val fbneo = CoreDescriptor(
-        "fbneo", "fbneo_libretro_android.so", setOf("zip", "7z"),
+        "fbneo", "libfbneo_libretro_android.so", setOf("zip", "7z"),
         // Locked, as on the Brick's FBN.pak (its default.cfg writes `-fbneo-vertical-mode`, the cfg lock prefix).
         defaultOptions = mapOf("fbneo-vertical-mode" to "disabled"),
         lockedOptions = setOf("fbneo-vertical-mode"),
@@ -250,7 +250,7 @@ object CoreRegistry {
     )
     // Dreamcast discs, plus NAOMI/Atomiswave sets whose zip/7z flycast loads as is (loadsArchive). BIOS in <system>/dc/.
     private val flycast = CoreDescriptor(
-        "flycast", "flycast_libretro_android.so", setOf("chd", "cdi", "gdi", "cue", "m3u", "zip", "7z"),
+        "flycast", "libflycast_libretro_android.so", setOf("chd", "cdi", "gdi", "cue", "m3u", "zip", "7z"),
         biosFiles = listOf("dc/dc_boot.bin"),
         // Flycast has no renderer option and asks GET_PREFERRED_HW_RENDER; its libretro Vulkan context enables the frontend's
         // required device extensions only with patches/flycast.patch.
@@ -307,7 +307,7 @@ object CoreRegistry {
     // built on Android), 2x internal resolution, the disk shader cache, the core's own top-over-bottom layout with the
     // touchscreen taken from the pointer.
     private val azahar = CoreDescriptor(
-        "azahar", "azahar_libretro_android.so", setOf("3ds", "3dsx", "z3dsx", "elf", "axf", "cci", "zcci", "cxi", "zcxi", "app"),
+        "azahar", "libazahar_libretro_android.so", setOf("3ds", "3dsx", "z3dsx", "elf", "axf", "cci", "zcci", "cxi", "zcxi", "app"),
         defaultOptions = mapOf(
             "citra_graphics_api" to "OpenGL",
             "citra_resolution_factor" to "2",
@@ -367,7 +367,7 @@ object CoreRegistry {
         "dolphin_widescreen", "dolphin_ir_yaw", "dolphin_ir_pitch", "dolphin_ir_offset",
     )
     private val dolphinWii = CoreDescriptor(
-        "dolphin", "dolphin_libretro_android.so", setOf("elf", "dol", "gcm", "iso", "tgc", "wbfs", "ciso", "gcz", "wad", "wia", "rvz", "m3u"),
+        "dolphin", "libdolphin_libretro_android.so", setOf("elf", "dol", "gcm", "iso", "tgc", "wbfs", "ciso", "gcz", "wad", "wia", "rvz", "m3u"),
         // The touch pointer (Mouse controls pointer = RETRO_DEVICE_POINTER), its geometry calibrated on the Fold in Super
         // Mario Galaxy 2 so a tap lands under the finger (the libretro defaults, yaw 25, pitch 25, offset 0, overshot
         // sideways and sat below it). These are the 16:9 values; GameActivity sets the ones for the shape the game boots in

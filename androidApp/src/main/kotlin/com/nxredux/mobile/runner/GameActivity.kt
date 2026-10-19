@@ -1012,7 +1012,7 @@ class GameActivity : ComponentActivity() {
         val np = netplay
         val tag = intent.getStringExtra(EXTRA_TAG) ?: "UNKNOWN"
         val title = intent.getStringExtra(EXTRA_TITLE) ?: "game"
-        val coreId = intent.getStringExtra(EXTRA_CORE_ID) ?: coreFile.substringBefore("_libretro")
+        val coreId = intent.getStringExtra(EXTRA_CORE_ID) ?: coreFile.removePrefix("lib").substringBefore("_libretro")
         // The tag's own descriptor: a tag view (SGB) carries its own extensions and defaults; the id alone would give plain mgba.
         val descriptor = CoreRegistry.forTag(tag)?.takeIf { it.id == coreId } ?: CoreRegistry.forId(coreId)
         val players = CoreRegistry.playersFor(tag, descriptor)

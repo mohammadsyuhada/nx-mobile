@@ -15,7 +15,7 @@ class CoreRegistryNdsTest {
 
     @Test fun nds_runs_melonds_ds() {
         assertEquals("melondsds", nds.id)
-        assertEquals("melondsds_libretro_android.so", CoreRegistry.forTag("nds")!!.libraryFileName)
+        assertEquals("libmelondsds_libretro_android.so", CoreRegistry.forTag("nds")!!.libraryFileName)
         assertEquals(setOf("nds", "ids", "dsi"), nds.extensions)
         assertEquals(LoadMode.FILE_DESCRIPTOR, nds.loadMode)
         assertTrue(nds.cheats)

@@ -215,7 +215,8 @@ jobs:
         # gmake -C cores install would rebuild (it depends on the src/ stamps), so copy and verify here.
         run: |
           mkdir -p androidApp/src/main/jniLibs/arm64-v8a androidApp/src/main/assets/system
-          cp cores/output/*.so androidApp/src/main/jniLibs/arm64-v8a/
+          # lib prefix: Android 14 and older extract only lib*.so at install (see cores/Makefile install).
+          for f in cores/output/*.so; do cp "$f" "androidApp/src/main/jniLibs/arm64-v8a/lib$(basename "$f")"; done
           test ! -d cores/output/system || cp -R cores/output/system/. androidApp/src/main/assets/system/
           # Every core's licence text (cores/output/licenses/, staged into the APK by androidApp's stageLicenses, or a
           # curated LICENSES/<core>.txt) must be present.

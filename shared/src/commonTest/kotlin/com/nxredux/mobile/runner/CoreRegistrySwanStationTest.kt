@@ -9,7 +9,7 @@ class CoreRegistrySwanStationTest {
     @Test fun psx_runs_swanstation_and_ps_stays_pcsx_rearmed() {
         val sw = CoreRegistry.forTag("PSX")!!
         assertEquals("swanstation", sw.id)
-        assertEquals("swanstation_libretro_android.so", sw.libraryFileName)
+        assertEquals("libswanstation_libretro_android.so", sw.libraryFileName)
         assertEquals("SwanStation", sw.name)
         assertEquals(sw, CoreRegistry.forId("swanstation"))
         assertEquals("pcsx_rearmed", CoreRegistry.forTag("PS")!!.id)
