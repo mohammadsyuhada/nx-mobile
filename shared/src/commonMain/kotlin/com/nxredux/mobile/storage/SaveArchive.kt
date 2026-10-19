@@ -70,7 +70,10 @@ enum class SkipReason(val text: String) {
 
 /** One file an import left out: its file [name], the [reason] and what fills the reason's `%s`. */
 data class SkippedFile(val name: String, val reason: SkipReason, val detail: String? = null) {
-    fun text(): String = "$name: ${reason.text.replace("%s", detail.orEmpty())}"
+    /** The reason with [detail] filled in, as the results page shows it under [name]. */
+    fun reasonText(): String = reason.text.replace("%s", detail.orEmpty())
+
+    fun text(): String = "$name: ${reasonText()}"
 }
 
 data class ImportSummary(

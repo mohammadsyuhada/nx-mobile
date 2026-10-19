@@ -80,6 +80,7 @@ import com.nxredux.mobile.scraper.ArtworkController
 import com.nxredux.mobile.scraper.ArtworkHost
 import com.nxredux.mobile.scraper.LibraryGameRef
 import com.nxredux.mobile.settings.AccentPreset
+import com.nxredux.mobile.storage.ImportSummary
 import com.nxredux.mobile.storage.SaveFormat
 import com.nxredux.mobile.storage.StateFormat
 import com.nxredux.mobile.settings.SecondaryAccent
@@ -408,7 +409,7 @@ sealed interface Screen {
     data class ArtworkReset(val scopes: List<ResetScope>, val confirm: ResetScope? = null) : Screen
 }
 
-enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_FOLDER, IMPORT_ZIP, IMPORT_RETROARCH, RESET_DEFAULTS, ALL_FILES,
+enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_FOLDER, IMPORT_ZIP, IMPORT_RETROARCH, IMPORT_DONE, RESET_DEFAULTS, ALL_FILES,
     LAYOUT_HOME, LAYOUT_CONSOLES, LAYOUT_COLLECTIONS, LAYOUT_TOOLS, LAYOUT_GAME_LISTS, LAYOUT_TITLE_HINTS, LAYOUT_SWITCHER, TEXT_SIZE }
 
 /**
@@ -421,6 +422,8 @@ enum class SettingsSection(val label: String, val parent: SettingsSection? = nul
     ROM_FOLDERS("ROM folders", LIBRARY, SettingsKind.FOLDERS), DEFAULT_EMULATORS("Default emulators", EMULATORS, SettingsKind.DEFAULTS),
     PAD_LAYOUT("Pad layout", CONTROLS, SettingsKind.PAD_LAYOUT), SAVES("Saves", EMULATORS, SettingsKind.SAVES),
     IMPORT_SAVES("Import saves", SAVES, SettingsKind.IMPORT_SAVES),
+    // An import's results; Done and B go back to Saves ([AppState.leaveSubPage]), past Import saves.
+    IMPORT_RESULT("Import results", IMPORT_SAVES),
     // Layouts' groups: a tab's options, the game lists', the page title's and hints', the Game Switcher's.
     LAYOUT_HOME("Home", MAIN_MENU, SettingsKind.LAYOUT_HOME), LAYOUT_CONSOLES("Consoles", MAIN_MENU, SettingsKind.LAYOUT_CONSOLES),
     LAYOUT_COLLECTIONS("Collections", MAIN_MENU, SettingsKind.LAYOUT_COLLECTIONS), LAYOUT_TOOLS("Tools", MAIN_MENU, SettingsKind.LAYOUT_TOOLS),
@@ -3066,6 +3069,10 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             SettingsRow(SettingsKind.IMPORT_ZIP, "From a zip file"),
             SettingsRow(SettingsKind.IMPORT_RETROARCH, "From RetroArch"),
         )
+        // The summary, then each skipped file with its reason; read-only but for Done.
+        SettingsSection.IMPORT_RESULT -> importResult?.let { r ->
+            r.lines().map { SettingsRow(SettingsKind.INFO, it) } + r.skipped.map { SettingsRow(SettingsKind.INFO, it.name, it.reasonText()) }
+        }.orEmpty() + SettingsRow(SettingsKind.IMPORT_DONE, "Done")
         SettingsSection.DEFAULT_EMULATORS -> defaultEmulatorRows()
         SettingsSection.PAD_LAYOUT -> padLayoutRows()
         SettingsSection.APPEARANCE -> listOf(
@@ -3252,10 +3259,21 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** A save transfer's report: its progress notice stays until the result (done) replaces it. */
     private fun showTransferNotice(text: String, done: Boolean) = showNotice(text, sticky = !done)
 
-    /** Import saves from [source]: its progress notice stays until the result's notice (the summary as one line) replaces it. */
+    /** The last finished import's summary, which the Import results page lists. */
+    private var importResult: ImportSummary? = null
+
+    /**
+     * Import saves from [source]: its progress notice stays until the result replaces it, a finished import with the
+     * Import results page (on its first row), anything else with a notice.
+     */
     private fun importSaves(source: ImportSource) = deps.saveTransfer?.importSaves(source, { showNotice(it, sticky = true) }) { result ->
         when (result) {
-            is ImportResult.Done -> showNotice(result.summary.lines().joinToString("; "))
+            is ImportResult.Done -> {
+                importResult = result.summary
+                dismissNotice()
+                sectionSelections.remove(SettingsSection.IMPORT_RESULT)
+                openSettings(SettingsSection.IMPORT_RESULT)
+            }
             is ImportResult.Message -> showNotice(result.text)
         }
     }
@@ -3622,9 +3640,11 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
 
     /**
      * B on a sub-page: its section on the row that opened it. Leaving Default emulators (under Emulators) with a changed
-     * default (the index no longer fits) rescans first, under the overlay, so the library is the new one's.
+     * default (the index no longer fits) rescans first, under the overlay, so the library is the new one's. Import results
+     * goes back to Saves on its Import saves row.
      */
     private fun leaveSubPage(section: SettingsSection) {
+        if (section == SettingsSection.IMPORT_RESULT) return showSettingsOn(SettingsSection.SAVES, SettingsKind.IMPORT_SAVES)   // past Import saves
         val parent = section.parent ?: return
         val opener = section.opener ?: return
         val root = deps.settings.treeRef
@@ -5030,6 +5050,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     SettingsKind.IMPORT_FOLDER -> importSaves(ImportSource.FOLDER)
                     SettingsKind.IMPORT_ZIP -> importSaves(ImportSource.ZIP)
                     SettingsKind.IMPORT_RETROARCH -> importSaves(ImportSource.RETROARCH)
+                    SettingsKind.IMPORT_DONE -> leaveSubPage(SettingsSection.IMPORT_RESULT)
                     SettingsKind.SAVE_FORMAT -> cycleSaveFormat(1)
                     SettingsKind.STATE_FORMAT -> cycleStateFormat(1)
                     SettingsKind.EXTRACTED_NAME -> flipExtractedName()

@@ -58,6 +58,9 @@ import com.nxredux.mobile.storage.AllFilesAccess
 import com.nxredux.mobile.storage.FakeAllFilesAccess
 import com.nxredux.mobile.storage.FakeNotificationAccess
 import com.nxredux.mobile.storage.ImportSummary
+import com.nxredux.mobile.storage.RetroArchFolders
+import com.nxredux.mobile.storage.SkipReason
+import com.nxredux.mobile.storage.SkippedFile
 import com.nxredux.mobile.storage.NotificationAccess
 import com.nxredux.mobile.storage.FakeLocalFiles
 import com.nxredux.mobile.storage.FileRefs
@@ -9609,9 +9612,8 @@ class AppStateTest {
         st.onButton(NxButton.DOWN)
         assertEquals("Working…", st.notice.value)                          // nor does a press clear it
         transfer.finish(ImportResult.Done(ImportSummary(saves = 1)))
-        assertEquals("Imported 1 save and 0 states", st.notice.value)
-        advanceTimeBy(3_001); runCurrent()
-        assertNull(st.notice.value)                                         // the summary clears itself as any notice does
+        assertNull(st.notice.value)                                         // the results page replaces it
+        assertEquals(SettingsSection.IMPORT_RESULT, assertIs<Screen.Settings>(st.screen.value).section)
     }
 
     @Test fun a_game_does_not_start_while_an_import_runs() = runTest {
@@ -9744,22 +9746,71 @@ class AppStateTest {
         assertEquals("Exported 1 save and 0 states (0.0 MB)", st.notice.value)
     }
 
-    @Test fun import_page_lists_the_three_sources() = runTest {
+    @Test fun import_page_has_three_sources() = runTest {
         val transfer = RecordingTransfer()
         val st = state(MemorySettings(ContentRef("Home")), saveTransfer = transfer)
         st.load()
         st.openSettings(SettingsSection.IMPORT_SAVES)
         fun page() = assertIs<Screen.Settings>(st.screen.value)
-        assertEquals(
-            listOf(SettingsKind.IMPORT_FOLDER to "From a folder", SettingsKind.IMPORT_ZIP to "From a zip file", SettingsKind.IMPORT_RETROARCH to "From RetroArch"),
-            page().rows.map { it.kind to it.label },
-        )
+        assertEquals(listOf("From a folder", "From a zip file", "From RetroArch"), page().rows.map { it.label })
+        assertEquals(listOf(SettingsKind.IMPORT_FOLDER, SettingsKind.IMPORT_ZIP, SettingsKind.IMPORT_RETROARCH), page().rows.map { it.kind })
+        for ((i, source) in listOf("FOLDER", "ZIP", "RETROARCH").withIndex()) {
+            st.openSettings(SettingsSection.IMPORT_SAVES)
+            st.select(i); st.onButton(NxButton.A)
+            assertEquals("import $source", transfer.calls.last())
+            assertEquals(SettingsSection.IMPORT_RESULT, page().section)
+        }
+    }
+
+    @Test fun import_done_opens_results() = runTest {
+        val summary = ImportSummary(saves = 1, skipped = listOf(SkippedFile("Zelda.srm", SkipReason.NO_GAME)))
+        val st = state(MemorySettings(ContentRef("Home")), saveTransfer = RecordingTransfer(ImportResult.Done(summary)))
+        st.load()
+        st.openSettings(SettingsSection.IMPORT_SAVES)
         st.onButton(NxButton.A)
-        assertEquals(listOf("import FOLDER"), transfer.calls)
-        assertEquals("Imported 1 save and 0 states", st.notice.value)   // the summary as one notice line
-        st.onButton(NxButton.DOWN); st.onButton(NxButton.A)
-        st.onButton(NxButton.DOWN); st.onButton(NxButton.A)
-        assertEquals(listOf("import FOLDER", "import ZIP", "import RETROARCH"), transfer.calls)
+        val page = assertIs<Screen.Settings>(st.screen.value)
+        assertEquals(SettingsSection.IMPORT_RESULT, page.section)
+        assertEquals(
+            listOf(
+                Triple(SettingsKind.INFO, "Imported 1 save and 0 states", null),
+                Triple(SettingsKind.INFO, "1 skipped", null),
+                Triple(SettingsKind.INFO, "Zelda.srm", "no matching game"),
+                Triple(SettingsKind.IMPORT_DONE, "Done", null),
+            ),
+            page.rows.map { Triple(it.kind, it.label, it.secondary) },
+        )
+        assertEquals(0, st.selection.value.index)
+        assertNull(st.notice.value)
+    }
+
+    @Test fun import_results_ambiguous_reason_names_the_consoles() = runTest {
+        val skipped = SkippedFile("Pokemon.srm", SkipReason.AMBIGUOUS, "Game Boy and Game Boy Advance")
+        val st = state(MemorySettings(ContentRef("Home")), saveTransfer = RecordingTransfer(ImportResult.Done(ImportSummary(skipped = listOf(skipped)))))
+        st.load()
+        st.openSettings(SettingsSection.IMPORT_SAVES)
+        st.onButton(NxButton.A)
+        val row = assertIs<Screen.Settings>(st.screen.value).rows.first { it.label == "Pokemon.srm" }
+        assertEquals("matches Game Boy and Game Boy Advance", row.secondary)
+        assertEquals("Pokemon.srm: matches Game Boy and Game Boy Advance", skipped.text())
+    }
+
+    @Test fun import_results_done_and_back_go_to_saves() = runTest {
+        val st = state(MemorySettings(ContentRef("Home")), saveTransfer = RecordingTransfer())
+        st.load()
+        fun page() = assertIs<Screen.Settings>(st.screen.value)
+        st.openSettings(SettingsSection.IMPORT_SAVES)
+        st.onButton(NxButton.A)
+        assertEquals(SettingsSection.IMPORT_RESULT, page().section)
+        st.select(page().rows.indexOfFirst { it.kind == SettingsKind.IMPORT_DONE }); st.onButton(NxButton.A)   // Done
+        assertEquals(SettingsSection.SAVES, page().section)
+        assertEquals(SettingsKind.IMPORT_SAVES, page().rows[st.selection.value.index].kind)
+        st.openSettings(SettingsSection.IMPORT_SAVES)
+        st.onButton(NxButton.A)
+        assertEquals(SettingsSection.IMPORT_RESULT, page().section)
+        assertEquals(0, st.selection.value.index)                                           // a fresh page starts at the top
+        st.onButton(NxButton.B)                                                              // B: Saves too, not Import saves
+        assertEquals(SettingsSection.SAVES, page().section)
+        assertEquals(SettingsKind.IMPORT_SAVES, page().rows[st.selection.value.index].kind)
     }
 
     @Test fun an_import_message_shows_as_the_notice() = runTest {
@@ -9768,6 +9819,17 @@ class AppStateTest {
         st.openSettings(SettingsSection.IMPORT_SAVES)
         st.onButton(NxButton.A)
         assertEquals("Failed: boom", st.notice.value)
+    }
+
+    @Test fun retroarch_not_found_message() = runTest {
+        val transfer = RecordingTransfer(ImportResult.Message(RetroArchFolders.NOT_FOUND))
+        val st = state(MemorySettings(ContentRef("Home")), saveTransfer = transfer)
+        st.load()
+        st.openSettings(SettingsSection.IMPORT_SAVES)
+        st.select(2); st.onButton(NxButton.A)                                                // From RetroArch
+        assertEquals(listOf("import RETROARCH"), transfer.calls)
+        assertEquals(RetroArchFolders.NOT_FOUND, st.notice.value)
+        assertEquals(SettingsSection.IMPORT_SAVES, assertIs<Screen.Settings>(st.screen.value).section)
     }
 
     @Test fun pad_vibration_row_cycles_on_left_right_and_a_and_keeps_the_selection() = runTest {
