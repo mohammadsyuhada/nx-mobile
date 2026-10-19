@@ -1,7 +1,6 @@
 package com.nxredux.mobile.storage
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -26,16 +25,5 @@ class FileImportTreeTest {
         assertNull(FileImportTree.child(root, "missing"))
         assertNull(FileImportTree.child(root, ".."))
         assertEquals("bios", FileImportTree.openRead(FileRefs.child(root, "a #1.bin"))!!.use { it.readBytes().decodeToString() })
-    }
-
-    @Test fun delete_removes_a_file_and_only_an_empty_folder() {
-        val dir = tmp.newFolder("Saves")
-        File(dir, "Full").mkdir(); File(dir, "Full/x.srm").writeText("x")
-        File(dir, "Empty").mkdir()
-        val root = FileRefs.of(dir.absolutePath)
-        assertFalse(FileImportTree.delete(FileRefs.child(root, "Full")))
-        assertTrue(File(dir, "Full/x.srm").exists())
-        assertTrue(FileImportTree.delete(FileRefs.child(root, "Empty")))
-        assertTrue(FileImportTree.delete(FileRefs.child(FileRefs.child(root, "Full"), "x.srm")))
     }
 }

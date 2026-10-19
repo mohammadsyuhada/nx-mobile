@@ -1,7 +1,15 @@
 package com.nxredux.mobile.settings
 
+import com.nxredux.mobile.storage.ImportSummary
+
 /** Where Import saves reads from. */
-enum class ImportSource { HOME, ZIP, FOLDER }
+enum class ImportSource { FOLDER, ZIP, RETROARCH }
+
+/** How an import ended: [Done] with its summary, or a [Message] (a refusal, nothing found, "Failed: …"). */
+sealed interface ImportResult {
+    data class Done(val summary: ImportSummary) : ImportResult
+    data class Message(val text: String) : ImportResult
+}
 
 /**
  * A transfer's notice: [text], with [done] false for the progress notice while the work runs (it stays until the next
@@ -11,15 +19,17 @@ typealias TransferReport = (text: String, done: Boolean) -> Unit
 
 /**
  * The platform's save Export/Import (Settings → Emulators → Saves). Each call opens what it needs (a picker) and runs in
- * the background; [TransferReport] is called with the progress notice when the work starts and then once more, done,
- * with the summary or the error. A refusal (no home folder, a game still alive) is reported once, done; a cancelled
- * picker reports nothing.
+ * the background. An export's [TransferReport] is called with the progress notice when the work starts and then once
+ * more, done, with the summary or the error. An import calls `progress` when its work starts and then `done` once with
+ * its [ImportResult]; a refusal (a game still alive, a sync running) is one [ImportResult.Message]. A cancelled picker
+ * reports nothing.
  */
 interface SaveTransfer {
     /** True while an import runs: a game must not start then, or its save in memory could later overwrite an imported one. */
     val importing: Boolean
     fun exportSaves(report: TransferReport)
-    fun importSaves(source: ImportSource, move: Boolean, report: TransferReport)
+    /** Copy only: an import never deletes or changes its source. */
+    fun importSaves(source: ImportSource, progress: (String) -> Unit, done: (ImportResult) -> Unit)
 }
 
 /** When an import or a game launch must wait for another transfer ([SaveTransfer.importing], a running Device Sync). */

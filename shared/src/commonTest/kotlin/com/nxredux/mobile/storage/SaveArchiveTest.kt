@@ -45,21 +45,59 @@ class SaveArchiveTest {
     @Test fun summaries() {
         assertEquals("Exported 2 saves and 3 states (1.5 MB)", ExportSummary(2, 3, 1_572_864).text())
         assertEquals("Nothing to export", ExportSummary(0, 0, 0).text())
+    }
+    @Test fun the_states_note_names_their_emulators() {
+        assertEquals(emptyList<String>(), ImportSummary(saves = 2).statesNote())
         assertEquals(
-            "Imported 37 saves and 52 states; 3 older files skipped (left in place); 2 replaced (kept as .bak); 4 other files ignored",
-            ImportSummary(saves = 37, states = 52, markers = 9, replaced = 2, skippedOlder = 3, ignored = 4).text(moved = true),
+            listOf(
+                "Save states load only in the emulator that made them. These are for mGBA: switch the game to mGBA " +
+                    "before you launch it, in Default emulators or the game's Emulator option.",
+                "If a state still won't load, its BIOS may differ. RetroArch often makes states without a BIOS file: if " +
+                    "you've added one to this app, turn off the emulator's real-BIOS option, such as mGBA's Use BIOS File " +
+                    "if Found. Otherwise, use the battery save.",
+            ),
+            ImportSummary(states = 2, stateEmulators = setOf("mGBA")).statesNote(),
         )
-        assertEquals("Imported 1 save and 0 states; 3 older files skipped", ImportSummary(saves = 1, skippedOlder = 3).text(moved = false))
-        assertEquals("Nothing to import", ImportSummary().text(moved = true))
-        assertTrue(ImportSummary(saves = 1, failed = 2).text(moved = true).endsWith("; 2 could not be imported"))
-        assertFalse(ImportSummary(identical = 2).text(moved = true) == "Nothing to import")
+        assertTrue(
+            ImportSummary(states = 2, stateEmulators = setOf("mGBA", "PCSX-ReARMed")).statesNote().first().startsWith(
+                "Save states load only in the emulator that made them. These are for mGBA and PCSX-ReARMed: switch each " +
+                    "game to its emulator before you launch it",
+            ),
+        )
+        assertEquals(setOf("mGBA", "Gambatte"), (ImportSummary(states = 1, stateEmulators = setOf("mGBA")) +
+            ImportSummary(states = 1, stateEmulators = setOf("Gambatte"))).stateEmulators)
     }
-    @Test fun summary_says_when_files_were_already_here_or_only_slot_files_came_in() {
-        assertEquals("Imported 0 saves and 0 states; 12 already here", ImportSummary(identical = 12).text(moved = true))
-        assertEquals("Imported 0 saves and 0 states; 3 slot files", ImportSummary(markers = 3).text(moved = false))
-        assertEquals("Imported 1 save and 0 states; 1 already here", ImportSummary(saves = 1, markers = 2, identical = 1).text(moved = false))
+
+    @Test fun import_summary_lines() {
+        val skipped = listOf(SkippedFile("Zelda.srm", SkipReason.NO_GAME), SkippedFile("Old.srm", SkipReason.PHONE_NEWER))
+        assertEquals(
+            listOf("Imported 37 saves and 1 state", "12 already here", "2 replaced (kept as .bak)", "2 skipped", "4 other files ignored"),
+            ImportSummary(saves = 37, states = 1, markers = 9, identical = 12, replaced = 2, ignored = 4, skipped = skipped).lines(),
+        )
+        assertEquals(listOf("Imported 0 saves and 0 states", "1 other file ignored"), ImportSummary(ignored = 1).lines())
+        assertEquals(listOf("Nothing to import"), ImportSummary().lines())
     }
-    @Test fun summary_says_when_the_zip_could_not_be_deleted() {
-        assertEquals("Imported 1 save and 0 states; the zip could not be deleted", ImportSummary(saves = 1, zipNotDeleted = true).text(moved = true))
+    @Test fun an_import_summary_is_empty_only_when_nothing_was_found() {
+        assertTrue(ImportSummary().isEmpty)
+        assertFalse(ImportSummary(identical = 1).isEmpty)
+        assertFalse(ImportSummary(ignored = 1).isEmpty)
+        assertFalse(ImportSummary(skipped = listOf(SkippedFile("A.srm", SkipReason.NO_GAME))).isEmpty)
+    }
+    @Test fun import_summaries_add_up() {
+        val a = ImportSummary(saves = 1, states = 2, markers = 3, identical = 4, replaced = 5, ignored = 6, skipped = listOf(SkippedFile("A.srm", SkipReason.NO_GAME)))
+        val b = ImportSummary(saves = 10, states = 20, markers = 30, identical = 40, replaced = 50, ignored = 60, skipped = listOf(SkippedFile("B.srm", SkipReason.UNREADABLE)))
+        assertEquals(
+            ImportSummary(11, 22, 33, 44, 55, 66, listOf(SkippedFile("A.srm", SkipReason.NO_GAME), SkippedFile("B.srm", SkipReason.UNREADABLE))),
+            a + b,
+        )
+        assertEquals(a, ImportSummary() + a)
+    }
+    @Test fun skipped_file_text() {
+        assertEquals(
+            "Tetris.srm: matches Game Boy and Game Boy Advance",
+            SkippedFile("Tetris.srm", SkipReason.AMBIGUOUS, "Game Boy and Game Boy Advance").text(),
+        )
+        assertEquals("Zelda.srm: no matching game", SkippedFile("Zelda.srm", SkipReason.NO_GAME).text())
+        assertEquals("Bad.srm: could not be read", SkippedFile("Bad.srm", SkipReason.UNREADABLE).text())
     }
 }

@@ -57,26 +57,71 @@ data class ExportSummary(val saves: Int, val states: Int, val bytes: Long) {
         else "Exported ${count(saves, "save")} and ${count(states, "state")} (${megabytes(bytes)})"
 }
 
+/** Why an import left a file out; `%s` in [text] is filled from [SkippedFile.detail]. */
+enum class SkipReason(val text: String) {
+    NO_GAME("no matching game"),
+    /** Filled with the consoles, joined by " and ". */
+    AMBIGUOUS("matches %s"),
+    PHONE_NEWER("phone copy is newer"),
+    NO_FREE_SLOT("no free slot"),
+    NO_CORE("can't tell the core"),
+    UNREADABLE("could not be read"),
+}
+
+/** One file an import left out: its file [name], the [reason] and what fills the reason's `%s`. */
+data class SkippedFile(val name: String, val reason: SkipReason, val detail: String? = null) {
+    /** The reason with [detail] filled in, as the results page shows it under [name]. */
+    fun reasonText(): String = reason.text.replace("%s", detail.orEmpty())
+
+    fun text(): String = "$name: ${reasonText()}"
+}
+
 data class ImportSummary(
     val saves: Int = 0, val states: Int = 0, val markers: Int = 0, val identical: Int = 0, val replaced: Int = 0,
-    val skippedOlder: Int = 0, val ignored: Int = 0, val failed: Int = 0,
-    /** A Move took every entry of the picked zip but could not delete it. */
-    val zipNotDeleted: Boolean = false,
+    val ignored: Int = 0, val skipped: List<SkippedFile> = emptyList(),
+    /** The emulators (core names, such as mGBA) the imported states are for: [statesNote] names them. */
+    val stateEmulators: Set<String> = emptySet(),
 ) {
-    /** [moved]: "left in place" is said for skipped files, which a Move does not delete. */
-    fun text(moved: Boolean): String {
-        if (saves + states + markers + identical + replaced + skippedOlder + ignored + failed == 0) return "Nothing to import"
+    /** Nothing found at all: no file imported, already here, ignored or skipped. */
+    val isEmpty: Boolean get() = saves + states + markers + identical + replaced + ignored == 0 && skipped.isEmpty()
+
+    /** The results page's summary lines, or just "Nothing to import". */
+    fun lines(): List<String> {
+        if (isEmpty) return listOf("Nothing to import")
         return buildList {
             add("Imported ${count(saves, "save")} and ${count(states, "state")}")
             if (identical > 0) add("$identical already here")
-            if (markers > 0 && saves + states == 0) add(count(markers, "slot file"))
-            if (skippedOlder > 0) add("$skippedOlder older ${plural(skippedOlder, "file")} skipped" + if (moved) " (left in place)" else "")
             if (replaced > 0) add("$replaced replaced (kept as .bak)")
+            if (skipped.isNotEmpty()) add("${skipped.size} skipped")
             if (ignored > 0) add("$ignored other ${plural(ignored, "file")} ignored")
-            if (failed > 0) add("$failed could not be imported")
-            if (zipNotDeleted) add("the zip could not be deleted")
-        }.joinToString("; ")
+        }
     }
+
+    /**
+     * The results page's caption when states came in (empty otherwise): they show only under the emulator that made
+     * them ([stateEmulators]), and one made with another BIOS (RetroArch often runs without a BIOS file) may still refuse.
+     */
+    fun statesNote(): List<String> {
+        if (states == 0) return emptyList()
+        val names = stateEmulators.sortedBy { it.lowercase() }
+        val which = when (names.size) {
+            0 -> "Save states load only in the emulator that made them: switch each game to its emulator before you launch it"
+            1 -> "Save states load only in the emulator that made them. These are for ${names[0]}: switch the game to ${names[0]} before you launch it"
+            else -> "Save states load only in the emulator that made them. These are for ${names.dropLast(1).joinToString(", ")} and ${names.last()}: switch each game to its emulator before you launch it"
+        }
+        return listOf(
+            "$which, in Default emulators or the game's Emulator option.",
+            "If a state still won't load, its BIOS may differ. RetroArch often makes states without a BIOS file: if you've " +
+                "added one to this app, turn off the emulator's real-BIOS option, such as mGBA's Use BIOS File if Found. " +
+                "Otherwise, use the battery save.",
+        )
+    }
+
+    /** Both imports' counts added up, their skipped files one after the other (RetroArch reads several roots). */
+    operator fun plus(other: ImportSummary) = ImportSummary(
+        saves + other.saves, states + other.states, markers + other.markers, identical + other.identical,
+        replaced + other.replaced, ignored + other.ignored, skipped + other.skipped, stateEmulators + other.stateEmulators,
+    )
 }
 
 private fun plural(n: Int, word: String) = if (n == 1) word else word + "s"

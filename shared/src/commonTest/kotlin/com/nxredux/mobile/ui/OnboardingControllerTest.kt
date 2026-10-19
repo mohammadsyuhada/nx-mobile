@@ -4,6 +4,7 @@ import com.nxredux.mobile.ui.OnboardingStep.ACCENT
 import com.nxredux.mobile.ui.OnboardingStep.ARTWORK
 import com.nxredux.mobile.ui.OnboardingStep.DONE
 import com.nxredux.mobile.ui.OnboardingStep.HANDHELD
+import com.nxredux.mobile.ui.OnboardingStep.IMPORT_SAVES
 import com.nxredux.mobile.ui.OnboardingStep.CUSTOMISE
 import com.nxredux.mobile.ui.OnboardingStep.GAME_LISTS
 import com.nxredux.mobile.ui.OnboardingStep.PAD
@@ -26,14 +27,14 @@ import kotlin.test.assertTrue
 class OnboardingControllerTest {
     @Test fun withoutAHandheldTheFormatsAndSyncAreLeftOut() {
         assertEquals(
-            listOf(HANDHELD, ARTWORK, RA_SIGN_IN, CUSTOMISE, ACCENT, DONE),
+            listOf(HANDHELD, IMPORT_SAVES, ARTWORK, RA_SIGN_IN, CUSTOMISE, ACCENT, DONE),
             onboardingSteps(OnboardingContext(handheld = false)),
         )
     }
 
     @Test fun aHandheldAddsItsFormatsAndTheSyncOffer() {
         assertEquals(
-            listOf(HANDHELD, SAVE_FORMATS, SYNC_OFFER, ARTWORK, RA_SIGN_IN, CUSTOMISE, ACCENT, DONE),
+            listOf(HANDHELD, SAVE_FORMATS, IMPORT_SAVES, SYNC_OFFER, ARTWORK, RA_SIGN_IN, CUSTOMISE, ACCENT, DONE),
             onboardingSteps(OnboardingContext(handheld = true)),
         )
     }
@@ -50,9 +51,10 @@ class OnboardingControllerTest {
         assertEquals(HANDHELD, c.back())                  // nothing before it in this phase
         c.context = c.context.copy(handheld = true)
         assertEquals(SAVE_FORMATS, c.next())
+        assertEquals(IMPORT_SAVES, c.next())
         assertEquals(SYNC_OFFER, c.next())
-        assertEquals(SAVE_FORMATS, c.back())
-        assertEquals(Pair(2, 8), c.position())
+        assertEquals(IMPORT_SAVES, c.back())
+        assertEquals(Pair(3, 9), c.position())
     }
 
     @Test fun doneIsTheLastAndNextFinishes() {
@@ -90,10 +92,10 @@ class OnboardingControllerTest {
     @Test fun customisingAddsItsPagesByThePadContext() {
         fun steps(padPage: Boolean, buttons: Boolean) = onboardingSteps(OnboardingContext(handheld = false, customise = true, padPage = padPage, buttons = buttons))
         val tabs = listOf(TAB_HOME, TAB_CONSOLES, TAB_COLLECTIONS, TAB_TOOLS, GAME_LISTS)
-        assertEquals(listOf(HANDHELD, ARTWORK, RA_SIGN_IN, CUSTOMISE, PAD, TITLE) + tabs + listOf(ACCENT, DONE), steps(padPage = true, buttons = true))
-        assertEquals(listOf(HANDHELD, ARTWORK, RA_SIGN_IN, CUSTOMISE, PAD) + tabs + listOf(ACCENT, DONE), steps(padPage = true, buttons = false))   // pad off, no controller
-        assertEquals(listOf(HANDHELD, ARTWORK, RA_SIGN_IN, CUSTOMISE, TITLE) + tabs + listOf(ACCENT, DONE), steps(padPage = false, buttons = true))   // a controller
-        assertEquals(listOf(HANDHELD, ARTWORK, RA_SIGN_IN, CUSTOMISE, ACCENT, DONE), onboardingSteps(OnboardingContext(handheld = false, customise = false)))
+        assertEquals(listOf(HANDHELD, IMPORT_SAVES, ARTWORK, RA_SIGN_IN, CUSTOMISE, PAD, TITLE) + tabs + listOf(ACCENT, DONE), steps(padPage = true, buttons = true))
+        assertEquals(listOf(HANDHELD, IMPORT_SAVES, ARTWORK, RA_SIGN_IN, CUSTOMISE, PAD) + tabs + listOf(ACCENT, DONE), steps(padPage = true, buttons = false))   // pad off, no controller
+        assertEquals(listOf(HANDHELD, IMPORT_SAVES, ARTWORK, RA_SIGN_IN, CUSTOMISE, TITLE) + tabs + listOf(ACCENT, DONE), steps(padPage = false, buttons = true))   // a controller
+        assertEquals(listOf(HANDHELD, IMPORT_SAVES, ARTWORK, RA_SIGN_IN, CUSTOMISE, ACCENT, DONE), onboardingSteps(OnboardingContext(handheld = false, customise = false)))
     }
 
     // the step list follows a changed context; next() and back() go on from where it is, even off the list.

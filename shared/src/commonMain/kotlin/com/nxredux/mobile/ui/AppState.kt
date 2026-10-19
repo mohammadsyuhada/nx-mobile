@@ -80,11 +80,13 @@ import com.nxredux.mobile.scraper.ArtworkController
 import com.nxredux.mobile.scraper.ArtworkHost
 import com.nxredux.mobile.scraper.LibraryGameRef
 import com.nxredux.mobile.settings.AccentPreset
+import com.nxredux.mobile.storage.ImportSummary
 import com.nxredux.mobile.storage.SaveFormat
 import com.nxredux.mobile.storage.StateFormat
 import com.nxredux.mobile.settings.SecondaryAccent
 import com.nxredux.mobile.settings.OptionTextSize
 import com.nxredux.mobile.settings.AppSettings
+import com.nxredux.mobile.settings.ImportResult
 import com.nxredux.mobile.settings.ImportSource
 import com.nxredux.mobile.settings.SaveTransfer
 import com.nxredux.mobile.settings.SaveTransferRules
@@ -407,7 +409,7 @@ sealed interface Screen {
     data class ArtworkReset(val scopes: List<ResetScope>, val confirm: ResetScope? = null) : Screen
 }
 
-enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_MODE, IMPORT_HOME, IMPORT_ZIP, IMPORT_FOLDER, RESET_DEFAULTS, ALL_FILES,
+enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_FOLDER, IMPORT_ZIP, IMPORT_RETROARCH, IMPORT_DONE, RESET_DEFAULTS, ALL_FILES,
     LAYOUT_HOME, LAYOUT_CONSOLES, LAYOUT_COLLECTIONS, LAYOUT_TOOLS, LAYOUT_GAME_LISTS, LAYOUT_TITLE_HINTS, LAYOUT_SWITCHER, TEXT_SIZE }
 
 /**
@@ -420,6 +422,8 @@ enum class SettingsSection(val label: String, val parent: SettingsSection? = nul
     ROM_FOLDERS("ROM folders", LIBRARY, SettingsKind.FOLDERS), DEFAULT_EMULATORS("Default emulators", EMULATORS, SettingsKind.DEFAULTS),
     PAD_LAYOUT("Pad layout", CONTROLS, SettingsKind.PAD_LAYOUT), SAVES("Saves", EMULATORS, SettingsKind.SAVES),
     IMPORT_SAVES("Import saves", SAVES, SettingsKind.IMPORT_SAVES),
+    // An import's results; Done and B go back to Saves ([AppState.leaveSubPage]), past Import saves.
+    IMPORT_RESULT("Import results", IMPORT_SAVES),
     // Layouts' groups: a tab's options, the game lists', the page title's and hints', the Game Switcher's.
     LAYOUT_HOME("Home", MAIN_MENU, SettingsKind.LAYOUT_HOME), LAYOUT_CONSOLES("Consoles", MAIN_MENU, SettingsKind.LAYOUT_CONSOLES),
     LAYOUT_COLLECTIONS("Collections", MAIN_MENU, SettingsKind.LAYOUT_COLLECTIONS), LAYOUT_TOOLS("Tools", MAIN_MENU, SettingsKind.LAYOUT_TOOLS),
@@ -702,6 +706,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private var onboardingSync = false   // Device Sync was opened from the sync offer: leaving it returns there
     private var onboardingSigningIn = false   // onboarding's RetroAchievements sign-in is running: its end moves the step on
     private var onboardingSynced: String? = null   // the sync offer's last result ("done", "failed", "stopped"; "" left before one ended)
+    private var onboardingImporting: String? = null   // the save import step's running import: its progress text
+    private var onboardingImported: ImportResult? = null   // the save import step's last result, cleared when the step is left
     private var firstSetup = false   // a first home pick is on its folder steps: the menu's dialog waits (the setup asks as a step)
     private var afterAndroidStep: (() -> Unit)? = null   // what first setup's Android games step goes on to (a load or the extra's scan)
     /** Android apps' icons for the session (Tools tiles, Home pins, the picker); null without a launcher. */
@@ -818,7 +824,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private var foregroundJob: Job? = null            // onForeground's check (and the scan it starts)
     private var homeCheck: Job? = null                // the index start's home probe in flight (shared, see afterIndexStart)
     private var homeCheckFor: ContentRef? = null
-    private var importMove = true   // Import saves' After importing: Move until flipped, reset each time the page opens
     private val sectionSelections = HashMap<SettingsSection, ListSelection>()   // each section's row, remembered across visits
     private var settingsMenuSelection = ListSelection(0, 0)
     private var settingsSplit = false   // the UI draws Settings as two panes ([onSettingsSplit])
@@ -1737,6 +1742,17 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             ),
             if (onboardingSynced == null) listOf(NxRow("Sync now"), NxRow("Later")) else listOf(NxRow("Sync again"), NxRow("Continue")),
         )
+        // The three imports, then (in place) a running one's progress with the rows waiting, or its summary and skipped files.
+        OnboardingStep.IMPORT_SAVES -> when (val r = onboardingImported) {
+            is ImportResult.Done -> Triple(
+                "Bring your saves", r.summary.lines() + r.summary.statesNote(), r.summary.skipped.map { NxRow(it.text()) } + NxRow("Continue"),
+            )
+            else -> Triple(
+                "Bring your saves",
+                listOf(onboardingImporting ?: (r as? ImportResult.Message)?.text ?: "Copy battery saves and save states from another app. Nothing is moved or deleted."),
+                listOf("From a folder", "From a zip file", "From RetroArch", "Skip").map { NxRow(it, enabled = onboardingImporting == null) },
+            )
+        }
         OnboardingStep.ARTWORK -> if (artworkScreens?.available == true) Triple(
             "Fetch artwork", listOf("Box art and screenshots for your ${gamesLabel(onboardingGameCount())}, fetched in the background."),
             listOf(NxRow("Fetch now"), NxRow("Skip")),
@@ -1827,6 +1843,12 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 onboardingNext()
             }
             OnboardingStep.SAVE_FORMATS -> if (index < 3) stepOnboardingFormat(index, 1) else onboardingNext()
+            OnboardingStep.IMPORT_SAVES -> when {
+                onboardingImporting != null -> Unit   // the rows wait for the running import
+                onboardingImported is ImportResult.Done -> if (index == s.rows.lastIndex) onboardingNext()   // a skipped file: inert
+                index < 3 -> onboardingImport(listOf(ImportSource.FOLDER, ImportSource.ZIP, ImportSource.RETROARCH)[index])
+                else -> onboardingNext()
+            }
             OnboardingStep.CUSTOMISE -> { onboarding.context = onboarding.context.copy(customise = index == 0); onboardingNext() }
             OnboardingStep.PAD -> if (index < s.rows.lastIndex) flipOnboardingValue(index, 1) else onboardingNext()
             OnboardingStep.TITLE, OnboardingStep.ACCENT -> if (index < s.rows.lastIndex) flipOnboardingValue(index, 1) else onboardingNext()
@@ -1959,6 +1981,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** On to the next step, saved for a resume; past DONE onboarding ends ([finishOnboarding]). */
     private fun onboardingNext() {
         refreshPadContext()
+        onboardingImported = null
         val next = onboarding.next() ?: return finishOnboarding()
         deps.settings.onboardingStep = next.name
         showOnboarding()
@@ -1969,6 +1992,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         // A first run's HANDHELD: back to the ROMs folder step (going on again comes back here, the saved step kept).
         if (onboarding.step == OnboardingStep.HANDHELD) { onboarding.finish(); return showAddFirstExtra() }
         val step = onboarding.back() ?: return
+        onboardingImported = null
         deps.settings.onboardingStep = step.takeIf { it != OnboardingStep.WELCOME && it != OnboardingStep.TEXT_SIZE }?.name
         showOnboarding()
     }
@@ -2895,7 +2919,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             is Screen.SettingsMenu -> settingsMenuSelection = _selection.value
             else -> Unit
         }
-        if (section == SettingsSection.IMPORT_SAVES) importMove = true
         val page = settingsPage(section)
         _screen.value = page
         _selection.value = (sectionSelections[section] ?: ListSelection(0, 0)).clampedTo(page.rows.size)
@@ -3063,11 +3086,14 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             SettingsRow(SettingsKind.IMPORT_SAVES, "Import saves"),
         )
         SettingsSection.IMPORT_SAVES -> listOf(
-            SettingsRow(SettingsKind.IMPORT_MODE, "After importing", if (importMove) "Move" else "Copy"),
-            SettingsRow(SettingsKind.IMPORT_HOME, "From the home folder"),
+            SettingsRow(SettingsKind.IMPORT_FOLDER, "From a folder"),
             SettingsRow(SettingsKind.IMPORT_ZIP, "From a zip file"),
-            SettingsRow(SettingsKind.IMPORT_FOLDER, "From another folder"),
+            SettingsRow(SettingsKind.IMPORT_RETROARCH, "From RetroArch"),
         )
+        // The summary, then each skipped file with its reason; read-only but for Done.
+        SettingsSection.IMPORT_RESULT -> importResult?.let { r ->
+            r.lines().map { SettingsRow(SettingsKind.INFO, it) } + r.skipped.map { SettingsRow(SettingsKind.INFO, it.name, it.reasonText()) }
+        }.orEmpty() + SettingsRow(SettingsKind.IMPORT_DONE, "Done")
         SettingsSection.DEFAULT_EMULATORS -> defaultEmulatorRows()
         SettingsSection.PAD_LAYOUT -> padLayoutRows()
         SettingsSection.APPEARANCE -> listOf(
@@ -3169,6 +3195,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             "For every game of the console, whichever of its folders holds it. A per-game Emulator choice still wins.",
             "The tag is where saves and settings are kept.",
         )
+        SettingsSection.IMPORT_RESULT -> importResult?.statesNote().orEmpty()   // wraps, unlike the one-line rows
         else -> emptyList()
     }
 
@@ -3251,14 +3278,62 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         refreshSettings()
     }
 
-    /** Import saves → After importing: Move or Copy, so every press flips it. */
-    private fun flipImportMode() {
-        importMove = !importMove
-        refreshSettings()
-    }
-
     /** A save transfer's report: its progress notice stays until the result (done) replaces it. */
     private fun showTransferNotice(text: String, done: Boolean) = showNotice(text, sticky = !done)
+
+    /** The last finished import's summary, which the Import results page lists. */
+    private var importResult: ImportSummary? = null
+
+    /**
+     * Import saves from [source]: [progress] and [done] by default are Settings' (a sticky progress notice, then
+     * [settingsImportDone]); onboarding passes its own.
+     */
+    private fun importSaves(
+        source: ImportSource,
+        progress: (String) -> Unit = { showNotice(it, sticky = true) },
+        done: (ImportResult) -> Unit = ::settingsImportDone,
+    ) = deps.saveTransfer?.importSaves(source, progress, done)
+
+    /**
+     * A Settings import's end: finished with Import saves still shown, the Import results page (on its first row);
+     * finished anywhere else, its summary as a notice; anything else, a notice.
+     */
+    private fun settingsImportDone(result: ImportResult) {
+        when (result) {
+            is ImportResult.Done -> {
+                importResult = result.summary
+                if ((_screen.value as? Screen.Settings)?.section != SettingsSection.IMPORT_SAVES) return showNotice(result.summary.lines().joinToString("; "))
+                dismissNotice()
+                sectionSelections.remove(SettingsSection.IMPORT_RESULT)
+                openSettings(SettingsSection.IMPORT_RESULT)
+            }
+            is ImportResult.Message -> showNotice(result.text)
+        }
+    }
+
+    /**
+     * Onboarding's import from [source]: its progress and then its result show on the step itself (re-drawn), never a
+     * Settings page or sticky notice. Ended after the step was left, the result is a notice.
+     */
+    private fun onboardingImport(source: ImportSource) {
+        fun onStep() = onboarding.step == OnboardingStep.IMPORT_SAVES && (_screen.value as? Screen.Onboarding)?.step == OnboardingStep.IMPORT_SAVES
+        onboardingImported = null
+        importSaves(source, progress = { text ->
+            onboardingImporting = text
+            if (onStep()) showOnboarding(_selection.value.index)
+        }) { result ->
+            onboardingImporting = null
+            when {
+                onStep() -> {
+                    onboardingImported = result
+                    // A summary lands on Continue; a message keeps the row picked.
+                    showOnboarding(if (result is ImportResult.Done) result.summary.skipped.size else _selection.value.index)
+                }
+                result is ImportResult.Done -> showNotice(result.summary.lines().joinToString("; "))
+                result is ImportResult.Message -> showNotice(result.text)
+            }
+        }
+    }
 
     /** Controls → Menu pad: two values, so every press flips it; the shell follows when Settings refreshes. */
     private fun flipMenuPad() {
@@ -3622,9 +3697,11 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
 
     /**
      * B on a sub-page: its section on the row that opened it. Leaving Default emulators (under Emulators) with a changed
-     * default (the index no longer fits) rescans first, under the overlay, so the library is the new one's.
+     * default (the index no longer fits) rescans first, under the overlay, so the library is the new one's. Import results
+     * goes back to Saves on its Import saves row.
      */
     private fun leaveSubPage(section: SettingsSection) {
+        if (section == SettingsSection.IMPORT_RESULT) return showSettingsOn(SettingsSection.SAVES, SettingsKind.IMPORT_SAVES)   // past Import saves
         val parent = section.parent ?: return
         val opener = section.opener ?: return
         val root = deps.settings.treeRef
@@ -3721,7 +3798,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     SettingsKind.SAVE_FORMAT -> cycleSaveFormat(step)
                     SettingsKind.STATE_FORMAT -> cycleStateFormat(step)
                     SettingsKind.EXTRACTED_NAME -> flipExtractedName()
-                    SettingsKind.IMPORT_MODE -> flipImportMode()
                     SettingsKind.PAD_LAYOUT_CONSOLE -> cyclePadLayoutConsole(step)
                     SettingsKind.ACCENT -> cycleAccent(step)
                     SettingsKind.SECONDARY_ACCENT -> cycleSecondaryAccent(step)
@@ -5028,10 +5104,10 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     SettingsKind.SAVES -> { sectionSelections[s.section] = _selection.value; openSettings(SettingsSection.SAVES) }
                     SettingsKind.EXPORT_SAVES -> deps.saveTransfer?.exportSaves(::showTransferNotice)
                     SettingsKind.IMPORT_SAVES -> { sectionSelections[s.section] = _selection.value; openSettings(SettingsSection.IMPORT_SAVES) }
-                    SettingsKind.IMPORT_MODE -> flipImportMode()
-                    SettingsKind.IMPORT_HOME -> deps.saveTransfer?.importSaves(ImportSource.HOME, importMove, ::showTransferNotice)
-                    SettingsKind.IMPORT_ZIP -> deps.saveTransfer?.importSaves(ImportSource.ZIP, importMove, ::showTransferNotice)
-                    SettingsKind.IMPORT_FOLDER -> deps.saveTransfer?.importSaves(ImportSource.FOLDER, importMove, ::showTransferNotice)
+                    SettingsKind.IMPORT_FOLDER -> importSaves(ImportSource.FOLDER)
+                    SettingsKind.IMPORT_ZIP -> importSaves(ImportSource.ZIP)
+                    SettingsKind.IMPORT_RETROARCH -> importSaves(ImportSource.RETROARCH)
+                    SettingsKind.IMPORT_DONE -> leaveSubPage(SettingsSection.IMPORT_RESULT)
                     SettingsKind.SAVE_FORMAT -> cycleSaveFormat(1)
                     SettingsKind.STATE_FORMAT -> cycleStateFormat(1)
                     SettingsKind.EXTRACTED_NAME -> flipExtractedName()

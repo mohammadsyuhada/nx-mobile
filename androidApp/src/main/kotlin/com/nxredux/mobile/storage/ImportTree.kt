@@ -22,8 +22,6 @@ interface ImportTree {
     /** The direct child [name] of [dir], or null. */
     fun child(dir: ContentRef, name: String): TreeEntry?
     fun openRead(file: ContentRef): InputStream?
-    /** Deletes a file, or a folder: SAF removes one with its contents (callers list it empty first), the file system only an empty one. */
-    fun delete(ref: ContentRef): Boolean
 
     companion object {
         /** The tree [root] is on: a file ref's file system, else SAF through [resolver]. */
@@ -39,7 +37,6 @@ class SafImportTree(private val saf: SafTree) : ImportTree {
     override fun list(dir: ContentRef): List<TreeEntry> = saf.listChildren(Uri.parse(dir.value)).map { it.toEntry() }
     override fun child(dir: ContentRef, name: String): TreeEntry? = saf.child(Uri.parse(dir.value), name)?.toEntry()
     override fun openRead(file: ContentRef): InputStream? = saf.openRead(Uri.parse(file.value))
-    override fun delete(ref: ContentRef): Boolean = saf.delete(Uri.parse(ref.value))
 }
 
 /** The file system under All files access; refs are file refs ([FileRefs]). An unreadable folder fails its listing. */
@@ -62,6 +59,4 @@ object FileImportTree : ImportTree {
     }
 
     override fun openRead(file: ContentRef): InputStream? = fileOf(file).takeIf { it.isFile }?.let(::FileInputStream)
-
-    override fun delete(ref: ContentRef): Boolean = fileOf(ref).delete()
 }

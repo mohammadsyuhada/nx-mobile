@@ -27,7 +27,7 @@ object Rzip {
      * 20-byte header; a `#RZIPv` file with another version, a different 8th byte, or a short header is read raw there too.
      */
     fun decode(bytes: ByteArray): ByteArray? {
-        if (!isRzipCompressed(bytes) || bytes.size < HEADER_SIZE || bytes[6] != VERSION || bytes[7] != '#'.code.toByte()) return bytes
+        if (!isHeader(bytes)) return bytes
         val chunk = u32(bytes, 8)
         val total = u64(bytes, 12)
         if (chunk <= 0L || chunk > MAX_CHUNK_SIZE || total <= 0L || total > Int.MAX_VALUE) return null
@@ -56,6 +56,16 @@ object Rzip {
         catch (e: OutOfMemoryError) { return null }
         return if (out.size().toLong() == total) out.toByteArray() else null
     }
+
+    /**
+     * The decoded size an RZIP file's first 20 bytes ([header]) claim; null when [decode] reads the file raw. Lets a
+     * caller rule out a match without reading a whole file.
+     */
+    fun rawSize(header: ByteArray): Long? = if (isHeader(header)) u64(header, 12) else null
+
+    /** libretro-common's RZIP test, as [decode] describes it. */
+    private fun isHeader(b: ByteArray): Boolean =
+        isRzipCompressed(b) && b.size >= HEADER_SIZE && b[6] == VERSION && b[7] == '#'.code.toByte()
 
     /** [raw] as an RZIP file, as libretro-common writes it (chunk size [CHUNK_SIZE], zlib level 6). */
     fun encode(raw: ByteArray): ByteArray {
