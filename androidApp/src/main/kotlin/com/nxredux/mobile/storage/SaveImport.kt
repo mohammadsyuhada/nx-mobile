@@ -1,7 +1,9 @@
 package com.nxredux.mobile.storage
 
 import com.nxredux.mobile.runner.Console
+import com.nxredux.mobile.runner.CoreDescriptor
 import com.nxredux.mobile.runner.CoreRegistry
+import com.nxredux.mobile.sync.SyncAreas
 import java.io.File
 import java.io.FilterInputStream
 import java.io.IOException
@@ -84,7 +86,16 @@ class DirImportFiles(private val root: File, private val tops: List<String> = li
  * winner is written in [naming]'s Save format. A save in a folder several consoles share (`Saves/GPGX`) goes to its
  * game's console by the library's ROM names ([SaveMatcher.gamesByConsole]). A loose battery save or clock file
  * elsewhere (a RetroArch `saves/<core>/` folder, a flat dump) goes to its library game by name ([matcher]), its parent
- * folder's name narrowing the consoles ([RetroArchCores.consolesOf]), and is named after that game's ROM.
+ * folder's name narrowing the consoles ([RetroArchCores.consolesOf]), and is named after that game's ROM. macOS
+ * metadata ([SyncAreas.isJunk]) is only counted.
+ *
+ * A save state never replaces a phone state ([takeState]): it goes to its own slot when that is free for the game, else
+ * the lowest free one, else it is listed "no free slot"; one whose bytes a phone state of the game already holds is
+ * "already here". A NextUI-layout state (`.userdata/shared/<TAG>-<core>/`) keeps its folder and naming. A loose one
+ * (RetroArch `states/<core>/`, `states/`) goes to its library game ([matcher]) under the core its folder names, or the
+ * console's only core, else "can't tell the core", in [naming]'s State format. Slot pictures
+ * (`.minui/<TAG>/<rom>.<slot>.bmp`) wait in [STAGING] until the walk is done, then follow their state to its slot;
+ * one whose state was not imported is left out. A last-used-slot marker (`<rom>.txt`) lands only when the phone has none.
  */
 class SaveImporter(
     private val root: File,
@@ -100,46 +111,169 @@ class SaveImporter(
     private val games by lazy { matcher.gamesByConsole() }
 
     fun run(source: ImportFiles, onFile: (String) -> Unit = {}): ImportSummary {
+        val staging = File(root, STAGING)
+        staging.deleteRecursively()   // a run that died before its cleanup
+        try {
+            return walk(source, staging, onFile)
+        } finally {
+            staging.deleteRecursively()
+        }
+    }
+
+    private fun walk(source: ImportFiles, staging: File, onFile: (String) -> Unit): ImportSummary {
         var s = ImportSummary()
         val skipped = mutableListOf<SkippedFile>()
+        val pictures = mutableListOf<StagedPicture>()
+        val placed = HashMap<String, Int>()   // [slotKey] of an imported NextUI state → the slot it landed in
         for (e in source.entries()) {
             val path = SaveArchive.safePath(e.path)
-            if (path == null) { s = s.copy(ignored = s.ignored + 1); continue }
+            if (path == null || SyncAreas.isJunk(path)) { s = s.copy(ignored = s.ignored + 1); continue }
             val name = path.substringAfterLast('/')
             val area = SaveArchive.areaOf(path)
             val key = if (area == null) SaveKeys.of(name) else null
+            val state = if (area == null && key == null) StateNames.parse(name) else null
+            val marker = if (area == SaveArea.MARKERS) markerTag(path) else null
+            val picture = marker?.let { StateNames.picture(name) }
+            val nextUi = if (area == SaveArea.STATES) nextUiState(path) else null
             val result = when {
-                area != null -> runCatching { take(path, e) }
-                key != null -> when (val m = matcher.match(key.game, clueOf(path))) {
-                    is SaveMatch.Matched -> runCatching { take("Saves/${m.console.defaultTag}/$name", e, m.rom) }
-                    SaveMatch.NoGame -> { skipped += SkippedFile(name, SkipReason.NO_GAME); continue }
-                    is SaveMatch.Ambiguous -> {
-                        skipped += SkippedFile(name, SkipReason.AMBIGUOUS, m.consoles.joinToString(" and ") { it.displayName })
-                        continue
+                picture != null -> {
+                    runCatching { pictures += stage(e, path, File(staging, "${pictures.size}.bmp"), slotKey(marker, picture.stem, picture.slot)) }
+                        .onFailure { skipped += SkippedFile(name, SkipReason.UNREADABLE) }
+                    continue
+                }
+                marker != null && name.endsWith(".txt", ignoreCase = true) ->
+                    runCatching { if (File(root, path).exists()) ImportAction.IDENTICAL else take(path, e) }
+                nextUi != null -> runCatching {
+                    val st = nextUi
+                    val tag = path.split('/')[2].substringBefore('-')
+                    takeState(e, File(root, path.substringBeforeLast('/')), name, st.stem, st.slot, reencode = false,
+                        onPlaced = { placed[slotKey(tag, st.stem, st.slot)] = it }) { slot ->
+                        if (slot == st.slot) name else StateNames.withSlot(name, slot, naming.stateFormat)!!
                     }
                 }
-                // A loose save state ([StateNames.parse]) is not taken yet: counted with the other files.
+                area != null -> runCatching { take(path, e) }
+                key != null || state != null -> {
+                    val m = when (val r = matcher.match(key?.game ?: SaveKeys.romKey(state!!.stem), clueOf(path))) {
+                        is SaveMatch.Matched -> r
+                        SaveMatch.NoGame -> { skipped += SkippedFile(name, SkipReason.NO_GAME); continue }
+                        is SaveMatch.Ambiguous -> {
+                            skipped += SkippedFile(name, SkipReason.AMBIGUOUS, r.consoles.joinToString(" and ") { it.displayName })
+                            continue
+                        }
+                    }
+                    if (state == null) runCatching { take("Saves/${m.console.defaultTag}/$name", e, m.rom) }
+                    else {
+                        val core = RetroArchCores.coreOf(folderOf(path)) ?: onlyCoreOf(m.console)
+                        val tag = core?.let { c -> RetroArchCores.tagsOf(c).firstOrNull { t -> m.console.tags.any { it.equals(t, ignoreCase = true) } } }
+                        if (core == null || tag == null) { skipped += SkippedFile(name, SkipReason.NO_CORE); continue }
+                        runCatching { takeLooseState(e, name, state, NxPaths(tag, core.id, m.rom, naming)) }
+                    }
+                }
                 else -> { s = s.copy(ignored = s.ignored + 1); continue }
             }
-            val action = result.getOrNull()
-            if (action == null) { skipped += SkippedFile(name, SkipReason.UNREADABLE); continue }
-            s = when (action) {
-                ImportAction.NEW, ImportAction.REPLACE -> when (area) {
-                    null, SaveArea.SAVES -> s.copy(saves = s.saves + 1)
-                    SaveArea.STATES -> s.copy(states = s.states + 1)
-                    SaveArea.MARKERS -> s.copy(markers = s.markers + 1)
-                }.let { if (action == ImportAction.REPLACE) it.copy(replaced = it.replaced + 1) else it }
-                ImportAction.IDENTICAL -> s.copy(identical = s.identical + 1)
-                ImportAction.SKIP_OLDER -> { skipped += SkippedFile(name, SkipReason.PHONE_NEWER); s }
+            val action = result.getOrElse {
+                skipped += SkippedFile(name, if (it is NoFreeSlot) SkipReason.NO_FREE_SLOT else SkipReason.UNREADABLE)
+                continue
             }
+            s = count(s, action, area ?: if (state != null) SaveArea.STATES else SaveArea.SAVES, name, skipped)
             onFile(path)
+        }
+        for (p in pictures) {
+            val slot = placed[p.slotKey] ?: continue   // its state was skipped, already here or not in the import
+            val target = File(root, p.path.substringBeforeLast('/') + "/" + p.rom + ".$slot.bmp")
+            val ok = runCatching { target.parentFile!!.mkdirs(); place(p.file, target, p.mtime, p.size) }.isSuccess
+            if (!ok) { skipped += SkippedFile(p.path.substringAfterLast('/'), SkipReason.UNREADABLE); continue }
+            s = s.copy(markers = s.markers + 1)
+            onFile(p.path)
         }
         return s.copy(skipped = skipped)
     }
 
+    private fun count(s: ImportSummary, action: ImportAction, area: SaveArea, name: String, skipped: MutableList<SkippedFile>): ImportSummary =
+        when (action) {
+            ImportAction.NEW, ImportAction.REPLACE -> when (area) {
+                SaveArea.SAVES -> s.copy(saves = s.saves + 1)
+                SaveArea.STATES -> s.copy(states = s.states + 1)
+                SaveArea.MARKERS -> s.copy(markers = s.markers + 1)
+            }.let { if (action == ImportAction.REPLACE) it.copy(replaced = it.replaced + 1) else it }
+            ImportAction.IDENTICAL -> s.copy(identical = s.identical + 1)
+            ImportAction.SKIP_OLDER -> { skipped += SkippedFile(name, SkipReason.PHONE_NEWER); s }
+        }
+
+    /** A slot picture copied aside until its state has landed; [rom] is the ROM file name its own name starts with. */
+    private class StagedPicture(val path: String, val file: File, val mtime: Long, val size: Long, val rom: String, val slotKey: String)
+
+    private fun stage(e: ImportEntry, path: String, file: File, slotKey: String): StagedPicture {
+        file.parentFile!!.mkdirs()
+        val written = e.open().use { input -> file.outputStream().use { input.copyTo(it) } }
+        check(e.size == null || written == e.size) { "short copy of $path: $written of ${e.size} bytes" }
+        val name = path.substringAfterLast('/')
+        return StagedPicture(path, file, e.mtime ?: now(), written, name.dropLast(".0.bmp".length), slotKey)
+    }
+
+    private fun slotKey(tag: String, stem: String, slot: Int) = "$tag/$slot/$stem"
+
+    /** The handheld tag of a file directly in a `.userdata/shared/.minui/<TAG>/` folder; null elsewhere. */
+    private fun markerTag(path: String): String? = path.split('/').takeIf { it.size == 5 }?.get(3)
+
+    /** The state a file directly in a `.userdata/shared/<TAG>-<core>/` folder names; null for any other file there. */
+    private fun nextUiState(path: String): StateName? =
+        path.split('/').takeIf { it.size == 4 && it[2] != ".minui" }?.let { StateNames.parse(it[3]) }
+
+    /** The only core [console] runs on (all its tags share it); null when it has several. */
+    private fun onlyCoreOf(console: Console): CoreDescriptor? =
+        console.tags.map { CoreRegistry.forTag(it) }.distinctBy { it?.id }.singleOrNull()
+
+    /** A loose [state] of [paths]' game, named and encoded in [naming]'s State format. */
+    private fun takeLooseState(e: ImportEntry, name: String, state: StateName, paths: NxPaths): ImportAction {
+        val stem = StateNames.parse(paths.state(0).substringAfterLast('/'))!!.stem
+        return takeState(e, File(root, paths.statesDir), name, stem, state.slot, reencode = true) { paths.state(it).substringAfterLast('/') }
+    }
+
+    /**
+     * Lands the state [e] (file [name], wanted in slot [wanted]) in [dir] without touching a phone state: every state
+     * there whose name parses to [stem], in any format, holds its slot. Bytes some of them already hold (RZIP decoded on
+     * both sides) are [ImportAction.IDENTICAL]; else it goes to [StateNames.place]'s slot, named [nameFor] it, and
+     * [onPlaced] is told the slot. [reencode] writes the decoded bytes in [naming]'s State compression; else they land as
+     * they came. Throws [NoFreeSlot] when every slot is taken, anything else when it could not be copied.
+     */
+    private fun takeState(
+        e: ImportEntry, dir: File, name: String, stem: String, wanted: Int, reencode: Boolean,
+        onPlaced: (Int) -> Unit = {}, nameFor: (Int) -> String,
+    ): ImportAction {
+        dir.mkdirs()
+        val tmp = File(dir, ".$name.import.tmp")
+        try {
+            var written = e.open().use { input -> tmp.outputStream().use { input.copyTo(it) } }
+            check(e.size == null || written == e.size) { "short copy of $name: $written of ${e.size} bytes" }
+            val raw = Rzip.decode(tmp.readBytes()) ?: error("$name: malformed RZIP")
+            val taken = dir.listFiles().orEmpty().filter { it.isFile }
+                .mapNotNull { f -> StateNames.parse(f.name)?.takeIf { it.stem == stem }?.let { f to it.slot } }
+            if (taken.any { (f, _) -> Rzip.decode(f.readBytes())?.contentEquals(raw) == true }) return ImportAction.IDENTICAL
+            val slot = StateNames.place(wanted, taken.map { it.second }.toSet()) ?: throw NoFreeSlot()
+            val target = File(dir, nameFor(slot))
+            check(!target.exists()) { "${target.name} is taken" }
+            if (reencode) {
+                val bytes = if (naming.stateFormat.compressed) Rzip.encode(raw) else raw
+                tmp.writeBytes(bytes)
+                written = bytes.size.toLong()
+            }
+            place(tmp, target, e.mtime ?: now(), written)
+            onPlaced(slot)
+            return ImportAction.NEW
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    /** Every slot of a state's game is taken. */
+    private class NoFreeSlot : RuntimeException("no free slot")
+
     /** The consoles a loose file's parent folder names ([RetroArchCores.consolesOf]); null at the source root or for no clue. */
-    private fun clueOf(path: String): List<Console>? =
-        path.substringBeforeLast('/', "").substringAfterLast('/').takeIf { it.isNotEmpty() }?.let(RetroArchCores::consolesOf)
+    private fun clueOf(path: String): List<Console>? = folderOf(path).takeIf { it.isNotEmpty() }?.let(RetroArchCores::consolesOf)
+
+    /** A path's parent folder name; empty at the source root. */
+    private fun folderOf(path: String): String = path.substringBeforeLast('/', "").substringAfterLast('/')
 
     /**
      * Lands [e] at [path] (its emulator folder mapped onto the console's, [targetPath]) and returns what happened; throws
@@ -259,5 +393,9 @@ class SaveImporter(
         return n
     }
 
-    private companion object { const val BLOCK = 64 * 1024 }
+    private companion object {
+        const val BLOCK = 64 * 1024
+        /** Where slot pictures wait during a run, under the root; removed when the run ends. */
+        const val STAGING = ".userdata/${NxPaths.PLATFORM}/.import-staging"
+    }
 }

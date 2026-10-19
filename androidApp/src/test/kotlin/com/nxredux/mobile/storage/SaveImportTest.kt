@@ -377,4 +377,184 @@ class SaveImportTest {
         assertEquals(setOf("top.srm", "saves/mGBA/x.srm", "states/mGBA/x.state", "config/x.cfg"), DirImportFiles(src).entries().map { it.path }.toSet())
         assertEquals(setOf("saves/mGBA/x.srm", "states/mGBA/x.state"), DirImportFiles(src, listOf("saves", "states")).entries().map { it.path }.toSet())
     }
+
+    // Save states: never over a phone state.
+
+    private val ra = SaveNaming(SaveFormat.RETROARCH, StateFormat.RETROARCH)
+    private val raw = ByteArray(4096) { (it % 11).toByte() }
+    private val states = ".userdata/shared/MGBA-mgba"
+
+    private fun bytes(root: File, path: String, data: ByteArray, mtime: Long = t0) =
+        File(root, path).apply { parentFile.mkdirs(); writeBytes(data); setLastModified(mtime) }
+
+    private fun importRa(src: File, sd: File, naming: SaveNaming = ra) =
+        SaveImporter(sd, now = { t0 }, naming = naming, matcher = SaveMatcher(library)).run(DirImportFiles(src))
+
+    @Test fun retroarch_state_lands_in_core_dir() {
+        val src = tmp.newFolder("ra"); val sd = tmp.newFolder("sd")
+        bytes(src, "states/mGBA/Pokemon - Lazarus.state", Rzip.encode(raw))
+        val summary = importRa(src, sd)
+        val landed = File(sd, "$states/Pokemon - Lazarus.state")
+        assertTrue(raw.contentEquals(landed.readBytes()))
+        assertEquals(t0, landed.lastModified() / 1000 * 1000)
+        assertEquals(ImportSummary(states = 1), summary)
+        assertTrue(File(src, "states/mGBA/Pokemon - Lazarus.state").exists())
+    }
+
+    @Test fun a_compressed_or_minui_phone_format_names_and_encodes_the_state() {
+        val src = tmp.newFolder("ra"); val sd = tmp.newFolder("sd"); val sd2 = tmp.newFolder("sd2")
+        bytes(src, "states/mGBA/Pokemon - Lazarus.state", Rzip.encode(raw))
+        importRa(src, sd, SaveNaming(stateFormat = StateFormat.RETROARCH_ISH_COMPRESSED))
+        val packed = File(sd, "$states/Pokemon - Lazarus.state.0").readBytes()
+        assertEquals("#RZIPv", String(packed, 0, 6))
+        assertTrue(raw.contentEquals(Rzip.decode(packed)))
+        importRa(src, sd2, SaveNaming(stateFormat = StateFormat.MINUI))
+        assertTrue(raw.contentEquals(File(sd2, "$states/Pokemon - Lazarus.gba.st0").readBytes()))
+    }
+
+    @Test fun taken_slot_moves_to_lowest_free() {
+        val src = tmp.newFolder("ra"); val sd = tmp.newFolder("sd")
+        bytes(src, "states/mGBA/Pokemon - Lazarus.state", Rzip.encode(raw))
+        file(sd, "$states/Pokemon - Lazarus.state", "mine")
+        val summary = importRa(src, sd)
+        assertEquals("mine", File(sd, "$states/Pokemon - Lazarus.state").readText())
+        assertTrue(raw.contentEquals(File(sd, "$states/Pokemon - Lazarus.state1").readBytes()))
+        assertEquals(ImportSummary(states = 1), summary)
+    }
+
+    @Test fun a_slot_taken_under_another_format_is_taken() {
+        val src = tmp.newFolder("ra"); val sd = tmp.newFolder("sd")
+        bytes(src, "states/mGBA/Pokemon - Lazarus.state", Rzip.encode(raw))
+        file(sd, "$states/Pokemon - Lazarus.gba.st0", "mine")
+        file(sd, "$states/Pokemon - Lazarus.state.1", "mine too")
+        file(sd, "$states/Other.state2", "another game")
+        importRa(src, sd)
+        assertTrue(raw.contentEquals(File(sd, "$states/Pokemon - Lazarus.state2").readBytes()))
+        assertEquals("mine", File(sd, "$states/Pokemon - Lazarus.gba.st0").readText())
+    }
+
+    @Test fun duplicate_state_is_already_here() {
+        val src = tmp.newFolder("ra"); val sd = tmp.newFolder("sd")
+        bytes(src, "states/mGBA/Pokemon - Lazarus.state3", Rzip.encode(raw))
+        bytes(sd, "$states/Pokemon - Lazarus.state", raw)
+        val summary = importRa(src, sd)
+        assertEquals(ImportSummary(identical = 1), summary)
+        assertEquals(listOf("Pokemon - Lazarus.state"), File(sd, states).list()!!.toList())
+    }
+
+    @Test fun auto_goes_to_free_numbered_slot_when_taken() {
+        val src = tmp.newFolder("ra"); val sd = tmp.newFolder("sd"); val sd2 = tmp.newFolder("sd2")
+        bytes(src, "states/mGBA/Pokemon - Lazarus.state.auto", Rzip.encode(raw))
+        importRa(src, sd2)
+        assertTrue(raw.contentEquals(File(sd2, "$states/Pokemon - Lazarus.state.auto").readBytes()))   // free: its own slot
+        file(sd, "$states/Pokemon - Lazarus.state.auto", "mine")
+        importRa(src, sd)
+        assertEquals("mine", File(sd, "$states/Pokemon - Lazarus.state.auto").readText())
+        assertTrue(raw.contentEquals(File(sd, "$states/Pokemon - Lazarus.state").readBytes()))
+    }
+
+    @Test fun slot_nine_and_up_take_a_free_slot() {
+        val src = tmp.newFolder("ra"); val sd = tmp.newFolder("sd")
+        bytes(src, "states/mGBA/Pokemon - Lazarus.state9", Rzip.encode(raw))
+        importRa(src, sd)
+        assertEquals(listOf("Pokemon - Lazarus.state"), File(sd, states).list()!!.toList())
+        assertTrue(raw.contentEquals(File(sd, "$states/Pokemon - Lazarus.state").readBytes()))
+    }
+
+    @Test fun full_slots_skip() {
+        val src = tmp.newFolder("ra"); val sd = tmp.newFolder("sd")
+        bytes(src, "states/mGBA/Pokemon - Lazarus.state", Rzip.encode(raw))
+        for (n in 0..7) file(sd, "$states/Pokemon - Lazarus.state${if (n == 0) "" else "$n"}", "mine $n")
+        val summary = importRa(src, sd)
+        assertEquals(ImportSummary(skipped = listOf(SkippedFile("Pokemon - Lazarus.state", SkipReason.NO_FREE_SLOT))), summary)
+        assertEquals(8, File(sd, states).list()!!.size)
+        assertEquals("mine 0", File(sd, "$states/Pokemon - Lazarus.state").readText())
+    }
+
+    @Test fun loose_state_in_dump_without_core_is_skipped() {
+        val src = tmp.newFolder("dump"); val sd = tmp.newFolder("sd")
+        bytes(src, "Pokemon - Lazarus.state", Rzip.encode(raw))   // GBA runs on mgba and gpsp
+        bytes(src, "states/mGBA/Zelda.state", raw)
+        bytes(src, "states/mGBA/Pokemon - Lazarus.state.png", raw)   // a RetroArch thumbnail: only counted
+        val summary = importRa(src, sd)
+        assertEquals(
+            setOf(SkippedFile("Pokemon - Lazarus.state", SkipReason.NO_CORE), SkippedFile("Zelda.state", SkipReason.NO_GAME)),
+            summary.skipped.toSet(),
+        )
+        assertEquals(1, summary.ignored)
+        assertEquals(0, summary.states)
+        assertFalse(File(sd, ".userdata/shared").exists())
+    }
+
+    @Test fun a_flat_state_of_a_single_core_console_lands() {
+        val src = tmp.newFolder("ra"); val sd = tmp.newFolder("sd")
+        val gbcCores = CoreRegistry.consoleOf("GBC")!!.tags.map { CoreRegistry.forTag(it)?.id }.distinct()
+        assertEquals(listOf("gambatte"), gbcCores)
+        bytes(src, "states/Pokemon - Crystal.state1", raw)
+        val summary = SaveImporter(sd, naming = ra, matcher = SaveMatcher(index("GBC" to listOf("Pokemon - Crystal.gbc")))).run(DirImportFiles(src))
+        assertEquals(ImportSummary(states = 1), summary)
+        assertTrue(raw.contentEquals(File(sd, ".userdata/shared/GBC-gambatte/Pokemon - Crystal.state1").readBytes()))
+    }
+
+    @Test fun nextui_state_moves_with_its_picture() {
+        val sd = tmp.newFolder("sd")
+        file(sd, "$states/X.state", "mine")
+        file(sd, ".userdata/shared/.minui/MGBA/X.gba.0.bmp", "my picture")
+        val zip = zipOf(
+            Triple(".userdata/shared/.minui/MGBA/X.gba.0.bmp", "its picture", t0),
+            Triple("$states/X.state", "incoming", t0),
+        )
+        val summary = SaveImporter(sd, now = { t0 }).run(ZipImportFiles { ByteArrayInputStream(zip) })
+        assertEquals("mine", File(sd, "$states/X.state").readText())
+        assertEquals("incoming", File(sd, "$states/X.state1").readText())
+        assertEquals("my picture", File(sd, ".userdata/shared/.minui/MGBA/X.gba.0.bmp").readText())
+        assertEquals("its picture", File(sd, ".userdata/shared/.minui/MGBA/X.gba.1.bmp").readText())
+        assertEquals(ImportSummary(states = 1, markers = 1), summary)
+        assertFalse(File(sd, ".userdata/android/.import-staging").exists())
+    }
+
+    @Test fun a_nextui_state_keeps_its_own_format_when_it_moves() {
+        val sd = tmp.newFolder("sd")
+        file(sd, "$states/X.gba.st2", "mine")
+        val zip = zipOf(Triple("$states/X.gba.st2", "incoming", t0), Triple("$states/Y.state.auto", "auto", t0))
+        file(sd, "$states/Y.state.auto", "my auto")
+        SaveImporter(sd, naming = SaveNaming(stateFormat = StateFormat.RETROARCH_ISH)).run(ZipImportFiles { ByteArrayInputStream(zip) })
+        assertEquals("incoming", File(sd, "$states/X.gba.st0").readText())
+        assertEquals("auto", File(sd, "$states/Y.state.0").readText())
+        assertEquals("my auto", File(sd, "$states/Y.state.auto").readText())
+    }
+
+    @Test fun a_picture_whose_state_is_not_imported_is_left_out() {
+        val sd = tmp.newFolder("sd")
+        file(sd, "$states/X.state", "same")
+        val zip = zipOf(
+            Triple("$states/X.state", "same", t0),
+            Triple(".userdata/shared/.minui/MGBA/X.gba.0.bmp", "its picture", t0),
+            Triple(".userdata/shared/.minui/MGBA/Lonely.gba.3.bmp", "no state", t0),
+        )
+        val summary = SaveImporter(sd).run(ZipImportFiles { ByteArrayInputStream(zip) })
+        assertEquals(ImportSummary(identical = 1), summary)
+        assertFalse(File(sd, ".userdata/shared/.minui").exists())
+        assertFalse(File(sd, ".userdata/android/.import-staging").exists())
+    }
+
+    @Test fun last_slot_marker_only_when_missing() {
+        val src = tmp.newFolder("card"); val sd = tmp.newFolder("sd")
+        file(sd, ".userdata/shared/.minui/MGBA/X.gba.txt", "3", t0 - 60_000)
+        file(src, ".userdata/shared/.minui/MGBA/X.gba.txt", "5", t0)   // newer, still not taken
+        file(src, ".userdata/shared/.minui/MGBA/Y.gba.txt", "1")
+        val summary = SaveImporter(sd).run(DirImportFiles(src))
+        assertEquals(ImportSummary(markers = 1, identical = 1), summary)
+        assertEquals("3", File(sd, ".userdata/shared/.minui/MGBA/X.gba.txt").readText())
+        assertEquals("1", File(sd, ".userdata/shared/.minui/MGBA/Y.gba.txt").readText())
+    }
+
+    @Test fun macos_junk_outside_the_layout_is_only_counted() {
+        val src = tmp.newFolder("dump"); val sd = tmp.newFolder("sd")
+        file(src, "._Pokemon - Lazarus.srm", "x"); file(src, ".DS_Store", "x")
+        file(src, "saves/mGBA/._Pokemon - Lazarus.srm", "x"); file(src, "states/mGBA/._Pokemon - Lazarus.state", "x")
+        val summary = importRa(src, sd)
+        assertEquals(ImportSummary(ignored = 4), summary)
+        assertEquals(emptyList<String>(), sd.list()!!.toList())
+    }
 }
