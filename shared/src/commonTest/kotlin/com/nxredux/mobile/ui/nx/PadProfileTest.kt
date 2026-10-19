@@ -30,7 +30,7 @@ class PadProfileTest {
 
     @Test fun table_tags_take_their_labels() {
         val md = PadProfile.forTag("MD")
-        assertEquals("C", md.label(NxButton.A)); assertEquals("A", md.label(NxButton.Y)); assertEquals("Mode", md.label(NxButton.SELECT))
+        assertEquals("C", md.label(NxButton.A)); assertEquals("A", md.label(NxButton.Y)); assertEquals("MODE", md.label(NxButton.SELECT))
         assertEquals("L2", md.label(NxButton.L2))               // no table label: the glyph
         assertEquals("1", PadProfile.forTag("SMS").label(NxButton.B))
         assertEquals("×", PadProfile.forTag("PS").label(NxButton.B))

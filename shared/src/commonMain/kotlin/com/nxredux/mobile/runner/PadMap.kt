@@ -67,7 +67,7 @@ class PadMap private constructor(
         // In the menus the drawn A (Y) confirms and the drawn B (X) goes back; the drawn C and X act as menu X and Y.
         private val SEGA_MENU = mapOf(Y to A, X to B, A to X, B to Y)
         private val SEGA_SIX = PadMap(SEGA_ROUTES,
-            mapOf(Y to "A", X to "B", A to "C", B to "X", L1 to "Y", R1 to "Z", SELECT to "Mode"),
+            mapOf(Y to "A", X to "B", A to "C", B to "X", L1 to "Y", R1 to "Z", SELECT to "MODE"),
             menu = SEGA_MENU, segaCluster = true)
         // 3-button: the cluster shows only A B C, Mode is gone, and the L1/R1 pills keep their own glyphs.
         private val SEGA_THREE = PadMap(SEGA_ROUTES, mapOf(Y to "A", X to "B", A to "C"), hidden = setOf(SELECT),
@@ -78,15 +78,15 @@ class PadMap private constructor(
         fun forTag(tag: String, sega: SegaPad? = null): PadMap = when (CoreRegistry.baseTag(tag)) {
             in SEGA_TAGS -> if (sega == SegaPad.THREE) SEGA_THREE else SEGA_SIX
             "SMS", "GG", "SG1000", "A7800" -> SEGA_8BIT
-            "NGP", "NGPC" -> PadMap(labels = mapOf(B to "A", A to "B", START to "Option"), menu = mapOf(B to A, A to B, Y to X, X to Y))
-            "PCE" -> PadMap(labels = mapOf(A to "I", B to "II", Y to "III", X to "IV", L1 to "V", R1 to "VI", L2 to "Mode", START to "Run"))
+            "NGP", "NGPC" -> PadMap(labels = mapOf(B to "A", A to "B", START to "OPTION"), menu = mapOf(B to A, A to B, Y to X, X to Y))
+            "PCE" -> PadMap(labels = mapOf(A to "I", B to "II", Y to "III", X to "IV", L1 to "V", R1 to "VI", L2 to "Mode", START to "RUN"))
             // PPSSPP reads the RetroPad like beetle-psx: B = Cross, A = Circle, X = Triangle, Y = Square.
             // In the menus × (bottom) confirms and ○ (right) goes back, the Western PlayStation convention.
             "PS", "PSX", "PSP" -> PadMap(labels = mapOf(A to "○", B to "×", X to "△", Y to "□"), menu = mapOf(B to A, A to B))
             "P8" -> PadMap(labels = mapOf(B to "O", A to "X"))
             "A2600" -> PadMap(labels = mapOf(B to "Fire"))
             "LYNX" -> PadMap(labels = mapOf(L1 to "Opt 1", R1 to "Opt 2"))
-            "PKM" -> PadMap(labels = mapOf(R1 to "C", L1 to "Shake", SELECT to "Power", X to "TA"))
+            "PKM" -> PadMap(labels = mapOf(R1 to "C", L1 to "Shake", SELECT to "POWER", X to "TA"))
             "GB", "GBC", "GBA" -> PadMap(labels = TURBO_AB)
             "MGBA", "SGB" -> PadMap(labels = TURBO_AB + mapOf(L2 to "TL", R2 to "TR"))
             "VB" -> PadMap(labels = mapOf(X to "Batt", L2 to "R↑", R2 to "R←"))

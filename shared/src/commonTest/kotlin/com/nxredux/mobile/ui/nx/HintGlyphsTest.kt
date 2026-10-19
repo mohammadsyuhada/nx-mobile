@@ -28,7 +28,7 @@ class HintGlyphsTest {
         assertEquals(HintGlyph.Badge("C"), g("MD", NxButton.X))           // menu X is the drawn C
         assertEquals(HintGlyph.Art(NxButton.X), g("MD", NxButton.Y, SegaPad.SIX))   // menu Y is the drawn X
         assertEquals(HintGlyph.TextOnly, g("MD", NxButton.Y, SegaPad.THREE))        // drawn X hidden in 3-button: the text alone
-        assertEquals(HintGlyph.Badge("Mode"), g("MD", NxButton.SELECT, SegaPad.SIX))
+        assertEquals(HintGlyph.Badge("MODE"), g("MD", NxButton.SELECT, SegaPad.SIX))
     }
 
     @Test fun ps_and_psp_hints_show_the_playstation_art() {
