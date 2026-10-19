@@ -377,12 +377,14 @@ class ArtworkScreensTest {
         val page = assertIs<Screen.Artwork>(r.state.screen.value)
         assertTrue(page.rows.none { it.action == ArtworkAction.PROGRESS })
     }
-    // An ended fetch clears its list to a summary: only the games that need a look (not found, errors) stay.
+    // A done game leaves the list as it finishes (the summary counts it); an ended fetch clears its list to a summary:
+    // only the games that need a look (not found, errors) stay.
     @Test fun an_ended_fetch_lists_only_the_games_to_look_at_and_sums_up() {
         fun item(name: String, st: ItemStatus) = ScrapeItem("p/$name", "GB", name, st)
         val items = listOf(item("A", ItemStatus.DONE), item("B", ItemStatus.PARTIAL), item("C", ItemStatus.NOT_FOUND), item("D", ItemStatus.ERROR), item("E", ItemStatus.WAITING), item("F", ItemStatus.SKIPPED))
         val running = ScrapeState(JobPhase.RUNNING, items)
-        assertEquals(items, artworkProgressRows(running))                  // running: every game
+        assertEquals(items - items[0], artworkProgressRows(running))       // running: every game but the done ones
+        assertEquals(items - items[0], artworkProgressRows(running.copy(phase = JobPhase.PAUSED)))
         val cancelled = running.copy(phase = JobPhase.CANCELLED)
         assertEquals(listOf("C", "D"), artworkProgressRows(cancelled).map { it.name })
         assertEquals("1 fetched · 1 partial · 1 not found · 1 error · 1 skipped · 1 not fetched", artworkSummary(cancelled))

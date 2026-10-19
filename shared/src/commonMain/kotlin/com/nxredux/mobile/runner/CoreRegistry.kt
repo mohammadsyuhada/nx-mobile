@@ -587,6 +587,10 @@ object CoreRegistry {
     /** One descriptor per core id, canonical first (a tag view such as SGB's mgba is not listed). */
     val all: List<CoreDescriptor> = byTag.values.distinctBy { it.id }
 
+    /** Every core's BIOS file names ([CoreDescriptor.biosFiles], folders left out), lowercase: never a game in a ROM folder. */
+    val biosFileNames: Set<String> =
+        all.flatMap { it.biosFiles }.filter { !it.endsWith("/") }.mapTo(HashSet()) { it.substringAfterLast('/').lowercase() }
+
     /** Every console tag that has a core (the keys of the tag map). */
     val tags: Set<String> = byTag.keys
 
