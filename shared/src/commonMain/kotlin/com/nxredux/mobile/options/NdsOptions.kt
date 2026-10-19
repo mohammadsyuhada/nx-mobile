@@ -9,7 +9,7 @@ interface NdsChoice {
 /** [AUTO] is a stored choice only: [resolve] turns it into a concrete layout for the game area before anything is drawn. */
 enum class NdsPortraitLayout(override val value: String, override val label: String) : NdsChoice {
     AUTO("auto", "Auto"), PIP("pip", "Picture in picture"), STACKED("stacked", "Stacked"), SINGLE("single", "Single screen"),
-    LARGE("large", "Large screen");
+    LARGE("large", "Large screen"), SIDE_BY_SIDE("side-by-side", "Side by side");
 
     /**
      * The layout to draw in an [areaWidth] x [areaHeight] game area; never [AUTO]. Auto stacks when the two screens
@@ -119,7 +119,8 @@ object NdsOptions {
             "How the two screens share a portrait screen.\nAuto: stacked when both screens fit the width, else picture in picture.\n" +
                 "Picture in picture: one big, the other small in a corner.\n" +
                 "Stacked: one above the other.\nSingle screen: the big one only.\n" +
-                "Large screen: one big, the other small above or below it.\nSELECT + Left/Right cycles it, or Layout (portrait, controller)\n" +
+                "Large screen: one big, the other small above or below it.\n" +
+                "Side by side: half the width each.\nSELECT + Left/Right cycles it, or Layout (portrait, controller)\n" +
                 "while a controller hides the pad.\n$SPLIT_NOTE",
         ),
         row(

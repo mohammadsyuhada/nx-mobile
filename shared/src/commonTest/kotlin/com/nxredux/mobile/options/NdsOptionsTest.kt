@@ -22,8 +22,8 @@ class NdsOptionsTest {
                 PIP_OPACITY to "100"),
             NdsOptions.table.associate { it.key to it.default },
         )
-        assertEquals(listOf("auto", "pip", "stacked", "single", "large"), FrontendOptions.option(LAYOUT_PORTRAIT)!!.values)
-        assertEquals(listOf("auto", "pip", "stacked", "single", "large"), FrontendOptions.option(LAYOUT_PORTRAIT_CONTROLLER)!!.values)
+        assertEquals(listOf("auto", "pip", "stacked", "single", "large", "side-by-side"), FrontendOptions.option(LAYOUT_PORTRAIT)!!.values)
+        assertEquals(listOf("auto", "pip", "stacked", "single", "large", "side-by-side"), FrontendOptions.option(LAYOUT_PORTRAIT_CONTROLLER)!!.values)
         assertEquals(NdsPortraitLayout.AUTO, NdsSettings().portrait)
         assertTrue("Auto: stacked when both screens fit the width, else picture in picture." in FrontendOptions.option(LAYOUT_PORTRAIT)!!.info)
         assertEquals("Layout (portrait, controller)", FrontendOptions.option(LAYOUT_PORTRAIT_CONTROLLER)!!.label)
@@ -80,7 +80,7 @@ class NdsOptionsTest {
     }
 
     @Test fun rows_cycle_and_show_labels() {
-        assertEquals("large", FrontendOptions.cycle(LAYOUT_PORTRAIT, "auto", -1, emptyList()))
+        assertEquals("side-by-side", FrontendOptions.cycle(LAYOUT_PORTRAIT, "auto", -1, emptyList()))
         assertEquals("auto", FrontendOptions.cycle(LAYOUT_PORTRAIT, "pip", -1, emptyList()))
         assertEquals("Picture in picture", FrontendOptions.option(LAYOUT_PORTRAIT)!!.labelOf("pip"))
         assertEquals("Auto", FrontendOptions.option(LAYOUT_PORTRAIT)!!.labelOf("auto"))
@@ -107,7 +107,7 @@ class NdsOptionsTest {
         assertEquals(NdsPortraitLayout.PIP, NdsPortraitLayout.AUTO.resolve(0f, 0f))
         // A concrete layout is itself whatever the area.
         for (p in NdsOptions.CONCRETE_PORTRAIT) for ((w, h) in listOf(flip, foldCover, 0f to 0f)) assertEquals(p, p.resolve(w, h))
-        assertEquals(listOf(NdsPortraitLayout.PIP, NdsPortraitLayout.STACKED, NdsPortraitLayout.SINGLE, NdsPortraitLayout.LARGE), NdsOptions.CONCRETE_PORTRAIT)
+        assertEquals(listOf(NdsPortraitLayout.PIP, NdsPortraitLayout.STACKED, NdsPortraitLayout.SINGLE, NdsPortraitLayout.LARGE, NdsPortraitLayout.SIDE_BY_SIDE), NdsOptions.CONCRETE_PORTRAIT)
     }
 
     @Test fun the_resolved_portrait_layout_applies_auto_only_where_it_is_stored() {
@@ -129,10 +129,11 @@ class NdsOptionsTest {
         assertEquals(LAYOUT_PORTRAIT to "single", cycle(emptyMap(), flip))            // stacked -> single
         assertEquals(LAYOUT_PORTRAIT to "pip", cycle(emptyMap(), flip, delta = -1))   // stacked -> pip
         assertEquals(LAYOUT_PORTRAIT to "stacked", cycle(emptyMap(), foldCover))      // pip -> stacked
-        assertEquals(LAYOUT_PORTRAIT to "large", cycle(emptyMap(), foldCover, delta = -1))
+        assertEquals(LAYOUT_PORTRAIT to "side-by-side", cycle(emptyMap(), foldCover, delta = -1))
         assertEquals(LAYOUT_PORTRAIT to "stacked", cycle(mapOf(LAYOUT_PORTRAIT to "auto"), foldCover))
         assertEquals(LAYOUT_PORTRAIT to "large", cycle(mapOf(LAYOUT_PORTRAIT to "single"), flip))
-        assertEquals(LAYOUT_PORTRAIT to "pip", cycle(mapOf(LAYOUT_PORTRAIT to "large"), flip))
+        assertEquals(LAYOUT_PORTRAIT to "side-by-side", cycle(mapOf(LAYOUT_PORTRAIT to "large"), flip))
+        assertEquals(LAYOUT_PORTRAIT to "pip", cycle(mapOf(LAYOUT_PORTRAIT to "side-by-side"), flip))   // wraps
         assertEquals(LAYOUT_PORTRAIT to "stacked", cycle(mapOf(LAYOUT_PORTRAIT to "pip"), flip))
     }
 

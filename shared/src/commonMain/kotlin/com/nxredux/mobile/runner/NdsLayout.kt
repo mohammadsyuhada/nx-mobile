@@ -83,6 +83,7 @@ object NdsLayout {
             NdsPortraitLayout.STACKED -> stacked(areaWidth, areaHeight, settings.big)
             NdsPortraitLayout.SINGLE -> listOf(full(settings.big, topFit(areaWidth, areaHeight)))
             NdsPortraitLayout.LARGE -> large(areaWidth, areaHeight, settings, beside = false)
+            NdsPortraitLayout.SIDE_BY_SIDE -> sideBySide(areaWidth, areaHeight, settings.big)
             NdsPortraitLayout.AUTO -> error("AUTO is resolved before layout")
         }
         val laid = if (regions.any { !it.inset && (it.dst.width <= 0f || it.dst.height <= 0f) }) emptyList() else regions
