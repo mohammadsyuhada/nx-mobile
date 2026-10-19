@@ -1797,8 +1797,9 @@ class GameActivity : ComponentActivity() {
                 val pad = composePad { PadThemeProvider(padTheme) { VirtualPad(::onPad, Modifier.fillMaxSize(), analog = true, onStick = ::onStick, profile = padProfile(), useJoystick = PadStickModes[padStickKey, padProfile().stickByDefault], onUseJoystickChange = ::onPadStickMode, onCStick = padCStick(), motion = padMotion(), latched = gcLatched.value, layout = bandLayout) } }
                 addPad(root, pad, FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT, bandPx, Gravity.BOTTOM))
-            } else if (layoutPadHidden) {
+            } else if (layoutPadHidden && names.isEmpty()) {
                 // The clusters over the lower half only: the upper screen (the touch screen, once swapped up) stays free to touch.
+                // A controller hides them, as in landscape.
                 val height = resources.displayMetrics.heightPixels / 2
                 addOverlayClusters(root, height)
                 portraitClusterTop = resources.displayMetrics.heightPixels - height
