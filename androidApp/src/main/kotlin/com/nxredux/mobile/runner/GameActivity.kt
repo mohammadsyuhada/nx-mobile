@@ -687,6 +687,8 @@ class GameActivity : ComponentActivity() {
     private val overlayPadShown = mutableStateOf(false)
     // Whether the current layout was built with the portrait band hidden ([portraitPadHidden]): a change re-lays out.
     private var layoutPadHidden = false
+    // Portrait with the band hidden: the clusters' top, screen px (they cover from there down); null without them.
+    private var portraitClusterTop: Int? = null
     private var tickJob: Job? = null
 
     // ---- Flex mode (tabletop) ----
@@ -1764,6 +1766,7 @@ class GameActivity : ComponentActivity() {
         dpadHat.clear()
         overlayPadShown.value = false   // set again below where the landscape clusters are added
         layoutPadHidden = portraitPadHidden()
+        portraitClusterTop = null
 
         val portrait = !isLandscape(orientation)
         val pads = controllers()
@@ -1796,7 +1799,9 @@ class GameActivity : ComponentActivity() {
                     FrameLayout.LayoutParams.MATCH_PARENT, bandPx, Gravity.BOTTOM))
             } else if (layoutPadHidden) {
                 // The clusters over the lower half only: the upper screen (the touch screen, once swapped up) stays free to touch.
-                addOverlayClusters(root, resources.displayMetrics.heightPixels / 2)
+                val height = resources.displayMetrics.heightPixels / 2
+                addOverlayClusters(root, height)
+                portraitClusterTop = resources.displayMetrics.heightPixels - height
             }
             if (PadOptions.hasPortraitPadRow(layoutTag()) && PadBandRule.keepPadBand(portrait = true, names)) {
                 val hidden = layoutPadHidden
@@ -2601,6 +2606,8 @@ class GameActivity : ComponentActivity() {
             controllerMode = ndsControllerMode(),
             // The same condition applyLayout shows the landscape pad clusters on (no controller, not in touch mode).
             padOverGame = landscape && layoutControllerNames().isEmpty() && !ndsTouchMode,
+            // Portrait with the band hidden: the screen under the clusters takes no touches (the game area starts at the cutout).
+            padCoverTop = portraitClusterTop?.let { (it - cutoutTop).toFloat() } ?: Float.POSITIVE_INFINITY,
         )
     }
 

@@ -234,6 +234,18 @@ class NdsLayoutTest {
         }
     }
 
+    @Test fun portrait_hidden_band_turns_off_touch_on_the_screen_under_the_clusters() {
+        val cover = 1200f   // the clusters' top in a 1080 x 2400 game area: its lower half
+        val bottomLow = NdsLayout.regions(1080f, 2400f, false, NdsSettings(portrait = NdsPortraitLayout.STACKED, big = NdsScreen.TOP), margin, padCoverTop = cover)
+        assertFalse(bottomLow.any { it.touch }, "the touch screen below, under the clusters: no touch")
+        val bottomHigh = NdsLayout.regions(1080f, 2400f, false, NdsSettings(portrait = NdsPortraitLayout.STACKED, big = NdsScreen.BOTTOM), margin, padCoverTop = cover)
+        assertEquals(listOf(NdsScreen.BOTTOM), bottomHigh.filter { it.touch }.map { it.screen }, "swapped up, clear of the clusters: touchable")
+        // Only touch changes; no cover (the band shown) leaves every region as it was.
+        val free = NdsLayout.regions(1080f, 2400f, false, NdsSettings(portrait = NdsPortraitLayout.STACKED, big = NdsScreen.TOP), margin)
+        assertEquals(free.map { it.dst }, bottomLow.map { it.dst })
+        assertTrue(free.any { it.touch })
+    }
+
     @Test fun landscape_single_is_centred() {
         val s = NdsSettings(landscape = NdsLandscapeLayout.SINGLE, big = NdsScreen.TOP)
         val r = NdsLayout.regions(2520f, 1080f, true, s, margin)

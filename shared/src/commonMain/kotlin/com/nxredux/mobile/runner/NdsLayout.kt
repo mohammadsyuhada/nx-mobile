@@ -58,7 +58,8 @@ object NdsLayout {
      * Portrait uses [NdsSettings.controller] in [controllerMode] (a non-clip-on controller dropped the pad band), else
      * [NdsSettings.portrait], with Auto resolved for this area: a new area size (rotation, a fold, the band dropping) decides again.
      * [padOverGame]: the landscape pad clusters are drawn over the game (no controller): no screen takes touches then, the stylus (L2)
-     * stands in.
+     * stands in. [padCoverTop]: portrait with the band hidden, the clusters cover the game area from this y down; a screen
+     * centred below it (the one under the clusters) takes no touches, the one above still does.
      */
     fun regions(
         areaWidth: Float,
@@ -68,6 +69,7 @@ object NdsLayout {
         marginPx: Float,
         controllerMode: Boolean = false,
         padOverGame: Boolean = false,
+        padCoverTop: Float = Float.POSITIVE_INFINITY,
     ): List<NdsRegion> {
         if (areaWidth <= 0f || areaHeight <= 0f) return emptyList()
         val regions = if (landscape) when (settings.landscape) {
@@ -81,7 +83,10 @@ object NdsLayout {
             NdsPortraitLayout.AUTO -> error("AUTO is resolved before layout")
         }
         val laid = if (regions.any { !it.inset && (it.dst.width <= 0f || it.dst.height <= 0f) }) emptyList() else regions
-        return if (padOverGame && landscape) laid.map { it.copy(touch = false) } else laid
+        return when {
+            landscape -> if (padOverGame) laid.map { it.copy(touch = false) } else laid
+            else -> laid.map { if (it.touch && it.dst.y + it.dst.height / 2f >= padCoverTop) it.copy(touch = false) else it }
+        }
     }
 
     /** The centre of DS pixel ([dsX], [dsY]) of [region]'s screen, in game-area pixels. */
