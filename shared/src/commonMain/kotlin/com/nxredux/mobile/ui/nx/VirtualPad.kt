@@ -1300,13 +1300,27 @@ internal fun padShoulders(side: PadSide, profile: PadProfile = PadProfile.STANDA
 
 /** [buttons] (from [padShoulders]) in a row, 8 dp apart: the bumpers L1 / R1 at [bumper] size, the triggers at [trigger]. */
 @Composable
-private fun ShoulderButtons(buttons: List<NxButton>, profile: PadProfile, bumper: Dp, trigger: Dp, emit: (PadEvent) -> Unit, latched: Set<NxButton>) {
+private fun ShoulderButtons(
+    buttons: List<NxButton>, profile: PadProfile, bumper: Dp, trigger: Dp, emit: (PadEvent) -> Unit, latched: Set<NxButton>,
+    overGame: Boolean = false,
+) {
     buttons.forEachIndexed { i, button ->
         if (i > 0) Spacer(Modifier.width(8.dp))
         val size = if (button == NxButton.L1 || button == NxButton.R1) bumper else trigger
-        PadButton(button, size, emit, shape = PadStyle.pillShape, label = profile.label(button), lit = button in latched)
+        // Over the game the shoulders are big see-through discs: the label follows the disc, not the small pill size.
+        val font = if (overGame) (size.value * SHOULDER_LABEL_OF_DISC).sp else LocalPadLabelSize.current
+        PadButton(button, size, emit, shape = PadStyle.pillShape, label = profile.label(button), fontSize = font, lit = button in latched)
     }
 }
+
+/**
+ * How far the right shoulders drop beside the C-stick cluster, in units: the cluster's C_STICK_LANDSCAPE_DROP less the
+ * part of it the d-pad's box makes up on the left (measured on the Fold's cover screen: 0.5 put R / ZR 0.09 low).
+ */
+private const val C_STICK_SHOULDER_DROP = 0.41f
+
+/** An over-the-game shoulder label's size as a share of its disc ([ShoulderButtons]). */
+private const val SHOULDER_LABEL_OF_DISC = 0.36f
 
 /**
  * The left cluster's inset from its screen edge, in units. Over the game it mirrors the right cluster's
@@ -1424,7 +1438,7 @@ fun VirtualPadLeft(
                         }
                         PadRow.SHOULDERS -> PadGroupBox(PadGroup.L_SHOULDERS, Modifier.padding(start = nudge)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                ShoulderButtons(padShoulders(PadSide.LEFT, profile), profile, bumper, trigger, emit, latched)
+                                ShoulderButtons(padShoulders(PadSide.LEFT, profile), profile, bumper, trigger, emit, latched, overGame)
                             }
                         }
                         PadRow.CLUSTER -> PadGroupBox(PadGroup.DPAD, Modifier.padding(start = nudge)) {
@@ -1490,15 +1504,15 @@ fun VirtualPadRight(
                                 }
                             }
                         }
-                        // With the C-stick the face cluster is C_STICK_LANDSCAPE_DROP taller, which would lift the shoulders
-                        // above the left cluster's: drawn that much lower, level with L / ZL (right of the stick, above X).
+                        // With the C-stick the face cluster is taller, which would lift the shoulders above the left cluster's:
+                        // drawn lower by the difference, level with L / ZL (right of the stick, above X).
                         PadRow.SHOULDERS -> PadGroupBox(
                             PadGroup.R_SHOULDERS,
                             Modifier.padding(end = nudge)
-                                .offset(y = if (profile.cStick && onCStick != null) unit * C_STICK_LANDSCAPE_DROP else 0.dp),
+                                .offset(y = if (profile.cStick && onCStick != null) unit * C_STICK_SHOULDER_DROP else 0.dp),
                         ) {
                             Row(horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                                ShoulderButtons(padShoulders(PadSide.RIGHT, profile), profile, bumper, trigger, emit, latched)
+                                ShoulderButtons(padShoulders(PadSide.RIGHT, profile), profile, bumper, trigger, emit, latched, overGame)
                             }
                         }
                         PadRow.CLUSTER -> PadGroupBox(PadGroup.FACE, Modifier.padding(end = nudge)) {
