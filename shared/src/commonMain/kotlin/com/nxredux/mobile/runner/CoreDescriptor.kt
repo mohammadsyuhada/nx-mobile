@@ -18,6 +18,7 @@ data class VulkanSwitch(
 data class CoreDescriptor(
     /** minarch's core name (the handheld `.so` basename cut at its last `_`); keys the state/config dirs. */
     val id: String,
+    /** The core's file in jniLibs: lib-prefixed, since Android 14 and older extract only lib*.so at install. */
     val libraryFileName: String,
     val extensions: Set<String>,
     val loadMode: LoadMode = LoadMode.FILE_DESCRIPTOR,

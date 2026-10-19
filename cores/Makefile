@@ -638,7 +638,7 @@ endif
 # options-$(1): probe the shipped $(JNILIBS_DIR) copy on ADB_SERIAL into $(OPTIONS_DIR)/<OPTIONS_ID>.json, with
 # PROBE_ROM_$(1) as its game when set. Deliberately no core prerequisite: a probe never rebuilds or re-patches a core.
 options-$(1): nxprobe
-	SYSTEM_DIR=$$(ASSETS_DIR) NXPROBE=$$(OUTPUT_ROOT)/nxprobe PROBE_SKIP_INIT=$$(PROBE_SKIP_INIT_$(1)) sh probe/pull-options.sh "$$(ADB)" "$$(ADB_SERIAL)" $$(JNILIBS_DIR)/$$($1_CORE) $$($1_OPTIONS_ID) $$(OPTIONS_DIR)$$(if $$(strip $$(PROBE_ROM_$(1))), "$$(PROBE_ROM_$(1))")
+	SYSTEM_DIR=$$(ASSETS_DIR) NXPROBE=$$(OUTPUT_ROOT)/nxprobe PROBE_SKIP_INIT=$$(PROBE_SKIP_INIT_$(1)) sh probe/pull-options.sh "$$(ADB)" "$$(ADB_SERIAL)" $$(JNILIBS_DIR)/lib$$($1_CORE) $$($1_OPTIONS_ID) $$(OPTIONS_DIR)$$(if $$(strip $$(PROBE_ROM_$(1))), "$$(PROBE_ROM_$(1))")
 .PHONY: $(1) clone-$(1) status-$(1) clean-$(1) distclean-$(1) options-$(1)
 endif
 endef
@@ -667,9 +667,11 @@ check-licenses:
 	  test -s $(OUTPUT_ROOT)/licenses/$$c.txt || test -s ../LICENSES/$$c.txt || missing="$$missing $$c"; \
 	done; \
 	if [ -n "$$missing" ]; then echo "check-licenses: no licence for$$missing" >&2; exit 1; fi
+# Each core goes into jniLibs as lib<artifact>: Android 14 and older extract only lib*.so at install, so an unprefixed
+# core is missing from nativeLibraryDir and fails to dlopen there.
 install: verify check-licenses
 	mkdir -p $(JNILIBS_DIR) $(ASSETS_DIR)
-	cp $(OUTPUT_ROOT)/*.so $(JNILIBS_DIR)/
+	for f in $(OUTPUT_ROOT)/*.so; do cp "$$f" $(JNILIBS_DIR)/lib$$(basename "$$f"); done
 	test ! -d $(OUTPUT_ROOT)/system || cp -R $(OUTPUT_ROOT)/system/. $(ASSETS_DIR)/
 
 # nxprobe for the device (arm64 PIE, 16 KB pages); the host build and tests are make -C probe test.

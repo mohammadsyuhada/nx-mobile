@@ -7,8 +7,8 @@ class CoreLoadFailureTest {
     @Test fun the_loaders_reason_is_shown() {
         val recent = listOf("W some core warning", "E core load: dlopen failed: library \"libz.so\" not found")
         assertEquals(
-            "The core mgba_libretro_android.so could not be loaded: dlopen failed: library \"libz.so\" not found",
-            CoreLoadFailure.message("mgba_libretro_android.so", recent),
+            "The core libmgba_libretro_android.so could not be loaded: dlopen failed: library \"libz.so\" not found",
+            CoreLoadFailure.message("libmgba_libretro_android.so", recent),
         )
     }
 

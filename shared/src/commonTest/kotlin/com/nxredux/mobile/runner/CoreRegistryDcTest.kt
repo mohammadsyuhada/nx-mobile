@@ -14,7 +14,7 @@ class CoreRegistryDcTest {
 
     @Test fun dc_runs_flycast() {
         assertEquals("flycast", dc.id)
-        assertEquals("flycast_libretro_android.so", dc.libraryFileName)
+        assertEquals("libflycast_libretro_android.so", dc.libraryFileName)
         assertEquals(setOf("chd", "cdi", "gdi", "cue", "m3u", "zip", "7z"), dc.extensions)
         assertEquals(LoadMode.FILE_DESCRIPTOR, dc.loadMode)   // flycast reads every image through the libretro VFS
         assertEquals("dc", dc.biosSubdir)                        // flycast looks for its BIOS in <system>/dc/

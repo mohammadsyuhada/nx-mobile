@@ -3,7 +3,7 @@
 #        verify.sh --options-only   (only the option-table warnings below; gmake verify-options)
 # Exit 1 if any file is not AArch64 or has a PT_LOAD segment aligned below 0x4000 (16 KB).
 # Also warns (never fails) when the option table in $OPTIONS_DIR of a core shipped in $JNILIBS_DIR is missing or was
-# probed from another build. OPTIONS_IDS ("<artifact>.so=<coreId> ...") comes from the Makefile; an artifact not in it
+# probed from another build (jniLibs holds lib<artifact>.so). OPTIONS_IDS ("<artifact>.so=<coreId> ...") comes from the Makefile; an artifact not in it
 # maps to its name without _libretro_android.so.
 set -u
 options_only=0
@@ -28,9 +28,10 @@ for f in "$@"; do
 done
 
 # Option tables (gmake options): <coreId>.json carries the soSha256 of the shipped core it was probed from.
-for f in "$JNILIBS_DIR"/*_libretro_android.so; do
+for f in "$JNILIBS_DIR"/lib*_libretro_android.so; do
   [ -f "$f" ] || continue
   base=$(basename "$f")
+  base=${base#lib}   # make install adds the lib prefix; OPTIONS_IDS names the artifact
   core=${base%_libretro_android.so}
   for pair in $OPTIONS_IDS; do
     [ "${pair%%=*}" = "$base" ] && core=${pair#*=}

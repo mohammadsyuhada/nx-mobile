@@ -11,7 +11,7 @@ class CoreRegistry3dsTest {
 
     @Test fun three_ds_runs_azahar() {
         assertEquals("azahar", n3ds.id)
-        assertEquals("azahar_libretro_android.so", n3ds.libraryFileName)
+        assertEquals("libazahar_libretro_android.so", n3ds.libraryFileName)
         assertEquals(setOf("3ds", "3dsx", "z3dsx", "elf", "axf", "cci", "zcci", "cxi", "zcxi", "app"), n3ds.extensions)
         assertEquals(LoadMode.FILE_DESCRIPTOR, n3ds.loadMode)   // through the runner's VFS (azahar.patch: stat asks the VFS)
         assertEquals(emptyList(), n3ds.biosFiles)           // keyblob and shared font are built in
