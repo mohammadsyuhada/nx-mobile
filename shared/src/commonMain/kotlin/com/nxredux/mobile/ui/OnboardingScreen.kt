@@ -48,7 +48,7 @@ fun OnboardingScreen(
             // The formats, the pad and its theme are value rows ("< value >" while selected), Continue a full row under them.
             rowKind = if (screen.step in VALUE_ROW_STEPS) NxRowKind.OPTIONS else NxRowKind.PILL,
             actionRows = if (screen.step in VALUE_ROW_STEPS) 1 else 0, actionsAtTop = screen.step in VALUE_ROW_STEPS,
-            titleActions = if (screen.step in TITLE_ACTION_STEPS) 1 else 0,   // the last row (Skip) at the title's right
+            titleActions = if (titleAction(screen)) 1 else 0,   // the last row (Skip) at the title's right
             landscapeWidth = NxSetupLandscapeWidth,
         )
     }
@@ -63,3 +63,10 @@ private val VALUE_ROW_STEPS = setOf(OnboardingStep.SAVE_FORMATS, OnboardingStep.
 
 /** Steps of pill rows whose last row (Skip, or a lone Continue) sits at the title's right. */
 private val TITLE_ACTION_STEPS = setOf(OnboardingStep.ARTWORK, OnboardingStep.RA_SIGN_IN, OnboardingStep.RA_DOWNLOAD)
+
+/**
+ * [screen]'s last row sits at the title's right: on [TITLE_ACTION_STEPS], and on Bring your saves while it offers the
+ * imports (its Skip; an import's summary keeps Continue under the skipped files).
+ */
+private fun titleAction(screen: Screen.Onboarding): Boolean =
+    screen.step in TITLE_ACTION_STEPS || (screen.step == OnboardingStep.IMPORT_SAVES && screen.rows.lastOrNull()?.label == "Skip")
