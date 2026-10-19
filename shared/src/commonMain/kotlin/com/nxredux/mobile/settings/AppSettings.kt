@@ -73,9 +73,8 @@ enum class VerticalListAlignment {
 }
 
 /**
- * Layouts → Consoles controller: what shows behind the Consoles tab. CONTROLLER (the default): each console's controller
- * (List and Carousel). BACKGROUND: no controller; in the List style the selected console's own `.media/bg.png`.
- * NONE: neither, a plain list on black. Stored by [name] ([fromStored]).
+ * Layouts → Consoles background: what shows behind the Consoles tab (List and Carousel). CONTROLLER (the default): each
+ * console's controller. BACKGROUND: no controller; the selected console's own `.media/bg.png`. NONE: neither, plain black. Stored by [name] ([fromStored]).
  */
 enum class ConsoleArt(val label: String) {
     CONTROLLER("Controller"), BACKGROUND("Background"), NONE("None");
@@ -249,7 +248,7 @@ interface AppSettings {
     var showRecentHint: Boolean
     var showSearchHint: Boolean
     var showNetplayHint: Boolean
-    /** Layouts → Consoles controller ([ConsoleArt.DEFAULT] Controller). */
+    /** Layouts → Consoles background ([ConsoleArt.DEFAULT] Controller). */
     var consoleArt: ConsoleArt
     /** Layouts → List art ([GameListArt.DEFAULT] Screenshot). */
     var gameListArt: GameListArt

@@ -3272,7 +3272,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         refreshSettings()
     }
 
-    /** Layouts → Consoles controller: steps through Controller, Background and None (LEFT back, RIGHT and A forward), wrapping. */
+    /** Layouts → Consoles background: steps through Controller, Background and None (LEFT back, RIGHT and A forward), wrapping. */
     private fun cycleConsoleArt(step: Int) {
         deps.settings.consoleArt = deps.settings.consoleArt.step(step)
         refreshSettings()
@@ -3432,7 +3432,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * Appearance's, Layouts' or Controls' "Reset to defaults" (NX Redux settings.c): the page's own options back to their
      * defaults. Appearance: Pad theme, Accent, Secondary accent. Layouts: every tab's style and orientation
      * unset (so [MenuStyles.styleOf] and [MenuStyles.orientationOf] give theirs), the game lists', the tabs', shelves'
-     * and hints' Show/Hide, Consoles controller, List art, Backdrop art, Page title, Button hints, Extra info, Home stats,
+     * and hints' Show/Hide, Consoles background, List art, Backdrop art, Page title, Button hints, Extra info, Home stats,
      * Layout options, Achievements panel and Game Switcher layout. Controls: Pad vibration, Game rumble and every pad
      * layout. At once, no confirm, as NX Redux. Through the settings' own setters, then the page is republished like any
      * cycled row's (App re-reads the theme, accent and scale with it), the highlight kept on the reset row, which the
@@ -3544,8 +3544,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             SettingsRow(SettingsKind.HOME_STATS, "Home stats", shown(s.menuHomeStats)).takeIf { on && c == MenuCategory.HOME },
             SettingsRow(SettingsKind.MENU_ORIENTATION, "${c.label} orientation", orientationLabel(MenuStyles.orientationOf(s.menuOrientations, c)), category = c)
                 .takeIf { on && c != MenuCategory.HOME && style == MenuStyle.CAROUSEL },
-            SettingsRow(SettingsKind.CONTROLLER_ART, "Consoles controller", s.consoleArt.label, category = c)
-                .takeIf { on && c == MenuCategory.CONSOLES && style == MenuStyle.LIST },   // List only; the Carousel keeps the controller
+            SettingsRow(SettingsKind.CONTROLLER_ART, "Consoles background", s.consoleArt.label, category = c)
+                .takeIf { on && c == MenuCategory.CONSOLES && style != MenuStyle.GRID },   // List and Carousel; the Grid has no controllers
         )
     }
 

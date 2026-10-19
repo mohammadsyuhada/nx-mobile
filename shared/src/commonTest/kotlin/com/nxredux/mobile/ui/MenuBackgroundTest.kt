@@ -47,7 +47,7 @@ class MenuBackgroundTest {
         assertEquals(MenuBackground.Picture(gameBackground(e, portrait = true)!!), menuBackground(MenuStyle.LIST, MenuCategory.HOME, MainRow.Pin(e), portrait = true))
         assertEquals(MenuBackground.Picture(gameBackground(e, portrait = false)!!), menuBackground(MenuStyle.LIST, MenuCategory.HOME, MainRow.Shelf(e, HomeShelf.NEW)))
         assertEquals(MenuBackground.Logo(toolIcon(ToolKind.SETTINGS)), menuBackground(MenuStyle.LIST, MenuCategory.HOME, tool))
-        // The Home background is not the consoles' controller art: Layouts → Controller off keeps it.
+        // The Home background is not the consoles' controller art: Layouts → Consoles background off keeps it.
         assertIs<MenuBackground.Picture>(menuBackground(MenuStyle.LIST, MenuCategory.HOME, cont, consoleArt = ConsoleArt.NONE))
         assertEquals(MenuBackground.Plain, menuBackground(MenuStyle.LIST, MenuCategory.HOME, MainRow.PickAGame))
         assertEquals(MenuBackground.Plain, menuBackground(MenuStyle.LIST, MenuCategory.HOME, null))
@@ -89,11 +89,17 @@ class MenuBackgroundTest {
         assertEquals(MenuBackground.Plain, menuBackground(MenuStyle.LIST, MenuCategory.CONSOLES, null))
     }
 
-    @Test fun background_shows_the_consoles_own_bg_in_list_only() {
+    @Test fun background_shows_the_consoles_own_bg_in_list_and_carousel() {
         val withBg = md.copy(bgRef = ContentRef("Roms/Sega Genesis (MD)/.media/bg.png"))
         assertEquals(MenuBackground.Picture("Roms/Sega Genesis (MD)/.media/bg.png"), menuBackground(MenuStyle.LIST, MenuCategory.CONSOLES, MainRow.System(withBg), consoleArt = ConsoleArt.BACKGROUND))
         assertEquals(MenuBackground.Plain, menuBackground(MenuStyle.LIST, MenuCategory.CONSOLES, MainRow.System(md), consoleArt = ConsoleArt.BACKGROUND))
-        assertEquals(MenuBackground.Plain, menuBackground(MenuStyle.CAROUSEL, MenuCategory.CONSOLES, MainRow.System(withBg), consoleArt = ConsoleArt.BACKGROUND))
+        // Carousel: the Backdrop game list's picture; plain without a bg.png, on None and on Controller (the tiles carry the pads).
+        assertEquals(MenuBackground.Backdrop("Roms/Sega Genesis (MD)/.media/bg.png"), menuBackground(MenuStyle.CAROUSEL, MenuCategory.CONSOLES, MainRow.System(withBg), consoleArt = ConsoleArt.BACKGROUND))
+        assertEquals(MenuBackground.Plain, menuBackground(MenuStyle.CAROUSEL, MenuCategory.CONSOLES, MainRow.System(md), consoleArt = ConsoleArt.BACKGROUND))
+        for (art in listOf(ConsoleArt.NONE, ConsoleArt.CONTROLLER)) {
+            assertEquals(MenuBackground.Plain, menuBackground(MenuStyle.CAROUSEL, MenuCategory.CONSOLES, MainRow.System(withBg), consoleArt = art), "$art")
+        }
+        assertEquals(MenuBackground.Plain, menuBackground(MenuStyle.GRID, MenuCategory.CONSOLES, MainRow.System(withBg), consoleArt = ConsoleArt.BACKGROUND))
         assertEquals(MenuBackground.Plain, menuBackground(MenuStyle.LIST, MenuCategory.CONSOLES, MainRow.System(withBg), consoleArt = ConsoleArt.NONE))
         assertEquals(MenuBackground.Pad(consolePad("MD")!!), menuBackground(MenuStyle.LIST, MenuCategory.CONSOLES, MainRow.System(withBg)))
     }

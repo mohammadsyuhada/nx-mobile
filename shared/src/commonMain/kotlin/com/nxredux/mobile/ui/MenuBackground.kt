@@ -9,29 +9,33 @@ import com.nxredux.mobile.ui.nx.consolePad
 import com.nxredux.mobile.ui.nx.toolIcon
 import org.jetbrains.compose.resources.DrawableResource
 
-/** What the main menu draws behind a tab (List; Grid and Carousel are plain). */
+/** What the main menu draws behind a tab (List, and a Carousel Consoles tab; Grid and the other Carousels are plain). */
 sealed interface MenuBackground {
     /**
      * List Home: the selected game's picture; List Consoles on Background: the console's bg.png ([url]), drawn as a
      * game list's List background.
      */
     data class Picture(val url: String) : MenuBackground
+    /** Carousel Consoles on Background: the console's bg.png ([url]), drawn as the Backdrop game list's picture. */
+    data class Backdrop(val url: String) : MenuBackground
     /**
      * Consoles: the selected console's logo, large and dimmed on the right (a console without controller art). List
      * Home: the selected pinned tool's icon, the same way.
      */
     data class Logo(val res: DrawableResource) : MenuBackground
-    /** Consoles: the selected console's controller alone, zoomed past the right edge and turned (Layouts → Controller). */
+    /** Consoles: the selected console's controller alone, zoomed past the right edge and turned (Layouts → Consoles background). */
     data class Pad(val pad: ConsolePad) : MenuBackground
-    /** Grid / Carousel Home, Collections, Tools, every tab outside List, Consoles on None (or Background without a bg.png): plain black. */
+    /** Grid / Carousel Home, Collections, Tools, Grid Consoles, Consoles on None (or Background without a bg.png), a Carousel on Controller: plain black. */
     data object Plain : MenuBackground
 }
 
 /**
  * The background behind the highlighted [row] of [category]'s tab drawn in [style]. A List Consoles tab by Layouts →
- * Consoles controller ([consoleArt]): CONTROLLER, the selected console's controller ([consolePad]) or its logo;
+ * Consoles background ([consoleArt]): CONTROLLER, the selected console's controller ([consolePad]) or its logo;
  * BACKGROUND, the console's own `.media/bg.png` ([SystemFolder.bgRef]: the row's default tag's, else any of its
- * systems'), drawn as a game list's picture, else plain black; NONE, plain black.
+ * systems'), drawn as a game list's picture, else plain black; NONE, plain black. A Carousel Consoles tab: BACKGROUND,
+ * that bg.png as the Backdrop game list's picture ([MenuBackground.Backdrop]); CONTROLLER (the row's tiles carry the
+ * controllers) and NONE, plain black.
  * A List Home shows the selected game's picture (Continue's resume frame first, as its card's [continuePictures]; a
  * pinned or shelf game's [gameBackground] for a [portrait] or landscape screen) or a pinned tool's icon, as the
  * handheld's List Home; Pick a game is plain. Grid and Carousel Home are plain whatever is selected (the dashboard
@@ -40,20 +44,28 @@ sealed interface MenuBackground {
 internal fun menuBackground(
     style: MenuStyle, category: MenuCategory, row: MainRow?, consoleArt: ConsoleArt = ConsoleArt.CONTROLLER, portrait: Boolean = false,
 ): MenuBackground {
+    if (style == MenuStyle.CAROUSEL && category == MenuCategory.CONSOLES) {
+        val system = row as? MainRow.System
+        return if (system != null && consoleArt == ConsoleArt.BACKGROUND) consoleBg(system)?.let(MenuBackground::Backdrop) ?: MenuBackground.Plain
+        else MenuBackground.Plain
+    }
     if (style != MenuStyle.LIST) return MenuBackground.Plain
     if (category == MenuCategory.HOME) return listHomeBackground(row, portrait)
     val system = row as? MainRow.System ?: return MenuBackground.Plain
     return when (consoleArt) {
         ConsoleArt.NONE -> MenuBackground.Plain
-        ConsoleArt.BACKGROUND -> (system.backdrop.bgRef ?: system.systems.firstNotNullOfOrNull { it.bgRef })
-            ?.let { MenuBackground.Picture(it.value) } ?: MenuBackground.Plain
+        ConsoleArt.BACKGROUND -> consoleBg(system)?.let(MenuBackground::Picture) ?: MenuBackground.Plain
         // A merged row (SFC + SUPA) falls back to its other tags' art.
         ConsoleArt.CONTROLLER -> system.systems.firstNotNullOfOrNull { consolePad(it.tag) }?.let { MenuBackground.Pad(it) }
             ?: system.systems.firstNotNullOfOrNull { consoleLogo(it.tag) }?.let(MenuBackground::Logo) ?: MenuBackground.Plain
     }
 }
 
-/** [menuBackground] for a List Home's [row] (Layouts → Controller is the consoles' and does not apply). */
+/** A console row's own `.media/bg.png`: the row's default tag's, else any of its systems'. */
+private fun consoleBg(system: MainRow.System): String? =
+    (system.backdrop.bgRef ?: system.systems.firstNotNullOfOrNull { it.bgRef })?.value
+
+/** [menuBackground] for a List Home's [row] (Layouts → Consoles background is the consoles' and does not apply). */
 private fun listHomeBackground(row: MainRow?, portrait: Boolean): MenuBackground {
     val url = when (row) {
         is MainRow.Continue -> continuePictures(row.resume.previewPath, row.entry).firstOrNull()

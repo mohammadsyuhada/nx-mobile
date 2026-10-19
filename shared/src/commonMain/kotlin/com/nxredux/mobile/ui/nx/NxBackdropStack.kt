@@ -75,7 +75,7 @@ fun NxBackdropStack(
             .centredIn(maxHeight.value)
         if (g.slotW <= 1f || g.slotH <= 1f) return@BoxWithConstraints
         // Consoles: each logo's height as drawn in its slot, so the step to the next one is from the logo and count drawn;
-        // with its controller (Layouts → Controller), the selection's step is from the pad as drawn ([withPad]).
+        // with its controller (Layouts → Consoles background), the selection's step is from the pad as drawn ([withPad]).
         val reaches = if (slot != BackdropSlot.LOGO) null else tiles.map { t ->
             val logo = t as? GridTile.Logo
             val res = logo?.res
