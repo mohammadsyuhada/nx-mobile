@@ -98,9 +98,11 @@ class FakeLoggedArt(private val paths: MutableSet<String>) : LoggedArt {
     override suspend fun remove(path: String) { paths -= path }
 }
 
-class FakeHasher(var result: Pair<Long, Long>? = 0x1234L to 100L) : RomHasher {
+class FakeHasher(var result: Pair<Long, Long>? = 0x1234L to 100L, var inZip: Pair<Long, Long>? = 0x5678L to 200L) : RomHasher {
     val asked = mutableListOf<ContentRef>()
+    val askedInZip = mutableListOf<ContentRef>()
     override suspend fun crc32AndSize(rom: ContentRef): Pair<Long, Long>? { asked += rom; return result }
+    override suspend fun crc32AndSizeInZip(zip: ContentRef): Pair<Long, Long>? { askedInZip += zip; return inZip }
 }
 
 /** The Android games' screenshots in memory; a stored one's ref is `file:///art/<package>.png`. [fail]: writes fail. */

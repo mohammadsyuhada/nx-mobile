@@ -52,6 +52,8 @@ class ScreenScraperSource(
          * as its answer can only be a miss that costs a quota request.
          */
         private val NOT_HASHED = DiscSheet.EXTENSIONS + "chd"
+        /** Arcade systems (a DC zip/7z refines to 75): a set's archive is the game, its own CRC the one to send. */
+        private val ARCADE_IDS = setOf(75, 6, 7, 8, 142)
     }
 
     override val id = SourceId.SS
@@ -195,18 +197,23 @@ class ScreenScraperSource(
 
     /**
      * Try 1 by name; try 2 with CRC + size when try 1 finds nothing (skipped when the ROM can't be hashed, and for a
-     * sheet or container ([NOT_HASHED]): its CRC names no game).
+     * sheet or container ([NOT_HASHED]): its CRC names no game). A console game's zip sends the ROM inside it; its 7z
+     * (not read) skips try 2. An arcade set's archive is the game itself and is hashed whole.
      */
     private suspend fun lookup(ref: LibraryGameRef, systemId: Int): GameLookup.Found? {
         val a = auth()
         found(api(ScraperRequest.gameInfo(a, ref.fileName, systemId)))?.let { return it }
-        if (ref.fileName.substringAfterLast('.', "").lowercase() in NOT_HASHED) return null
-        val (crc, size) = hash(ref)?.takeIf { it.second <= HASH_LIMIT } ?: return null
+        val ext = ref.fileName.substringAfterLast('.', "").lowercase()
+        if (ext in NOT_HASHED) return null
+        val inside = ext == "zip" && systemId !in ARCADE_IDS
+        if (ext == "7z" && systemId !in ARCADE_IDS) return null
+        val (crc, size) = hash(ref, inside)?.takeIf { it.second <= HASH_LIMIT } ?: return null
         return found(api(ScraperRequest.gameInfo(a, ref.fileName, systemId, crc, size)))
     }
 
-    private suspend fun hash(ref: LibraryGameRef): Pair<Long, Long>? =
-        try { hasher.crc32AndSize(ref.rom) } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+    private suspend fun hash(ref: LibraryGameRef, inZip: Boolean): Pair<Long, Long>? = try {
+        if (inZip) hasher.crc32AndSizeInZip(ref.rom) else hasher.crc32AndSize(ref.rom)
+    } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
 
     private fun found(r: HttpResult): GameLookup.Found? =
         ScraperResponse.parseGame(r.status, r.body?.decodeToString()) as? GameLookup.Found
