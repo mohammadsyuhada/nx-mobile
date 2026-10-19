@@ -64,4 +64,13 @@ class RzipTest {
         val hugeChunk = header.copyOf().also { it[8] = -1; it[9] = -1; it[10] = -1; it[11] = 0x7F }
         assertNull(Rzip.decode(hugeChunk))
     }
+
+    @Test fun raw_size_reads_the_header() {
+        val raw = res("big.raw")
+        val enc = Rzip.encode(raw)
+        assertEquals(raw.size.toLong(), Rzip.rawSize(enc.copyOf(20)))
+        assertNull(Rzip.rawSize(raw.copyOf(20)))
+        assertNull(Rzip.rawSize(enc.copyOf(19)))
+        assertNull(Rzip.rawSize(enc.copyOf(20).also { it[6] = 2 }))   // another version: read raw, as decode does
+    }
 }

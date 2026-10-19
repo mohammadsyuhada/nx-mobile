@@ -233,9 +233,9 @@ class SaveImporter(
     /**
      * Lands the state [e] (file [name], wanted in slot [wanted]) in [dir] without touching a phone state: every state
      * there whose name parses to [stem], in any format, holds its slot. Bytes some of them already hold (RZIP decoded on
-     * both sides) are [ImportAction.IDENTICAL]; else it goes to [StateNames.place]'s slot, named [nameFor] it, and
-     * [onPlaced] is told the slot. [reencode] writes the decoded bytes in [naming]'s State compression; else they land as
-     * they came. Throws [NoFreeSlot] when every slot is taken, anything else when it could not be copied.
+     * both sides; a phone state of another decoded size is never read) are [ImportAction.IDENTICAL]; else it goes to
+     * [StateNames.place]'s slot, named [nameFor] it, and [onPlaced] is told the slot. [reencode] writes the decoded bytes
+     * in [naming]'s State compression (a plain file bound for a plain format lands untouched); else they land as they came. Throws [NoFreeSlot] when every slot is taken, anything else when it could not be copied.
      */
     private fun takeState(
         e: ImportEntry, dir: File, name: String, stem: String, wanted: Int, reencode: Boolean,
@@ -246,14 +246,26 @@ class SaveImporter(
         try {
             var written = e.open().use { input -> tmp.outputStream().use { input.copyTo(it) } }
             check(e.size == null || written == e.size) { "short copy of $name: $written of ${e.size} bytes" }
-            val raw = Rzip.decode(tmp.readBytes()) ?: error("$name: malformed RZIP")
+            // States can be 100+ MB (Dolphin): sizes rule a phone state out unread, two plain files compare streaming, and
+            // the incoming bytes are held only when an RZIP side or a re-encode needs them.
+            val packed = rzipSize(tmp)
+            val size = packed ?: tmp.length()
+            val raw by lazy { Rzip.decode(tmp.readBytes()) ?: error("$name: malformed RZIP") }
             val taken = dir.listFiles().orEmpty().filter { it.isFile }
                 .mapNotNull { f -> StateNames.parse(f.name)?.takeIf { it.stem == stem }?.let { f to it.slot } }
-            if (taken.any { (f, _) -> Rzip.decode(f.readBytes())?.contentEquals(raw) == true }) return ImportAction.IDENTICAL
+            val duplicate = taken.any { (f, _) ->
+                val phonePacked = rzipSize(f)
+                when {
+                    (phonePacked ?: f.length()) != size -> false
+                    packed == null && phonePacked == null -> sameContent(tmp, f)
+                    else -> Rzip.decode(f.readBytes())?.contentEquals(raw) == true
+                }
+            }
+            if (duplicate) return ImportAction.IDENTICAL
             val slot = StateNames.place(wanted, taken.map { it.second }.toSet()) ?: throw NoFreeSlot()
             val target = File(dir, nameFor(slot))
             check(!target.exists()) { "${target.name} is taken" }
-            if (reencode) {
+            if (reencode && (packed != null || naming.stateFormat.compressed)) {   // plain into a plain format: as it came
                 val bytes = if (naming.stateFormat.compressed) Rzip.encode(raw) else raw
                 tmp.writeBytes(bytes)
                 written = bytes.size.toLong()
@@ -264,6 +276,14 @@ class SaveImporter(
         } finally {
             tmp.delete()
         }
+    }
+
+    /** The decoded size [f]'s RZIP header claims ([Rzip.rawSize]); null for a plain file. Reads 20 bytes at most. */
+    private fun rzipSize(f: File): Long? {
+        if (f.length() < RZIP_HEADER) return null
+        val header = ByteArray(RZIP_HEADER)
+        f.inputStream().use { if (fill(it, header) < RZIP_HEADER) return null }
+        return Rzip.rawSize(header)
     }
 
     /** Every slot of a state's game is taken. */
@@ -395,6 +415,7 @@ class SaveImporter(
 
     private companion object {
         const val BLOCK = 64 * 1024
+        const val RZIP_HEADER = 20
         /** Where slot pictures wait during a run, under the root; removed when the run ends. */
         const val STAGING = ".userdata/${NxPaths.PLATFORM}/.import-staging"
     }

@@ -557,4 +557,38 @@ class SaveImportTest {
         assertEquals(ImportSummary(ignored = 4), summary)
         assertEquals(emptyList<String>(), sd.list()!!.toList())
     }
+
+    /** A phone state whose size can't match is never opened: an unreadable one would otherwise fail the import. */
+    @Test fun a_phone_state_of_another_size_is_never_read() {
+        val src = tmp.newFolder("card"); val sd = tmp.newFolder("sd")
+        file(src, "$states/X.state", "incoming state")
+        val mine = file(sd, "$states/X.state", "mine")
+        assertTrue(mine.setReadable(false))
+        try {
+            org.junit.Assume.assumeFalse(mine.canRead())   // root reads anything
+            val summary = SaveImporter(sd).run(DirImportFiles(src))
+            assertEquals(ImportSummary(states = 1), summary)
+            assertEquals("incoming state", File(sd, "$states/X.state1").readText())
+        } finally {
+            mine.setReadable(true)
+        }
+    }
+
+    @Test fun a_large_plain_duplicate_is_already_here() {
+        val src = tmp.newFolder("card"); val sd = tmp.newFolder("sd")
+        val big = ByteArray(300 * 1024).also { java.util.Random(3).nextBytes(it) }
+        bytes(src, "$states/X.state3", big)
+        bytes(sd, "$states/X.state", big)
+        bytes(sd, "$states/X.state1", big.copyOf().also { it[big.size - 1] = (it[big.size - 1] + 1).toByte() })   // same size, last byte differs
+        val summary = SaveImporter(sd).run(DirImportFiles(src))
+        assertEquals(ImportSummary(identical = 1), summary)
+        assertEquals(setOf("X.state", "X.state1"), File(sd, states).list()!!.toSet())
+    }
+
+    @Test fun a_plain_state_matches_its_rzip_copy_on_the_phone() {
+        val src = tmp.newFolder("ra"); val sd = tmp.newFolder("sd")
+        bytes(src, "states/mGBA/Pokemon - Lazarus.state2", raw)
+        bytes(sd, "$states/Pokemon - Lazarus.state", Rzip.encode(raw))
+        assertEquals(ImportSummary(identical = 1), importRa(src, sd))
+    }
 }
