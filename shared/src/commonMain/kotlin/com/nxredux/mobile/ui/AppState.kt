@@ -1915,7 +1915,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val c = ONBOARDING_TAB_STEPS[step] ?: return null
         val style = MenuStyles.styleOf(deps.settings.menuStyles, c)
         val vertical = style == MenuStyle.CAROUSEL && c != MenuCategory.HOME && MenuStyles.orientationOf(deps.settings.menuOrientations, c) == MenuOrientation.VERTICAL
-        return LayoutShot.Tab(c, style, stats = c != MenuCategory.HOME || deps.settings.menuHomeStats, vertical = vertical)
+        return LayoutShot.Tab(c, style, stats = c != MenuCategory.HOME || deps.settings.menuHomeStats, vertical = vertical, art = consoleShotArt(c))
     }
 
     /** A layout page's value row [row] stepped by [by]: the layout, or the option on that row, in place (the picture follows). */
@@ -3588,6 +3588,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         return LayoutShot.Games(s.gameListStyle, vertical, right = vertical && s.gameListVerticalAlignment == VerticalListAlignment.RIGHT)
     }
 
+    /** A tab picture's Consoles background: the setting's on Consoles, the default on the other tabs (they have none). */
+    private fun consoleShotArt(c: MenuCategory): ConsoleArt = if (c == MenuCategory.CONSOLES) deps.settings.consoleArt else ConsoleArt.CONTROLLER
+
     /** A Layouts group's picture of its values: a shown tab's layout, the game lists', the title and hints, the Game Switcher's; else none. */
     private fun layoutShot(section: SettingsSection): LayoutShot? {
         val s = deps.settings
@@ -3595,7 +3598,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             if (!tabSetting(c)) return null
             val style = MenuStyles.styleOf(s.menuStyles, c)
             val vertical = style == MenuStyle.CAROUSEL && c != MenuCategory.HOME && MenuStyles.orientationOf(s.menuOrientations, c) == MenuOrientation.VERTICAL
-            return LayoutShot.Tab(c, style, stats = c != MenuCategory.HOME || s.menuHomeStats, vertical = vertical)
+            return LayoutShot.Tab(c, style, stats = c != MenuCategory.HOME || s.menuHomeStats, vertical = vertical, art = consoleShotArt(c))
         }
         return when (section) {
             SettingsSection.LAYOUT_GAME_LISTS -> gameListsShot()

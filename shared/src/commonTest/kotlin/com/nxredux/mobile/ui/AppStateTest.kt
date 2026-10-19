@@ -5345,6 +5345,23 @@ class AppStateTest {
         assertEquals(LayoutShot.Tab(MenuCategory.CONSOLES, MenuStyle.CAROUSEL, vertical = true), assertIs<Screen.Settings>(state.screen.value).shot)
     }
 
+    // The Consoles picture follows Layouts → Consoles background (List and Carousel); the other tabs keep the default.
+    @Test fun layouts_consoles_picture_follows_the_consoles_background() = runTest {
+        val settings = MemorySettings(ContentRef("Home")).apply { menuStyles = mapOf(MenuCategory.CONSOLES to MenuStyle.CAROUSEL) }
+        val state = state(settings)
+        state.load()
+        state.openSettings(SettingsSection.LAYOUT_CONSOLES)
+        fun shot() = assertIs<Screen.Settings>(state.screen.value).shot
+        assertEquals(LayoutShot.Tab(MenuCategory.CONSOLES, MenuStyle.CAROUSEL), shot())
+        state.select(state.layoutsRows().indexOfFirst { it.kind == SettingsKind.CONTROLLER_ART })
+        state.onButton(NxButton.RIGHT)
+        assertEquals(LayoutShot.Tab(MenuCategory.CONSOLES, MenuStyle.CAROUSEL, art = ConsoleArt.BACKGROUND), shot())
+        state.onButton(NxButton.RIGHT)
+        assertEquals(LayoutShot.Tab(MenuCategory.CONSOLES, MenuStyle.CAROUSEL, art = ConsoleArt.NONE), shot())
+        state.openSettings(SettingsSection.LAYOUT_COLLECTIONS)
+        assertEquals(ConsoleArt.CONTROLLER, assertIs<LayoutShot.Tab>(shot()).art)
+    }
+
     // The game lists' picture follows a Carousel's or Backdrop's orientation and, standing on end, its alignment.
     @Test fun layouts_game_lists_picture_follows_orientation_and_alignment() = runTest {
         val settings = MemorySettings(ContentRef("Home")).apply { gameListStyle = MenuStyle.BACKDROP }
