@@ -1,5 +1,6 @@
 package com.nxredux.mobile.storage
 
+import com.nxredux.mobile.runner.Console
 import com.nxredux.mobile.runner.CoreRegistry
 import java.io.File
 import java.io.FilterInputStream
@@ -10,32 +11,25 @@ import java.util.Date
 import java.util.Locale
 import java.util.zip.ZipInputStream
 
-/** One file an import offers: its card-root-relative [path] (unchecked), modified time and size. */
+/** One file an import offers: its source-relative [path] (unchecked), modified time and size. */
 interface ImportEntry {
     val path: String
     /** Null when the source has none: the copy then gets the import's time and never replaces a private file. */
     val mtime: Long?
-    /** Null when unknown; when known, a copy of another length fails (the source is kept). */
+    /** Null when unknown; when known, a copy of another length fails. */
     val size: Long?
     fun open(): InputStream
-    /** Deletes the source file (Move); false when it could not be, or (zip) is not deleted per entry. */
-    fun delete(): Boolean
 }
 
 interface ImportFiles {
     fun entries(): Sequence<ImportEntry>
-    /**
-     * After the walk: [moved] and [allTaken] (every entry imported or identical) let a zip delete itself. Returns false
-     * only when the zip should have been deleted and could not be.
-     */
-    fun finish(moved: Boolean, allTaken: Boolean): Boolean
 }
 
 /**
  * A zip read once, in order: an entry's [ImportEntry.open] streams it straight from the zip (nothing is held in memory)
- * and is valid only until the walk moves on to the next entry. Move deletes the whole zip in [finish] when [allTaken].
+ * and is valid only until the walk moves on to the next entry.
  */
-class ZipImportFiles(private val open: () -> InputStream, private val deleteZip: () -> Boolean) : ImportFiles {
+class ZipImportFiles(private val open: () -> InputStream) : ImportFiles {
     override fun entries(): Sequence<ImportEntry> = sequence {
         ZipInputStream(open()).use { z ->
             var current = 0
@@ -56,23 +50,16 @@ class ZipImportFiles(private val open: () -> InputStream, private val deleteZip:
                         override fun skip(n: Long): Long { ensureCurrent(); return super.skip(n) }
                         override fun close() = Unit   // the zip stays open for the next entry
                     }
-                    override fun delete() = false
                 })
             }
         }
     }
-    override fun finish(moved: Boolean, allTaken: Boolean): Boolean = !(moved && allTaken) || deleteZip()
 }
 
-/**
- * A local folder in the card layout ([SaveArchive.ROOTS] under [root]); a Move removes the folders it emptied, `Saves`
- * and `.userdata/shared` included, but never [root] or `.userdata`.
- */
-class DirImportFiles(private val root: File) : ImportFiles {
-    private val emptiedCandidates = LinkedHashSet<File>()
-
-    override fun entries(): Sequence<ImportEntry> = SaveArchive.ROOTS.asSequence()
-        .map { File(root, it) }.filter { it.isDirectory }
+/** A local folder: the files under each of [tops] (`""` = all of [root]), paths relative to [root]. */
+class DirImportFiles(private val root: File, private val tops: List<String> = listOf("")) : ImportFiles {
+    override fun entries(): Sequence<ImportEntry> = tops.asSequence()
+        .map { if (it.isEmpty()) root else File(root, it) }.filter { it.isDirectory }
         .flatMap { it.walkTopDown().filter { f -> f.isFile } }
         .map { f ->
             object : ImportEntry {
@@ -80,82 +67,89 @@ class DirImportFiles(private val root: File) : ImportFiles {
                 override val mtime = f.lastModified()
                 override val size = f.length()
                 override fun open(): InputStream = f.inputStream()
-                override fun delete() = f.delete().also { if (it) emptiedCandidates.add(f.parentFile!!) }
             }
         }
-    /** Removes only the folders this run's Move emptied, walking up but never removing [root], `.userdata` or anything above. */
-    override fun finish(moved: Boolean, allTaken: Boolean): Boolean {
-        if (!moved) return true
-        val kept = setOf(root, File(root, ".userdata"))
-        for (start in emptiedCandidates) {
-            var dir: File? = start
-            while (dir != null && dir !in kept && dir.startsWith(root) && dir.list()?.isEmpty() == true && dir.delete()) dir = dir.parentFile
-        }
-        return true
-    }
 }
 
 /**
- * Settings → Emulators → Saves → Import saves into private storage ([root] = `filesDir/sd`), per [ImportRules]: new
- * files are copied in, identical ones skipped, newer ones replace the private file (kept as a `.bak`,
- * [SaveCopyRules.freeBackupName]), older ones are skipped. Each file lands through a `.tmp` and gets the source's
- * modified time (or the import's, when it has none). The copy is verified against the source's size when that is known
- * (a zip's own CRC check covers its entries). With [move], a source is deleted only after its copy is verified; a zip
- * only when every entry it holds was taken. Each entry is read to its end before the next ([ZipImportFiles] streams).
- * No logging: JVM-tested.
+ * Settings → Emulators → Saves → Import saves into private storage ([root] = `filesDir/sd`), copy only (a source is
+ * never deleted or changed), per [ImportRules]: new files are copied in, identical ones skipped, newer ones replace the
+ * private file (kept as a `.bak`, [SaveCopyRules.freeBackupName]), older ones are skipped. Each file lands through a
+ * `.tmp` and gets the source's modified time (or the import's, when it has none). The copy is verified against the
+ * source's size when that is known (a zip's own CRC check covers its entries). Each entry is read to its end before the
+ * next ([ZipImportFiles] streams). No logging: JVM-tested.
  *
- * Every handheld emulator save folder of a console (`GBA`, `MGBA`) merges into the console's phone folder, a game's
- * save matching across the four Save formats; the winner is written in [format]. A save in a folder several consoles
- * share (`Saves/GPGX`) goes to its game's console by the library's ROM names ([games]).
+ * A file in the NextUI layout ([SaveArchive.areaOf]) goes by its path: every handheld emulator save folder of a console
+ * (`GBA`, `MGBA`) merges into the console's phone folder, a game's save matching across the four Save formats; the
+ * winner is written in [naming]'s Save format. A save in a folder several consoles share (`Saves/GPGX`) goes to its
+ * game's console by the library's ROM names ([SaveMatcher.gamesByConsole]). A loose battery save or clock file
+ * elsewhere (a RetroArch `saves/<core>/` folder, a flat dump) goes to its library game by name ([matcher]), its parent
+ * folder's name narrowing the consoles ([RetroArchCores.consolesOf]), and is named after that game's ROM.
  */
 class SaveImporter(
     private val root: File,
     private val now: () -> Long = System::currentTimeMillis,
     /** Moves the verified temp copy onto its target; injectable so a failing place can be tested. */
     private val rename: (File, File) -> Boolean = File::renameTo,
-    /** The phone's Save format: console-folder saves are named and encoded as it says. */
-    private val format: SaveFormat = SaveFormat.DEFAULT,
-    /** Console tag → the library's ROM names of it ([SharedSaves.gamesByConsole]): where a shared `Saves/GPGX` save goes. */
-    private val games: Map<String, Set<String>> = emptyMap(),
+    /** The phone's save naming: console-folder saves are named and encoded as its Save format says. */
+    private val naming: SaveNaming = SaveNaming.DEFAULT,
+    /** The library's games: where a loose save, or a shared `Saves/GPGX` one, goes. */
+    private val matcher: SaveMatcher = SaveMatcher(null),
 ) {
-    fun run(source: ImportFiles, move: Boolean, onFile: (String) -> Unit = {}): ImportSummary {
+    private val format get() = naming.saveFormat
+    private val games by lazy { matcher.gamesByConsole() }
+
+    fun run(source: ImportFiles, onFile: (String) -> Unit = {}): ImportSummary {
         var s = ImportSummary()
-        var allTaken = true
-        var taken = 0
+        val skipped = mutableListOf<SkippedFile>()
         for (e in source.entries()) {
             val path = SaveArchive.safePath(e.path)
-            val area = path?.let(SaveArchive::areaOf)
-            // An ignored entry keeps a zip too: Move deletes it only when every entry it holds was taken.
-            if (path == null || area == null) { s = s.copy(ignored = s.ignored + 1); allTaken = false; continue }
-            val result = runCatching { take(path, e) }
+            if (path == null) { s = s.copy(ignored = s.ignored + 1); continue }
+            val name = path.substringAfterLast('/')
+            val area = SaveArchive.areaOf(path)
+            val key = if (area == null) SaveKeys.of(name) else null
+            val result = when {
+                area != null -> runCatching { take(path, e) }
+                key != null -> when (val m = matcher.match(key.game, clueOf(path))) {
+                    is SaveMatch.Matched -> runCatching { take("Saves/${m.console.defaultTag}/$name", e, m.rom) }
+                    SaveMatch.NoGame -> { skipped += SkippedFile(name, SkipReason.NO_GAME); continue }
+                    is SaveMatch.Ambiguous -> {
+                        skipped += SkippedFile(name, SkipReason.AMBIGUOUS, m.consoles.joinToString(" and ") { it.displayName })
+                        continue
+                    }
+                }
+                // A loose save state ([StateNames.parse]) is not taken yet: counted with the other files.
+                else -> { s = s.copy(ignored = s.ignored + 1); continue }
+            }
             val action = result.getOrNull()
-            if (action == null) { s = s.copy(failed = s.failed + 1); allTaken = false; continue }
+            if (action == null) { skipped += SkippedFile(name, SkipReason.UNREADABLE); continue }
             s = when (action) {
                 ImportAction.NEW, ImportAction.REPLACE -> when (area) {
-                    SaveArea.SAVES -> s.copy(saves = s.saves + 1)
+                    null, SaveArea.SAVES -> s.copy(saves = s.saves + 1)
                     SaveArea.STATES -> s.copy(states = s.states + 1)
                     SaveArea.MARKERS -> s.copy(markers = s.markers + 1)
                 }.let { if (action == ImportAction.REPLACE) it.copy(replaced = it.replaced + 1) else it }
                 ImportAction.IDENTICAL -> s.copy(identical = s.identical + 1)
-                ImportAction.SKIP_OLDER -> { allTaken = false; s.copy(skippedOlder = s.skippedOlder + 1) }
+                ImportAction.SKIP_OLDER -> { skipped += SkippedFile(name, SkipReason.PHONE_NEWER); s }
             }
-            if (action != ImportAction.SKIP_OLDER) taken++
-            if (move && action != ImportAction.SKIP_OLDER) e.delete()
             onFile(path)
         }
-        if (!source.finish(move, allTaken && taken > 0)) s = s.copy(zipNotDeleted = true)
-        return s
+        return s.copy(skipped = skipped)
     }
+
+    /** The consoles a loose file's parent folder names ([RetroArchCores.consolesOf]); null at the source root or for no clue. */
+    private fun clueOf(path: String): List<Console>? =
+        path.substringBeforeLast('/', "").substringAfterLast('/').takeIf { it.isNotEmpty() }?.let(RetroArchCores::consolesOf)
 
     /**
      * Lands [e] at [path] (its emulator folder mapped onto the console's, [targetPath]) and returns what happened; throws
-     * when it could not be copied (the source is then kept). A battery save or clock file at the top of a console folder
-     * is matched to the phone's copies of the same game under any Save format's name and written under [format]'s name;
-     * a name that needs the ROM file name (MinUI, clock) takes it from the incoming name, else from the newest phone copy
-     * that carries one, else keeps the incoming name, as does an incoming `X.gb.sav` (ROM `X.gb` or `X.gb.zip`) they do
-     * not settle.
+     * when it could not be copied. A battery save or clock file at the top of a console folder is matched to the phone's
+     * copies of the same game under any Save format's name and written under [format]'s name. That name is [rom]'s (the
+     * library ROM a loose save matched) when given; else a name that needs the ROM file name (MinUI, clock) takes it from
+     * the incoming name, else from the newest phone copy that carries one, else keeps the incoming name, as does an
+     * incoming `X.gb.sav` (ROM `X.gb` or `X.gb.zip`) they do not settle.
      */
-    private fun take(path: String, e: ImportEntry): ImportAction {
+    private fun take(path: String, e: ImportEntry, rom: String? = null): ImportAction {
         val mapped = targetPath(path)
         val dir = File(root, mapped.substringBeforeLast('/'))
         val incomingName = mapped.substringAfterLast('/')
@@ -168,8 +162,8 @@ class SaveImporter(
         // library's Roms folders are out of this importer's reach (private storage only), so they are not asked. An
         // incoming `X.gb.sav` may be ROM `X.gb.zip`'s Generic name, so it names nothing by itself: unless the phone's
         // copies settle the ROM it keeps its name ([SaveKeys.romOf], [SaveKeys.romAmbiguous]).
-        val rom = SaveKeys.romOf(incomingName, mine.map { it.name })
-        val target = File(dir, key?.let { if (rom == null && SaveKeys.romAmbiguous(incomingName)) null else SaveKeys.fileName(it, format, rom) } ?: incomingName)
+        val romName = rom ?: SaveKeys.romOf(incomingName, mine.map { it.name })
+        val target = File(dir, key?.let { if (romName != null || !SaveKeys.romAmbiguous(incomingName)) SaveKeys.fileName(it, format, romName) else null } ?: incomingName)
         val tmp = File(dir, ".${target.name}.import.tmp")
         dir.mkdirs()
         try {

@@ -57,25 +57,36 @@ data class ExportSummary(val saves: Int, val states: Int, val bytes: Long) {
         else "Exported ${count(saves, "save")} and ${count(states, "state")} (${megabytes(bytes)})"
 }
 
+/** Why an import left a file out; `%s` in [text] is filled from [SkippedFile.detail]. */
+enum class SkipReason(val text: String) {
+    NO_GAME("no matching game"),
+    /** Filled with the consoles, joined by " and ". */
+    AMBIGUOUS("matches %s"),
+    PHONE_NEWER("phone copy is newer"),
+    NO_FREE_SLOT("no free slot"),
+    NO_CORE("can't tell the core"),
+    UNREADABLE("could not be read"),
+}
+
+/** One file an import left out: its file [name], the [reason] and what fills the reason's `%s`. */
+data class SkippedFile(val name: String, val reason: SkipReason, val detail: String? = null) {
+    fun text(): String = "$name: ${reason.text.replace("%s", detail.orEmpty())}"
+}
+
 data class ImportSummary(
     val saves: Int = 0, val states: Int = 0, val markers: Int = 0, val identical: Int = 0, val replaced: Int = 0,
-    val skippedOlder: Int = 0, val ignored: Int = 0, val failed: Int = 0,
-    /** A Move took every entry of the picked zip but could not delete it. */
-    val zipNotDeleted: Boolean = false,
+    val ignored: Int = 0, val skipped: List<SkippedFile> = emptyList(),
 ) {
-    /** [moved]: "left in place" is said for skipped files, which a Move does not delete. */
-    fun text(moved: Boolean): String {
-        if (saves + states + markers + identical + replaced + skippedOlder + ignored + failed == 0) return "Nothing to import"
+    /** The results page's summary lines, or just "Nothing to import". */
+    fun lines(): List<String> {
+        if (saves + states + markers + identical + replaced + ignored == 0 && skipped.isEmpty()) return listOf("Nothing to import")
         return buildList {
             add("Imported ${count(saves, "save")} and ${count(states, "state")}")
             if (identical > 0) add("$identical already here")
-            if (markers > 0 && saves + states == 0) add(count(markers, "slot file"))
-            if (skippedOlder > 0) add("$skippedOlder older ${plural(skippedOlder, "file")} skipped" + if (moved) " (left in place)" else "")
             if (replaced > 0) add("$replaced replaced (kept as .bak)")
+            if (skipped.isNotEmpty()) add("${skipped.size} skipped")
             if (ignored > 0) add("$ignored other ${plural(ignored, "file")} ignored")
-            if (failed > 0) add("$failed could not be imported")
-            if (zipNotDeleted) add("the zip could not be deleted")
-        }.joinToString("; ")
+        }
     }
 }
 

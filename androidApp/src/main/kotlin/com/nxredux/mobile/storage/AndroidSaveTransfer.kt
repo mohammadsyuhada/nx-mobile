@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
+import com.nxredux.mobile.library.LibraryIndex
 import com.nxredux.mobile.library.LibraryIndexCodec
 import com.nxredux.mobile.runner.ContentRef
 import com.nxredux.mobile.runner.CoreRegistry
@@ -72,6 +73,7 @@ class AndroidSaveTransfer(
         }
     }
 
+    /** Copy only: [move] is ignored (an import never deletes its source). */
     override fun importSaves(source: ImportSource, move: Boolean, report: TransferReport) {
         SaveTransferRules.importRefusal(gameScreenAlive(), syncing())?.let { return report(it, true) }   // before any picker
         when (source) {
@@ -79,11 +81,11 @@ class AndroidSaveTransfer(
                 val home = AndroidAppSettings(app).treeRef ?: return report("No home folder", true)
                 // Revoked access walks a file home as empty: say why instead.
                 if (FileRefs.accessOff(home, AndroidAllFilesAccess.isGranted())) return report(FileRefs.ACCESS_OFF_MESSAGE, true)
-                importWork(report) { importTree(home, move) }
+                importWork(report) { importTree(home, SaveArchive.ROOTS) }
             }
             ImportSource.FOLDER -> pickers.openFolder { ref ->
                 ref ?: return@openFolder
-                importWork(report) { importTree(ref, move) }   // runs now, under the picker's temporary grant (SAF)
+                importWork(report) { importTree(ref) }   // runs now, under the picker's temporary grant (SAF)
             }
             ImportSource.ZIP -> pickers.openZip { ref ->
                 ref ?: return@openZip
@@ -92,8 +94,7 @@ class AndroidSaveTransfer(
                     val open: () -> InputStream? = { if (file != null) FileInputStream(file) else resolver.openInputStream(Uri.parse(ref.value)) }
                     // The picker shows every file type (a zip filter hid everything on Samsung's picker): only a zip goes on.
                     if (!isZip(open)) return@importWork "That file is not a zip"
-                    val zip = ZipImportFiles({ open() ?: error("cannot read the zip") }) { file?.delete() ?: deleteDocument(Uri.parse(ref.value)) }
-                    importer().run(zip, move).text(move)
+                    importer().run(ZipImportFiles { open() ?: error("cannot read the zip") }).text()
                 }
             }
         }
@@ -106,12 +107,15 @@ class AndroidSaveTransfer(
         work({ text, done -> if (done) importsRunning.decrementAndGet(); report(text, done) }, block)
     }
 
-    /** A SAF pick is a tree URI: the walk starts at its root document. A file ref (All files access) is the folder itself. */
-    private fun importTree(root: ContentRef, move: Boolean): String {
+    /**
+     * A SAF pick is a tree URI: the walk starts at its root document. A file ref (All files access) is the folder itself.
+     * [tops]: the folders walked under it (the home folder: just its save areas).
+     */
+    private fun importTree(root: ContentRef, tops: List<String> = listOf("")): String {
         val start = if (FileRefs.isFile(root)) root else Uri.parse(root.value).let {
             ContentRef(DocumentsContract.buildDocumentUriUsingTree(it, DocumentsContract.getTreeDocumentId(it)).toString())
         }
-        return importer().run(TreeImportFiles(ImportTree.of(resolver, root), start), move).text(move)
+        return importer().run(TreeImportFiles(ImportTree.of(resolver, root), start, tops)).text()
     }
 
     /**
@@ -123,16 +127,16 @@ class AndroidSaveTransfer(
         return { x -> CoreRegistry.consoleOf(x)?.let { CoreRegistry.handheldTag(it.defaultTagFor(defaults[it.id])) } ?: x }
     }
 
-    /** An importer writing console-folder saves in the phone's Save format. */
-    private fun importer() = SaveImporter(NxStorage.root(app), format = AndroidAppSettings(app).saveNaming.saveFormat, games = libraryGames())
+    /** An importer writing console-folder saves in the phone's save naming, matching loose saves to the library's games. */
+    private fun importer() = SaveImporter(NxStorage.root(app), naming = AndroidAppSettings(app).saveNaming, matcher = SaveMatcher(libraryIndex()))
 
-    /**
-     * The library's ROM names per console ([SharedSaves.gamesByConsole]), read off the main thread from its index; empty
-     * when there is none.
-     */
-    private fun libraryGames(): Map<String, Set<String>> = runCatching {
+    /** The library's index, read off the main thread; null when there is none (every loose save is then unmatched). */
+    private fun libraryIndex(): LibraryIndex? = runCatching {
         File(NxStorage.root(app), ".userdata/android/library.json").takeIf { it.isFile }?.readText()?.let(LibraryIndexCodec::decode)
-    }.getOrNull().let(SharedSaves::gamesByConsole)
+    }.getOrNull()
+
+    /** The summary as one notice line (the results page comes later). */
+    private fun ImportSummary.text() = lines().joinToString("; ")
 
     /** True when the stream starts like a zip (`PK\3\4`, or `PK\5\6` for an empty one). */
     private fun isZip(open: () -> InputStream?): Boolean = runCatching {

@@ -6,19 +6,18 @@ import java.io.IOException
 import java.io.InputStream
 
 /**
- * A tree folder in the card layout (the home folder, or one the user picked; SAF or a file ref: [ImportTree]) as import
- * files: the files under its `Saves/` and `.userdata/shared/` ([SaveArchive.ROOTS]). A Move deletes each taken file
- * (through [SaveImporter]) and, in [finish], only the folders this run emptied, walking up to `Saves` and
- * `.userdata/shared` themselves but never to `.userdata` or [root] itself, as [DirImportFiles] does. A hidden folder's
- * [ListingUnavailable] fails the import.
+ * A tree folder (one the user picked, SAF or a file ref: [ImportTree]) as import files: the files under each of [tops]
+ * (`""` = all of [root]), paths relative to [root], parts and other transient files ([MirrorRules.isTransient]) left
+ * out. A hidden folder's [ListingUnavailable] fails the import.
  */
-class TreeImportFiles(private val tree: ImportTree, private val root: ContentRef) : ImportFiles {
-    // Each walked folder's parent, the roots' excluded: walking up stops after `Saves` or `.userdata/shared`.
-    private val parentOf = HashMap<ContentRef, ContentRef>()
-    private val emptiedCandidates = LinkedHashSet<ContentRef>()
-
+class TreeImportFiles(
+    private val tree: ImportTree,
+    private val root: ContentRef,
+    private val tops: List<String> = listOf(""),
+) : ImportFiles {
     override fun entries(): Sequence<ImportEntry> = sequence {
-        for (top in SaveArchive.ROOTS) {
+        for (top in tops) {
+            if (top.isEmpty()) { yieldAll(walk(root, "")); continue }
             var dir: ContentRef? = root
             for (seg in top.split('/')) dir = dir?.let { tree.child(it, seg)?.takeIf { e -> e.isDirectory }?.ref }
             dir?.let { yieldAll(walk(it, top)) }
@@ -27,31 +26,15 @@ class TreeImportFiles(private val tree: ImportTree, private val root: ContentRef
 
     private fun walk(dir: ContentRef, path: String): Sequence<ImportEntry> = sequence {
         for (e in tree.list(dir)) {
-            val p = "$path/${e.name}"
-            if (e.isDirectory) { parentOf[e.ref] = dir; yieldAll(walk(e.ref, p)); continue }
+            val p = if (path.isEmpty()) e.name else "$path/${e.name}"
+            if (e.isDirectory) { yieldAll(walk(e.ref, p)); continue }
             if (MirrorRules.isTransient(e.name)) continue
             yield(object : ImportEntry {
                 override val path = p
                 override val mtime = e.lastModified?.takeIf { it > 0 }   // unknown (or 0): the import's time, never 1970
                 override val size = e.size
                 override fun open(): InputStream = tree.openRead(e.ref) ?: throw IOException("cannot read ${e.name}")
-                override fun delete() = tree.delete(e.ref).also { if (it) emptiedCandidates.add(dir) }
             })
         }
-    }
-
-    /** SAF deletes a folder with its contents: each one is listed empty right before it is removed. */
-    override fun finish(moved: Boolean, allTaken: Boolean): Boolean {
-        if (!moved) return true
-        for (start in emptiedCandidates) {
-            var dir: ContentRef? = start
-            while (true) {
-                val d = dir ?: break
-                if (d == root) break
-                if (!runCatching { tree.list(d).isEmpty() }.getOrDefault(false) || !tree.delete(d)) break
-                dir = parentOf[d]
-            }
-        }
-        return true
     }
 }

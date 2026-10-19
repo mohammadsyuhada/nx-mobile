@@ -2,9 +2,7 @@ package com.nxredux.mobile.storage
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class SaveArchiveTest {
     @Test fun the_three_areas() {
@@ -45,21 +43,22 @@ class SaveArchiveTest {
     @Test fun summaries() {
         assertEquals("Exported 2 saves and 3 states (1.5 MB)", ExportSummary(2, 3, 1_572_864).text())
         assertEquals("Nothing to export", ExportSummary(0, 0, 0).text())
+    }
+    @Test fun import_summary_lines() {
+        val skipped = listOf(SkippedFile("Zelda.srm", SkipReason.NO_GAME), SkippedFile("Old.srm", SkipReason.PHONE_NEWER))
         assertEquals(
-            "Imported 37 saves and 52 states; 3 older files skipped (left in place); 2 replaced (kept as .bak); 4 other files ignored",
-            ImportSummary(saves = 37, states = 52, markers = 9, replaced = 2, skippedOlder = 3, ignored = 4).text(moved = true),
+            listOf("Imported 37 saves and 1 state", "12 already here", "2 replaced (kept as .bak)", "2 skipped", "4 other files ignored"),
+            ImportSummary(saves = 37, states = 1, markers = 9, identical = 12, replaced = 2, ignored = 4, skipped = skipped).lines(),
         )
-        assertEquals("Imported 1 save and 0 states; 3 older files skipped", ImportSummary(saves = 1, skippedOlder = 3).text(moved = false))
-        assertEquals("Nothing to import", ImportSummary().text(moved = true))
-        assertTrue(ImportSummary(saves = 1, failed = 2).text(moved = true).endsWith("; 2 could not be imported"))
-        assertFalse(ImportSummary(identical = 2).text(moved = true) == "Nothing to import")
+        assertEquals(listOf("Imported 0 saves and 0 states", "1 other file ignored"), ImportSummary(ignored = 1).lines())
+        assertEquals(listOf("Nothing to import"), ImportSummary().lines())
     }
-    @Test fun summary_says_when_files_were_already_here_or_only_slot_files_came_in() {
-        assertEquals("Imported 0 saves and 0 states; 12 already here", ImportSummary(identical = 12).text(moved = true))
-        assertEquals("Imported 0 saves and 0 states; 3 slot files", ImportSummary(markers = 3).text(moved = false))
-        assertEquals("Imported 1 save and 0 states; 1 already here", ImportSummary(saves = 1, markers = 2, identical = 1).text(moved = false))
-    }
-    @Test fun summary_says_when_the_zip_could_not_be_deleted() {
-        assertEquals("Imported 1 save and 0 states; the zip could not be deleted", ImportSummary(saves = 1, zipNotDeleted = true).text(moved = true))
+    @Test fun skipped_file_text() {
+        assertEquals(
+            "Tetris.srm: matches Game Boy and Game Boy Advance",
+            SkippedFile("Tetris.srm", SkipReason.AMBIGUOUS, "Game Boy and Game Boy Advance").text(),
+        )
+        assertEquals("Zelda.srm: no matching game", SkippedFile("Zelda.srm", SkipReason.NO_GAME).text())
+        assertEquals("Bad.srm: could not be read", SkippedFile("Bad.srm", SkipReason.UNREADABLE).text())
     }
 }
