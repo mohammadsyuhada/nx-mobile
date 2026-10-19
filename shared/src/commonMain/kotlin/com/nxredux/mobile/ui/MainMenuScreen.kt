@@ -81,7 +81,7 @@ fun MainMenuScreen(
     homeRowLast: () -> Int = { 0 },       // Carousel Home: AppState's row item last on (shown while the dock has the focus)
     continueInfo: () -> List<InfoLine> = { emptyList() },   // Home: Continue's game info (full)
     raSignedIn: Boolean = false,          // Home: false drops achievement data from Continue and the pinned games
-    controllerArt: Boolean = false,       // a List Consoles tab: Layouts → Consoles controller is Controller (a Carousel always shows them)
+    controllerArt: Boolean = false,       // a List or Carousel Consoles tab: Layouts → Consoles background is Controller
     tabFocus: Boolean = false,            // the tab row has the d-pad: its tab word is lit, the whole content below dims
     bandShade: Boolean = true,            // List: the info band's shade ([mainMenuListBand]: none on Consoles)
     canSearch: Boolean = false,           // the library has games: START Search in the hints
@@ -114,9 +114,9 @@ fun MainMenuScreen(
     // box, its items sized as with the tab row and centred in the taller box. With Button hints hidden, the hint bar's
     // room is kept empty on every tab, Home too (the scaffold's hideHints: no hints, no taps).
     val chrome = LocalLauncherChrome.current
-    // Consoles with their controllers (a List by Layouts → Consoles controller, a Carousel always): every pad
+    // Consoles with their controllers (a List or Carousel by Layouts → Consoles background): every pad
     // decoded ahead, off the main thread, nearest the selection first, so stepping through the consoles never decodes one inside a frame.
-    if (!home && style != MenuStyle.GRID && (controllerArt || style != MenuStyle.LIST)) {
+    if (!home && style != MenuStyle.GRID && controllerArt) {
         val pads = remember(rows) { rows.map { r -> (r as? MainRow.System)?.systems?.firstNotNullOfOrNull { consolePad(it.tag) }?.res } }
         PrefetchPads(pads, selection)
     }
@@ -224,7 +224,7 @@ fun MainMenuScreen(
                     // The tiles are this screen's rows, so a tab switch hands the row a new list and its selection in one
                     // composition: the row snaps instead of sliding. Vertical: the same items stood on end ([NxBackdropStack]).
                     MenuStyle.CAROUSEL, MenuStyle.BACKDROP -> {
-                        val tiles = remember(rows) { gridTiles(rows, controllerArt = true) }   // always the controllers: Consoles controller is a List setting
+                        val tiles = remember(rows, controllerArt) { gridTiles(rows, controllerArt) }   // the controllers by Layouts → Consoles background
                         slot(keepBarRoom = false) { m ->
                             if (orientation == MenuOrientation.VERTICAL) NxBackdropStack(
                                 null, tiles, selection, onSelect = onSelect, onOpen = onOpen, onLongPress = onLongPress,

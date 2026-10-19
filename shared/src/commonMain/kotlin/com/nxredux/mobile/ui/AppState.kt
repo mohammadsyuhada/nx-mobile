@@ -1915,7 +1915,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val c = ONBOARDING_TAB_STEPS[step] ?: return null
         val style = MenuStyles.styleOf(deps.settings.menuStyles, c)
         val vertical = style == MenuStyle.CAROUSEL && c != MenuCategory.HOME && MenuStyles.orientationOf(deps.settings.menuOrientations, c) == MenuOrientation.VERTICAL
-        return LayoutShot.Tab(c, style, stats = c != MenuCategory.HOME || deps.settings.menuHomeStats, vertical = vertical)
+        return LayoutShot.Tab(c, style, stats = c != MenuCategory.HOME || deps.settings.menuHomeStats, vertical = vertical, art = consoleShotArt(c))
     }
 
     /** A layout page's value row [row] stepped by [by]: the layout, or the option on that row, in place (the picture follows). */
@@ -3272,7 +3272,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         refreshSettings()
     }
 
-    /** Layouts → Consoles controller: steps through Controller, Background and None (LEFT back, RIGHT and A forward), wrapping. */
+    /** Layouts → Consoles background: steps through Controller, Background and None (LEFT back, RIGHT and A forward), wrapping. */
     private fun cycleConsoleArt(step: Int) {
         deps.settings.consoleArt = deps.settings.consoleArt.step(step)
         refreshSettings()
@@ -3432,7 +3432,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * Appearance's, Layouts' or Controls' "Reset to defaults" (NX Redux settings.c): the page's own options back to their
      * defaults. Appearance: Pad theme, Accent, Secondary accent. Layouts: every tab's style and orientation
      * unset (so [MenuStyles.styleOf] and [MenuStyles.orientationOf] give theirs), the game lists', the tabs', shelves'
-     * and hints' Show/Hide, Consoles controller, List art, Backdrop art, Page title, Button hints, Extra info, Home stats,
+     * and hints' Show/Hide, Consoles background, List art, Backdrop art, Page title, Button hints, Extra info, Home stats,
      * Layout options, Achievements panel and Game Switcher layout. Controls: Pad vibration, Game rumble and every pad
      * layout. At once, no confirm, as NX Redux. Through the settings' own setters, then the page is republished like any
      * cycled row's (App re-reads the theme, accent and scale with it), the highlight kept on the reset row, which the
@@ -3544,8 +3544,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             SettingsRow(SettingsKind.HOME_STATS, "Home stats", shown(s.menuHomeStats)).takeIf { on && c == MenuCategory.HOME },
             SettingsRow(SettingsKind.MENU_ORIENTATION, "${c.label} orientation", orientationLabel(MenuStyles.orientationOf(s.menuOrientations, c)), category = c)
                 .takeIf { on && c != MenuCategory.HOME && style == MenuStyle.CAROUSEL },
-            SettingsRow(SettingsKind.CONTROLLER_ART, "Consoles controller", s.consoleArt.label, category = c)
-                .takeIf { on && c == MenuCategory.CONSOLES && style == MenuStyle.LIST },   // List only; the Carousel keeps the controller
+            SettingsRow(SettingsKind.CONTROLLER_ART, "Consoles background", s.consoleArt.label, category = c)
+                .takeIf { on && c == MenuCategory.CONSOLES && style != MenuStyle.GRID },   // List and Carousel; the Grid has no controllers
         )
     }
 
@@ -3588,6 +3588,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         return LayoutShot.Games(s.gameListStyle, vertical, right = vertical && s.gameListVerticalAlignment == VerticalListAlignment.RIGHT)
     }
 
+    /** A tab picture's Consoles background: the setting's on Consoles, the default on the other tabs (they have none). */
+    private fun consoleShotArt(c: MenuCategory): ConsoleArt = if (c == MenuCategory.CONSOLES) deps.settings.consoleArt else ConsoleArt.CONTROLLER
+
     /** A Layouts group's picture of its values: a shown tab's layout, the game lists', the title and hints, the Game Switcher's; else none. */
     private fun layoutShot(section: SettingsSection): LayoutShot? {
         val s = deps.settings
@@ -3595,7 +3598,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             if (!tabSetting(c)) return null
             val style = MenuStyles.styleOf(s.menuStyles, c)
             val vertical = style == MenuStyle.CAROUSEL && c != MenuCategory.HOME && MenuStyles.orientationOf(s.menuOrientations, c) == MenuOrientation.VERTICAL
-            return LayoutShot.Tab(c, style, stats = c != MenuCategory.HOME || s.menuHomeStats, vertical = vertical)
+            return LayoutShot.Tab(c, style, stats = c != MenuCategory.HOME || s.menuHomeStats, vertical = vertical, art = consoleShotArt(c))
         }
         return when (section) {
             SettingsSection.LAYOUT_GAME_LISTS -> gameListsShot()

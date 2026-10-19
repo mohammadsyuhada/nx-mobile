@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
+import com.nxredux.mobile.settings.ConsoleArt
 import com.nxredux.mobile.settings.MenuCategory
 import com.nxredux.mobile.settings.MenuStyle
 import com.nxredux.mobile.settings.SwitcherLayout
@@ -66,9 +67,15 @@ import com.nxredux.mobile.shared.res.onboarding_games_carousel_vertical_right
 import com.nxredux.mobile.shared.res.onboarding_games_grid
 import com.nxredux.mobile.shared.res.onboarding_games_list
 import com.nxredux.mobile.shared.res.onboarding_tab_consoles_carousel
+import com.nxredux.mobile.shared.res.onboarding_tab_consoles_carousel_background
+import com.nxredux.mobile.shared.res.onboarding_tab_consoles_carousel_none
 import com.nxredux.mobile.shared.res.onboarding_tab_consoles_carousel_vertical
+import com.nxredux.mobile.shared.res.onboarding_tab_consoles_carousel_vertical_background
+import com.nxredux.mobile.shared.res.onboarding_tab_consoles_carousel_vertical_none
 import com.nxredux.mobile.shared.res.onboarding_tab_consoles_grid
 import com.nxredux.mobile.shared.res.onboarding_tab_consoles_list
+import com.nxredux.mobile.shared.res.onboarding_tab_consoles_list_background
+import com.nxredux.mobile.shared.res.onboarding_tab_consoles_list_none
 import com.nxredux.mobile.shared.res.onboarding_tab_home_carousel
 import com.nxredux.mobile.shared.res.onboarding_tab_home_carousel_nostats
 import com.nxredux.mobile.shared.res.onboarding_tab_home_grid_nostats
@@ -124,22 +131,40 @@ private val PICTURE_INNER_CORNER = 6.dp
 
 /**
  * How tab [category] looks in [style] (List, Grid or Carousel; the tabs have no Backdrop); Home with its stats strip or not
- * ([stats]); a Carousel stood on end ([vertical]; Home's Carousel has no orientation).
+ * ([stats]); a Carousel stood on end ([vertical]; Home's Carousel has no orientation). A List or Carousel Consoles tab
+ * as Layouts → Consoles background ([art]) draws it: its controllers, a console's bg.png, or neither.
  */
-internal fun tabPicture(category: MenuCategory, style: MenuStyle, stats: Boolean = true, vertical: Boolean = false): DrawableResource =
-    if (!vertical || style != MenuStyle.CAROUSEL) horizontalTabPicture(category, style, stats) else when (category) {
-        MenuCategory.CONSOLES -> Res.drawable.onboarding_tab_consoles_carousel_vertical
+internal fun tabPicture(
+    category: MenuCategory, style: MenuStyle, stats: Boolean = true, vertical: Boolean = false, art: ConsoleArt = ConsoleArt.CONTROLLER,
+): DrawableResource =
+    if (!vertical || style != MenuStyle.CAROUSEL) horizontalTabPicture(category, style, stats, art) else when (category) {
+        MenuCategory.CONSOLES -> byArt(
+            art, Res.drawable.onboarding_tab_consoles_carousel_vertical, Res.drawable.onboarding_tab_consoles_carousel_vertical_background,
+            Res.drawable.onboarding_tab_consoles_carousel_vertical_none,
+        )
         MenuCategory.COLLECTIONS -> Res.drawable.onboarding_tab_collections_carousel_vertical
         MenuCategory.TOOLS -> Res.drawable.onboarding_tab_tools_carousel_vertical
-        MenuCategory.HOME -> horizontalTabPicture(category, style, stats)
+        MenuCategory.HOME -> horizontalTabPicture(category, style, stats, art)
     }
 
-private fun horizontalTabPicture(category: MenuCategory, style: MenuStyle, stats: Boolean): DrawableResource = when (category) {
+private fun horizontalTabPicture(category: MenuCategory, style: MenuStyle, stats: Boolean, art: ConsoleArt): DrawableResource = when (category) {
     MenuCategory.HOME -> if (stats) pick(style, Res.drawable.onboarding_tab_home_list, Res.drawable.onboarding_tab_home_grid, Res.drawable.onboarding_tab_home_carousel)
         else pick(style, Res.drawable.onboarding_tab_home_list_nostats, Res.drawable.onboarding_tab_home_grid_nostats, Res.drawable.onboarding_tab_home_carousel_nostats)
-    MenuCategory.CONSOLES -> pick(style, Res.drawable.onboarding_tab_consoles_list, Res.drawable.onboarding_tab_consoles_grid, Res.drawable.onboarding_tab_consoles_carousel)
+    MenuCategory.CONSOLES -> pick(
+        style,
+        byArt(art, Res.drawable.onboarding_tab_consoles_list, Res.drawable.onboarding_tab_consoles_list_background, Res.drawable.onboarding_tab_consoles_list_none),
+        Res.drawable.onboarding_tab_consoles_grid,   // the Grid has no controllers or background
+        byArt(art, Res.drawable.onboarding_tab_consoles_carousel, Res.drawable.onboarding_tab_consoles_carousel_background, Res.drawable.onboarding_tab_consoles_carousel_none),
+    )
     MenuCategory.COLLECTIONS -> pick(style, Res.drawable.onboarding_tab_collections_list, Res.drawable.onboarding_tab_collections_grid, Res.drawable.onboarding_tab_collections_carousel)
     MenuCategory.TOOLS -> pick(style, Res.drawable.onboarding_tab_tools_list, Res.drawable.onboarding_tab_tools_grid, Res.drawable.onboarding_tab_tools_carousel)
+}
+
+/** The Consoles picture for Layouts → Consoles background [art]: with the controllers, a console's bg.png, or neither. */
+private fun byArt(art: ConsoleArt, controller: DrawableResource, background: DrawableResource, none: DrawableResource) = when (art) {
+    ConsoleArt.CONTROLLER -> controller
+    ConsoleArt.BACKGROUND -> background
+    ConsoleArt.NONE -> none
 }
 
 private fun pick(style: MenuStyle, list: DrawableResource, grid: DrawableResource, carousel: DrawableResource) = when (style) {
@@ -260,8 +285,14 @@ private const val PREVIEW_WIDE_RATIO = 1.5f
 
 /** What a Layouts group's picture shows ([Screen.Settings.shot]): a tab in a layout, a game list in one, the title and hints, the Game Switcher. */
 sealed interface LayoutShot {
-    /** [stats]: Home's stats strip shown (Layouts → Home stats); the other tabs have none. [vertical]: a Carousel stood on end. */
-    data class Tab(val category: MenuCategory, val style: MenuStyle, val stats: Boolean = true, val vertical: Boolean = false) : LayoutShot
+    /**
+     * [stats]: Home's stats strip shown (Layouts → Home stats); the other tabs have none. [vertical]: a Carousel stood on end.
+     * [art]: Consoles' Layouts → Consoles background; the other tabs keep the default.
+     */
+    data class Tab(
+        val category: MenuCategory, val style: MenuStyle, val stats: Boolean = true, val vertical: Boolean = false,
+        val art: ConsoleArt = ConsoleArt.CONTROLLER,
+    ) : LayoutShot
     /** [vertical]: a Carousel or Backdrop stood on end; [right]: then on the right (Layouts → Game lists alignment). */
     data class Games(val style: MenuStyle, val vertical: Boolean = false, val right: Boolean = false) : LayoutShot
     data class Chrome(val title: Boolean, val hints: Boolean) : LayoutShot
@@ -270,7 +301,7 @@ sealed interface LayoutShot {
 
 /** [shot]'s picture: the tab, game list or Game Switcher capture of its layout, or the title and hints one. */
 internal fun layoutShotPicture(shot: LayoutShot): DrawableResource = when (shot) {
-    is LayoutShot.Tab -> tabPicture(shot.category, shot.style, shot.stats, shot.vertical)
+    is LayoutShot.Tab -> tabPicture(shot.category, shot.style, shot.stats, shot.vertical, shot.art)
     is LayoutShot.Games -> gamesPicture(shot.style, shot.vertical, shot.right)
     is LayoutShot.Chrome -> chromePicture(shot.title, shot.hints)
     is LayoutShot.Switcher -> when (shot.layout) {

@@ -475,7 +475,7 @@ private fun PageBackground(state: AppState, s: Screen, style: MenuStyle, selecti
             val bg by remember(s, style, consoleArt, portrait) {
                 derivedStateOf(structuralEqualityPolicy()) { menuBackground(style, category, s.rows.getOrNull(selection.value.index), consoleArt, portrait) }
             }
-            // Grid and Carousel: plain, as menuBackground gives every non-List style.
+            // Grid and Carousel: plain, as menuBackground gives every non-List style (a Carousel Consoles tab on Background aside).
             MainMenuBackground(bg)
         }
         is Screen.Games -> {
@@ -557,6 +557,8 @@ private fun MainMenuBackground(bg: MenuBackground) {
     when (bg) {
         // List Home's game: as a game list's List background (shifted right of centre, the diagonal fade).
         is MenuBackground.Picture -> NxScreenBackground(url = bg.url, fallback = null, fade = true, modifier = Modifier.fillMaxSize())
+        // Carousel Consoles on Background: the console's picture under the Backdrop game list's dim and shade.
+        is MenuBackground.Backdrop -> NxBackdropPicture(bg.url, Modifier.fillMaxSize())
         is MenuBackground.Logo -> Box(Modifier.fillMaxSize().background(LocalNxColors.current.background)) {
             // The selected console's logo, white at 16% through its mask, 40% wide (44% portrait) and 60% tall,
             // right-aligned; the logos vary in height, so each fits its box.
