@@ -8,7 +8,8 @@ interface NdsChoice {
 
 /** [AUTO] is a stored choice only: [resolve] turns it into a concrete layout for the game area before anything is drawn. */
 enum class NdsPortraitLayout(override val value: String, override val label: String) : NdsChoice {
-    AUTO("auto", "Auto"), PIP("pip", "Picture in picture"), STACKED("stacked", "Stacked"), SINGLE("single", "Single screen");
+    AUTO("auto", "Auto"), PIP("pip", "Picture in picture"), STACKED("stacked", "Stacked"), SINGLE("single", "Single screen"),
+    LARGE("large", "Large screen");
 
     /**
      * The layout to draw in an [areaWidth] x [areaHeight] game area; never [AUTO]. Auto stacks when the two screens
@@ -24,6 +25,7 @@ enum class NdsPortraitLayout(override val value: String, override val label: Str
 
 enum class NdsLandscapeLayout(override val value: String, override val label: String) : NdsChoice {
     SIDE_BY_SIDE("side-by-side", "Side by side"), SINGLE("single", "Single screen"), PIP("pip", "Picture in picture"),
+    LARGE("large", "Large screen"), STACKED("stacked", "Stacked"),
 }
 
 enum class NdsScreen(override val value: String, override val label: String) : NdsChoice {
@@ -37,7 +39,7 @@ enum class PipCorner(override val value: String, override val label: String) : N
     BOTTOM_LEFT("bottom-left", "Bottom left"), BOTTOM_RIGHT("bottom-right", "Bottom right"),
 }
 
-/** [fraction]: the inset's width as a share of the big screen's width. */
+/** [fraction]: the small screen's width as a share of the big screen's width (picture in picture and large screen). */
 enum class PipSize(override val value: String, override val label: String, val fraction: Float) : NdsChoice {
     SMALL("small", "Small", 0.25f), MEDIUM("medium", "Medium", 0.33f), LARGE("large", "Large", 0.40f),
 }
@@ -57,7 +59,7 @@ data class NdsSettings(
     val portrait: NdsPortraitLayout = NdsPortraitLayout.AUTO,
     val landscape: NdsLandscapeLayout = NdsLandscapeLayout.SIDE_BY_SIDE,
     val big: NdsScreen = NdsScreen.TOP,
-    val corner: PipCorner = PipCorner.BOTTOM_RIGHT,
+    val corner: PipCorner = PipCorner.TOP_RIGHT,
     val size: PipSize = PipSize.MEDIUM,
     val opacity: PipOpacity = PipOpacity.FULL,
     val controller: NdsPortraitLayout = NdsPortraitLayout.STACKED,
@@ -116,7 +118,8 @@ object NdsOptions {
             LAYOUT_PORTRAIT, "Layout (portrait)", NdsPortraitLayout.entries, NdsPortraitLayout.AUTO,
             "How the two screens share a portrait screen.\nAuto: stacked when both screens fit the width, else picture in picture.\n" +
                 "Picture in picture: one big, the other small in a corner.\n" +
-                "Stacked: one above the other.\nSingle screen: the big one only.\nSELECT + Left/Right cycles it, or Layout (portrait, controller)\n" +
+                "Stacked: one above the other.\nSingle screen: the big one only.\n" +
+                "Large screen: one big, the other small above or below it.\nSELECT + Left/Right cycles it, or Layout (portrait, controller)\n" +
                 "while a controller hides the pad.\n$SPLIT_NOTE",
         ),
         row(
@@ -126,20 +129,24 @@ object NdsOptions {
         ),
         row(
             LAYOUT_LANDSCAPE, "Layout (landscape)", NdsLandscapeLayout.entries, NdsLandscapeLayout.SIDE_BY_SIDE,
-            "How the two screens share a landscape screen.\nSide by side: half the width each.\nSingle screen: the big one, centred.\nPicture in picture: the big one centred, the other small in a corner.\nSELECT + Left/Right cycles it.\n$SPLIT_NOTE",
+            "How the two screens share a landscape screen.\nSide by side: half the width each.\nSingle screen: the big one, centred.\nPicture in picture: the big one centred, the other small in a corner.\n" +
+                "Large screen: one big, the other small beside it.\nStacked: one above the other.\nSELECT + Left/Right cycles it.\n$SPLIT_NOTE",
         ),
         row(
             BIG_SCREEN, "Big Screen", NdsScreen.entries, NdsScreen.TOP,
-            "The screen shown big in picture in picture and single screen,\nand first in stacked and side by side. R2 swaps it.",
+            "The screen shown big in picture in picture, large screen\nand single screen, and first in stacked and side by side.\nWith the on-screen pad over the game, only this screen takes\ntouches. R2 swaps it.",
         ),
         row(
-            PIP_CORNER, "Inset Corner", PipCorner.entries, PipCorner.BOTTOM_RIGHT,
-            "Where the small screen sits in picture in picture.\nSELECT + Up/Down moves it to the next corner.",
+            PIP_CORNER, "Inset Corner", PipCorner.entries, PipCorner.TOP_RIGHT,
+            "Where the small screen sits in picture in picture\nand large screen. SELECT + Up/Down moves it to the next corner.",
         ),
-        row(PIP_SIZE, "Inset Size", PipSize.entries, PipSize.MEDIUM, "The small screen's width: 25%, 33% or 40% of the big screen's width."),
+        row(
+            PIP_SIZE, "Inset Size", PipSize.entries, PipSize.MEDIUM,
+            "The small screen's width in picture in picture and large screen:\n25%, 33% or 40% of the big screen's width.",
+        ),
         row(
             PIP_OPACITY, "Inset Opacity", PipOpacity.entries, PipOpacity.FULL,
-            "How opaque the small screen is: below 100%,\nthe big screen shows through it. Taps never reach it.",
+            "How opaque the small screen is: below 100%,\nthe big screen shows through it.",
         ),
     )
 

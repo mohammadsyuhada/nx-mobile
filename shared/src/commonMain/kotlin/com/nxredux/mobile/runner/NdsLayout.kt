@@ -57,9 +57,9 @@ object NdsLayout {
      * The regions for an [areaWidth] x [areaHeight] game area, in draw order; empty for an area too small for a screen pixel.
      * Portrait uses [NdsSettings.controller] in [controllerMode] (a non-clip-on controller dropped the pad band), else
      * [NdsSettings.portrait], with Auto resolved for this area: a new area size (rotation, a fold, the band dropping) decides again.
-     * [padOverGame]: the landscape pad clusters are drawn over the game (no controller): no screen takes touches then, the stylus (L2)
-     * stands in. [padCoverTop]: portrait with the band hidden, the clusters cover the game area from this y down; a screen
-     * centred below it (the one under the clusters) takes no touches, the one above still does.
+     * Only the bottom screen takes touches: as the main screen ([NdsSettings.big]: the big one, or the first in stacked
+     * and side by side) always, as the other one only while no pad clusters are drawn over the game: [padOverGame] in
+     * landscape (no controller), [portraitPadOver] in portrait (the band hidden). R2 swaps it into the main spot.
      */
     fun regions(
         areaWidth: Float,
@@ -69,24 +69,25 @@ object NdsLayout {
         marginPx: Float,
         controllerMode: Boolean = false,
         padOverGame: Boolean = false,
-        padCoverTop: Float = Float.POSITIVE_INFINITY,
+        portraitPadOver: Boolean = false,
     ): List<NdsRegion> {
         if (areaWidth <= 0f || areaHeight <= 0f) return emptyList()
         val regions = if (landscape) when (settings.landscape) {
             NdsLandscapeLayout.SIDE_BY_SIDE -> sideBySide(areaWidth, areaHeight, settings.big)
             NdsLandscapeLayout.SINGLE -> listOf(full(settings.big, centreFit(areaWidth, areaHeight)))
             NdsLandscapeLayout.PIP -> pip(centreFit(areaWidth, areaHeight), settings, marginPx)
+            NdsLandscapeLayout.LARGE -> large(areaWidth, areaHeight, settings, beside = true)
+            NdsLandscapeLayout.STACKED -> stacked(areaWidth, areaHeight, settings.big)
         } else when (settings.portraitLayout(controllerMode, areaWidth, areaHeight)) {
             NdsPortraitLayout.PIP -> pip(topFit(areaWidth, areaHeight), settings, marginPx)
             NdsPortraitLayout.STACKED -> stacked(areaWidth, areaHeight, settings.big)
             NdsPortraitLayout.SINGLE -> listOf(full(settings.big, topFit(areaWidth, areaHeight)))
+            NdsPortraitLayout.LARGE -> large(areaWidth, areaHeight, settings, beside = false)
             NdsPortraitLayout.AUTO -> error("AUTO is resolved before layout")
         }
         val laid = if (regions.any { !it.inset && (it.dst.width <= 0f || it.dst.height <= 0f) }) emptyList() else regions
-        return when {
-            landscape -> if (padOverGame) laid.map { it.copy(touch = false) } else laid
-            else -> laid.map { if (it.touch && it.dst.y + it.dst.height / 2f >= padCoverTop) it.copy(touch = false) else it }
-        }
+        val padOver = if (landscape) padOverGame else portraitPadOver
+        return laid.map { it.copy(touch = it.screen == NdsScreen.BOTTOM && (it.screen == settings.big || !padOver)) }
     }
 
     /** The centre of DS pixel ([dsX], [dsY]) of [region]'s screen, in game-area pixels. */
@@ -137,6 +138,39 @@ object NdsLayout {
             full(s.big, big),
             NdsRegion(small, src(small), PxRect(x, y, width, height), shaded = false, touch = false, inset = true, alpha = s.opacity.alpha),
         )
+    }
+
+    /**
+     * Large screen: the big screen and the other one small next to it, apart. Like an inset the small one is drawn
+     * unshaded (shaded regions share one size).
+     * The small one is [NdsSettings.size] of the big one's width, at [NdsSettings.corner]: [beside] the big screen on
+     * that side and level with its top or bottom edge (landscape, the pair centred), or above or below it at that side
+     * (portrait, the pair top-aligned like the other portrait layouts).
+     */
+    private fun large(w: Float, h: Float, s: NdsSettings, beside: Boolean): List<NdsRegion> {
+        val f = s.size.fraction
+        val left = s.corner == PipCorner.TOP_LEFT || s.corner == PipCorner.BOTTOM_LEFT
+        val top = s.corner == PipCorner.TOP_LEFT || s.corner == PipCorner.TOP_RIGHT
+        val bigSize = ScreenSize(if (beside) min(w / (1f + f), h * ASPECT) else min(w, h / (1f + f) * ASPECT))
+        val small = ScreenSize(bigSize.width * f)
+        val bw = bigSize.width
+        val bh = bigSize.height
+        val big: PxRect
+        val inset: PxRect
+        if (beside) {
+            val x = wholePx((w - bw - small.width) / 2f)
+            val y = wholePx((h - bh) / 2f)
+            val bigX = if (left) x + small.width else x
+            big = PxRect(bigX, y, bw, bh)
+            inset = PxRect(if (left) x else x + bw, if (top) y else y + bh - small.height, small.width, small.height)
+        } else {
+            val x = wholePx((w - bw) / 2f)
+            big = PxRect(x, if (top) small.height else 0f, bw, bh)
+            inset = PxRect(if (left) x else x + bw - small.width, if (top) 0f else bh, small.width, small.height)
+        }
+        if (inset.width <= 0f || inset.height <= 0f) return listOf(full(s.big, big))
+        val other = s.big.other
+        return listOf(full(s.big, big), NdsRegion(other, src(other), inset, shaded = false, touch = false))
     }
 
     private fun stacked(w: Float, h: Float, first: NdsScreen): List<NdsRegion> {

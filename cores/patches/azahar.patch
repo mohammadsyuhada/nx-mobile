@@ -1,10 +1,21 @@
 # licence: modifies Azahar (https://github.com/azahar-emu/azahar), GPL-2.0 or later (its source files; license.txt is
 # the GPLv2 text; see LICENSES/azahar.txt); this patch is distributed under the same licence.
 diff --git a/src/citra_libretro/core_settings.cpp b/src/citra_libretro/core_settings.cpp
-index 53fb164..d51f45e 100644
+index 53fb164..60a838a 100644
 --- a/src/citra_libretro/core_settings.cpp
 +++ b/src/citra_libretro/core_settings.cpp
-@@ -1123,7 +1123,9 @@ static void ParseInputOptions(void) {
+@@ -1043,6 +1043,10 @@ static void ParseLayoutOptions(void) {
+     auto large_screen_proportion =
+         LibRetro::FetchVariable(config::layout::large_screen_proportion, "4.00");
+     Settings::values.large_screen_proportion = std::stof(large_screen_proportion);
++
++    // nx-mobile 2026-10-20: Large screen's small screen sits top-right. Upstream's default is
++    // BottomRight, and the libretro core never sets it.
++    Settings::values.small_screen_position = Settings::SmallScreenPosition::TopRight;
+ }
+ 
+ static void ParseStorageOptions(void) {
+@@ -1123,7 +1127,9 @@ static void ParseInputOptions(void) {
              "port:0,sensitivity:" + std::to_string(LibRetro::settings.motion_sensitivity) +
              ",engine:libretro";
      } else {

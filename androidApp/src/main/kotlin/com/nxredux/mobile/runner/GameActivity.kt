@@ -2610,8 +2610,7 @@ class GameActivity : ComponentActivity() {
             controllerMode = ndsControllerMode(),
             // The same condition applyLayout shows the landscape pad clusters on (no controller, not in touch mode).
             padOverGame = landscape && layoutControllerNames().isEmpty() && !ndsTouchMode,
-            // Portrait with the band hidden: the screen under the clusters takes no touches (the game area starts at the cutout).
-            padCoverTop = portraitClusterTop?.let { (it - cutoutTop).toFloat() } ?: Float.POSITIVE_INFINITY,
+            portraitPadOver = portraitClusterTop != null,   // portrait with the band hidden: the clusters over the game
         )
     }
 
