@@ -20,9 +20,12 @@ import time
 
 from brick import nxtest_targets
 
-PKG ="com.nxredux.mobile"
-RECEIVER = PKG + "/" + PKG + ".test.NxTestReceiver"
-ACTION = PKG + ".test."
+# The debug build's application id (applicationIdSuffix ".dev", installed beside the release app); the receiver's
+# class and actions keep the code's package.
+PKG = "com.nxredux.mobile.dev"
+NS = "com.nxredux.mobile"
+RECEIVER = PKG + "/" + NS + ".test.NxTestReceiver"
+ACTION = NS + ".test."
 DATA = "/data/user/0/" + PKG
 FILES = DATA + "/files"
 PRIV = FILES + "/sd"

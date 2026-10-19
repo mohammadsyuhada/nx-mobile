@@ -90,6 +90,12 @@ android {
         }
     }
     buildTypes {
+        // The debug build is "NX Redux Dev" (com.nxredux.mobile.dev, inverted icon in src/debug/res): it installs beside the
+        // release app with its own data, so an adb test build never replaces a user's install.
+        debug {
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+        }
         release {
             isMinifyEnabled = false
             if (releaseStoreFile.isNotEmpty()) signingConfig = signingConfigs.getByName("release")
