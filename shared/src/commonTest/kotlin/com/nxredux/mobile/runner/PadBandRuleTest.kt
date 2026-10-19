@@ -51,6 +51,7 @@ class PadBandRuleTest {
         assertFalse(PadBandRule.controllerLayout("NDS", portrait = true, controllerNames = emptyList()))
         assertFalse(PadBandRule.controllerLayout("NDS", portrait = false, controllerNames = xbox))
         assertFalse(PadBandRule.controllerLayout("GBA", portrait = true, controllerNames = xbox))
+        assertTrue(PadBandRule.controllerLayout("3DS", portrait = true, controllerNames = xbox))   // the 3DS has one too
     }
 
     // Onboarding's pad pages: a clip-on counts as no controller, as the pad band rule has it.

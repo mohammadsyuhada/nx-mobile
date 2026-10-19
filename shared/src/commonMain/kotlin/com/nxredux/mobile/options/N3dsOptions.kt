@@ -4,8 +4,9 @@ import com.nxredux.mobile.runner.N3dsNewControls
 
 /**
  * Nintendo 3DS (Azahar) screen controls. Unlike the DS, the core draws both screens itself: the layout is Azahar's own
- * core option ([LAYOUT]), which it applies live, so the SELECT + Left/Right hotkey sets that option and saves it to the
- * game file like the DS hotkeys do.
+ * core option ([LAYOUT]), which it applies live. Like the DS the app keeps one layout per orientation ([layoutRows]:
+ * portrait, portrait with a controller, landscape) and sets [LAYOUT] from the one in use ([layoutFor]); the core option
+ * itself is locked. The SELECT + Left/Right hotkey changes that row and saves it to the game file like the DS hotkeys do.
  */
 object N3dsOptions {
     const val LAYOUT = "citra_layout_option"
@@ -48,10 +49,43 @@ object N3dsOptions {
         "side_by_side" to "Side by side", "single_screen" to "Single screen",
     )
 
-    /** SELECT + Left/Right: the layout [delta] steps from [current] (unknown or missing counts as "default"), as key to value. */
-    fun cycleLayout(current: String?, delta: Int): Pair<String, String> {
-        val i = LAYOUT_CYCLE.indexOf(current).coerceAtLeast(0)
-        return LAYOUT to LAYOUT_CYCLE[(i + delta).mod(LAYOUT_CYCLE.size)]
+    const val LAYOUT_PORTRAIT = "nx_3ds_layout_portrait"
+    const val LAYOUT_PORTRAIT_CONTROLLER = "nx_3ds_layout_portrait_controller"
+    const val LAYOUT_LANDSCAPE = "nx_3ds_layout_landscape"
+
+    private const val LAYOUT_INFO_LIST = "Top over bottom: one above the other\n(in landscape the top one three quarters of the height).\n" +
+        "Large screen: the top one big, the bottom small at its top right.\nSide by side: next to each other.\n" +
+        "Single screen: the top one only.\nSELECT + Left/Right cycles it."
+
+    private fun layoutRow(key: String, label: String, info: String) = FrontendOption(
+        key, label, LAYOUT_CYCLE, "default", info, visual = true, valueLabels = LAYOUT_CYCLE.map(::layoutLabel),
+    )
+
+    /** Console Settings' layout rows, one per orientation as on the DS (in-game: applied live). */
+    val layoutRows: List<FrontendOption> = listOf(
+        layoutRow(LAYOUT_PORTRAIT, "Layout (portrait)", "How the two screens share a portrait screen.\n$LAYOUT_INFO_LIST"),
+        layoutRow(
+            LAYOUT_PORTRAIT_CONTROLLER, "Layout (portrait, controller)",
+            "The portrait layout while a controller that is not a clip-on\nis connected and the pad is hidden.\nSELECT + Left/Right cycles it then.",
+        ),
+        layoutRow(LAYOUT_LANDSCAPE, "Layout (landscape)", "How the two screens share a landscape screen.\n$LAYOUT_INFO_LIST"),
+    )
+
+    /** The row in use: landscape, else portrait with a (non-clip-on) controller ([controllerMode]), else portrait. */
+    fun layoutKey(landscape: Boolean, controllerMode: Boolean): String = when {
+        landscape -> LAYOUT_LANDSCAPE
+        controllerMode -> LAYOUT_PORTRAIT_CONTROLLER
+        else -> LAYOUT_PORTRAIT
+    }
+
+    /** The core's [LAYOUT] value for the row in use; an unknown or missing value counts as "default". */
+    fun layoutFor(values: Map<String, String>, landscape: Boolean, controllerMode: Boolean): String =
+        values[layoutKey(landscape, controllerMode)]?.takeIf { it in LAYOUT_CYCLE } ?: "default"
+
+    /** SELECT + Left/Right: the row in use, as key to the layout [delta] steps from its value, wrapping. */
+    fun cycleLayout(values: Map<String, String>, landscape: Boolean, controllerMode: Boolean, delta: Int): Pair<String, String> {
+        val i = LAYOUT_CYCLE.indexOf(layoutFor(values, landscape, controllerMode))
+        return layoutKey(landscape, controllerMode) to LAYOUT_CYCLE[(i + delta).mod(LAYOUT_CYCLE.size)]
     }
 
     /** What the hotkey's notice shows for a layout value. */

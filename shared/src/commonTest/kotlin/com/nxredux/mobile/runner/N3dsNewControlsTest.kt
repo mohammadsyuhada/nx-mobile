@@ -62,7 +62,7 @@ class N3dsNewControlsTest {
     }
 
     @Test fun the_3ds_console_settings_offer_the_row_before_the_layout_row() {
-        assertEquals(listOf(N3dsOptions.newControlsRow, GraphicsApiOptions.row, PadOptions.portraitPadRow, PadOptions.layoutRow), ConsoleSettings.tableFor("3DS"))
+        assertEquals(N3dsOptions.layoutRows + listOf(N3dsOptions.newControlsRow, GraphicsApiOptions.row, PadOptions.portraitPadRow, PadOptions.layoutRow), ConsoleSettings.tableFor("3DS"))
         val row = N3dsOptions.newControlsRow
         assertEquals(N3dsOptions.NEW_CONTROLS, row.key)
         assertEquals("New 3DS Controls", row.label)

@@ -567,7 +567,6 @@ class GameActivity : ComponentActivity() {
 
     // ---- Nintendo 3DS controls (N3dsHotkeys): the core draws both screens and its own touch cursor ----
     private val n3dsHotkeys = N3dsHotkeys()     // a new activity, a new instance: stylus mode is off at every launch
-    private var n3dsLayout: String? = null      // citra_layout_option as in effect (launch, menu, hotkey, restore)
     private var n3dsHatX = 0
     private var n3dsHatY = 0
     private var n3dsHwRight = 0f to 0f          // the hardware right stick as last read
@@ -1108,11 +1107,15 @@ class GameActivity : ComponentActivity() {
         val netplayPad = if (np != null) NetplayPads.forSession(tag, descriptor?.id) else null
         shaderValues = ShaderOptions.fromConfig(resolved.values)
         presetNames = withContext(Dispatchers.IO) { Shaders.presets(sdRoot) }
-        val options = FrontendOptions.coreValues(resolved.values).map { (k, v) -> Variable(k, v) } +
+        val options = FrontendOptions.coreValues(resolved.values)
+            .filterNot { (k, _) -> k == N3dsOptions.LAYOUT && N3dsOptions.appliesTo(tag) }   // set from the row below
+            .map { (k, v) -> Variable(k, v) } +
             // 3DS Top over bottom: a bigger top screen in landscape (onConfigurationChanged follows a rotation).
             if (N3dsOptions.appliesTo(tag)) listOf(
                 Variable(N3dsOptions.STACKED_SMALL_PROPORTION, N3dsOptions.stackedSmallProportion(isLandscape())),
                 Variable(N3dsOptions.TOUCH_MAIN_ONLY, N3dsOptions.touchMainOnly(overlayPadShown.value)),
+                // The locked core layout ([N3dsOptions.LAYOUT]) from the row in use; the descriptor's default is replaced.
+                Variable(N3dsOptions.LAYOUT, N3dsOptions.layoutFor(frontendValues, isLandscape(), ndsControllerMode())),
             ) else emptyList()
         // netplay link: gambatte gets its link options; a GBA link engine starts now, before the core loads, so
         // a joiner learns the host's gpsp_serial from its READY and runs with it (the handheld reloads instead).
@@ -1761,7 +1764,7 @@ class GameActivity : ComponentActivity() {
         val tt = tabletop(names)
         if (tt != null) {
             applyTabletopLayout(root, game, tt, names, portrait, orientation)
-            syncN3dsTouchRule()
+            syncN3dsCore()
             return
         }
         if (portrait) {
@@ -1801,7 +1804,7 @@ class GameActivity : ComponentActivity() {
         }
         game.requestLayout()
         updatePadVisibility()
-        syncN3dsTouchRule()
+        syncN3dsCore()
         menuView?.layoutParams = menuLayoutParams(orientation)
         notificationsView?.layoutParams = menuLayoutParams(orientation)
         // The DS layouts follow the new area (gameContainer's size listener does too, once it is laid out).
@@ -1830,9 +1833,16 @@ class GameActivity : ComponentActivity() {
         overlayPadShown.value = true
     }
 
-    /** 3DS: with the clusters over the game, a finger touches the bottom screen only while it is the main one (the core's rule). */
-    private fun syncN3dsTouchRule() {
-        if (isN3ds) applyOptions(listOf(Variable(N3dsOptions.TOUCH_MAIN_ONLY, N3dsOptions.touchMainOnly(overlayPadShown.value))))
+    /**
+     * 3DS: the core's layout from the row in use (orientation, controller), and, with the clusters over the game, a finger
+     * touching the bottom screen only while it is the main one (the core's rule). A value the core has is not sent again.
+     */
+    private fun syncN3dsCore() {
+        if (!isN3ds) return
+        applyOptions(listOf(
+            Variable(N3dsOptions.LAYOUT, N3dsOptions.layoutFor(frontendValues, isLandscape(), ndsControllerMode())),
+            Variable(N3dsOptions.TOUCH_MAIN_ONLY, N3dsOptions.touchMainOnly(overlayPadShown.value)),
+        ))
     }
 
     /** The tag the layout goes by: the intent's until startEmulator sets [gameTag] (onCreate lays out before it). */
@@ -2006,7 +2016,10 @@ class GameActivity : ComponentActivity() {
         frontendValues = values
         val segaSetting = values[PadOptions.SEGA_PAD] ?: SegaPadType.AUTO
         if (segaSetting != oldSegaSetting && PadMap.isSegaPadTag(gameTag)) applySegaPad(segaSetting)
-        if (isN3ds) applyN3dsNewControls(values[N3dsOptions.NEW_CONTROLS])
+        if (isN3ds) {
+            applyN3dsNewControls(values[N3dsOptions.NEW_CONTROLS])
+            syncN3dsCore()   // a layout row changed in the menu, or the hotkey's
+        }
         if (isWii && wiiPad != null) applyWii(values)   // before the launch resolves it, the launch reads the values itself
         // Portrait Pad changed (the menu, the corner icon, or the launch's values after onCreate's layout). Posted: the
         // icon's own view is still dispatching its long press.
@@ -2758,7 +2771,6 @@ class GameActivity : ComponentActivity() {
 
     /** Picks the 3DS hotkeys' core values out of [values] (launch, a menu change, a restore); other keys are ignored. */
     private fun n3dsCoreValues(values: Map<String, String>) {
-        values[N3dsOptions.LAYOUT]?.let { n3dsLayout = it.ifEmpty { null } }
         values[N3dsOptions.DEADZONE]?.let { n3dsHotkeys.deadzone = N3dsOptions.deadzone(it) }
     }
 
@@ -2790,10 +2802,10 @@ class GameActivity : ComponentActivity() {
     private fun applyN3dsAction(action: N3dsAction) {
         when (action) {
             is N3dsAction.CycleLayout -> {
-                val (key, value) = N3dsOptions.cycleLayout(n3dsLayout, action.delta)
+                // The row in use (orientation, controller), as the DS's; applyFrontend sets the core's layout from it.
+                val (key, value) = N3dsOptions.cycleLayout(frontendValues, isLandscape(), ndsControllerMode(), action.delta)
                 if (key in lockedOptions) return
-                n3dsLayout = value
-                applyOptions(listOf(Variable(key, value)))   // Azahar re-lays its screens out on its next frame
+                applyFrontend(frontendValues + (key to value))   // Azahar re-lays its screens out on its next frame
                 showNdsLabel(N3dsOptions.layoutLabel(value))
                 persistGameKey(key, value)
             }
@@ -3357,10 +3369,7 @@ class GameActivity : ComponentActivity() {
                     configSource = next.source
                     lockedOptions = next.locked
                     storedValues = next.values
-                    n3dsCoreValues(mapOf(
-                        N3dsOptions.LAYOUT to (next.values[N3dsOptions.LAYOUT] ?: ""),
-                        N3dsOptions.DEADZONE to (next.values[N3dsOptions.DEADZONE] ?: ""),
-                    ))
+                    n3dsCoreValues(mapOf(N3dsOptions.DEADZONE to (next.values[N3dsOptions.DEADZONE] ?: "")))
                     applyFrontend(FrontendOptions.fromConfig(next.values, gameTag))
                     applyShader(ShaderOptions.fromConfig(next.values))
                 }

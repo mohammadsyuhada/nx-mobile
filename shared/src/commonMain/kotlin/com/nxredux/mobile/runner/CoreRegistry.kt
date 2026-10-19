@@ -325,6 +325,8 @@ object CoreRegistry {
         lockedOptions = setOf(
             "citra_graphics_api", "citra_use_libretro_save_path", "citra_enable_mouse_touchscreen", "citra_enable_motion",
             "citra_motion_sensitivity",
+            // The app sets the layout from its per-orientation rows (N3dsOptions.layoutRows), so the core's is locked.
+            "citra_layout_option",
         ),
         hiddenValues = mapOf("citra_graphics_api" to setOf("Software")),
         // With Vulkan compiled in, Azahar's Android "Auto" picks Vulkan without asking the frontend

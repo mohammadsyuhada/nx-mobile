@@ -9,7 +9,7 @@ package com.nxredux.mobile.options
 object ConsoleSettings {
     fun tableFor(tag: String): List<FrontendOption> = when {
         NdsOptions.appliesTo(tag) -> NdsOptions.table
-        N3dsOptions.appliesTo(tag) -> listOf(N3dsOptions.newControlsRow)
+        N3dsOptions.appliesTo(tag) -> N3dsOptions.layoutRows + N3dsOptions.newControlsRow
         WiiOptions.appliesTo(tag) -> WiiOptions.table
         else -> emptyList()
     } + graphicsRows(tag) + PadOptions.tableFor(tag)
@@ -19,5 +19,5 @@ object ConsoleSettings {
 
     /** Every console's rows (keys are unique across them). */
     val all: List<FrontendOption> =
-        NdsOptions.table + N3dsOptions.newControlsRow + WiiOptions.table + GraphicsApiOptions.row + PadOptions.all
+        NdsOptions.table + N3dsOptions.layoutRows + N3dsOptions.newControlsRow + WiiOptions.table + GraphicsApiOptions.row + PadOptions.all
 }
