@@ -84,6 +84,36 @@ class ScrapeEngineTest {
         }
     }
 
+    // A console game's zip: try 2 sends the ROM inside it (a zip's own CRC names no game); a 7z (not read) skips try 2.
+    @Test fun aConsoleZipIsHashedInside() = runTest {
+        val rig = Rig(this)
+        rig.http.on("romnom=zz1.zip", Scrape.json(ScraperFixtures.GARBAGE), Scrape.BOTH)
+        rig.http.on("https://m/", OK_PNG)
+        assertEquals(ItemStatus.DONE, rig.run(listOf(Scrape.homeGame("zz1.zip"))).items.single().status)
+        assertTrue(rig.http.calls.filter { it.contains("jeuInfos") }[1].contains("&crc=00005678&romtaille=200"))
+        assertTrue(rig.hasher.asked.isEmpty())
+        assertEquals(1, rig.hasher.askedInZip.size)
+    }
+
+    @Test fun aConsole7zSkipsTryTwo() = runTest {
+        val rig = Rig(this)
+        rig.http.on("romnom=", Scrape.json(ScraperFixtures.GARBAGE))
+        assertEquals(ItemStatus.NOT_FOUND, rig.run(listOf(Scrape.homeGame("zz1.7z"))).items.single().status)
+        assertEquals(1, rig.http.count("jeuInfos"))
+        assertTrue(rig.hasher.asked.isEmpty() && rig.hasher.askedInZip.isEmpty())
+    }
+
+    // An arcade set's zip is the game itself (several ROMs, and possibly a BIOS): hashed whole, as before.
+    @Test fun anArcadeZipIsHashedWhole() = runTest {
+        for ((file, tag) in listOf("mslug.zip" to "FBN", "mslug6.zip" to "DC")) {
+            val rig = Rig(this)
+            rig.http.on("romnom=", Scrape.json(ScraperFixtures.GARBAGE))
+            rig.run(listOf(Scrape.homeGame(file, tag = tag)))
+            assertTrue(rig.http.calls.filter { it.contains("jeuInfos") }[1].contains("&crc=00001234&romtaille=100"), file)
+            assertTrue(rig.hasher.askedInZip.isEmpty(), file)
+        }
+    }
+
     @Test fun writesTypedFilesOnly() = runTest {
         val rig = Rig(this)
         val sonic = Scrape.extraGame("Sonic.md", "MD")

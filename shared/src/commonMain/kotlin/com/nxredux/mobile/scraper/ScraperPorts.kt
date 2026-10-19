@@ -35,6 +35,11 @@ interface PixelCodec {
 interface RomHasher {
     /** CRC32 and size of [rom]; null when unreadable or larger than [ScreenScraperSource.HASH_LIMIT]. */
     suspend fun crc32AndSize(rom: ContentRef): Pair<Long, Long>?
+    /**
+     * CRC32 and size of the ROM inside the zip [zip] (its largest file); null when unreadable, not a zip, empty, or
+     * the zip or that file is larger than [ScreenScraperSource.HASH_LIMIT].
+     */
+    suspend fun crc32AndSizeInZip(zip: ContentRef): Pair<Long, Long>?
 }
 
 /** Keeps a job alive (Android: the foreground service and its notification text). */
