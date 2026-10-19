@@ -382,7 +382,7 @@ private fun PadButton(
     shape: Shape = PadStyle.faceShape,
     label: String = button.glyph(),
     width: Dp = size,
-    fontSize: TextUnit = LocalPadLabelSize.current,
+    fontSize: TextUnit = NxTextSizes.padLabel,
     face: PadFace? = null,
     labelColor: Color? = null,
     icon: PadIcon? = null,
@@ -729,7 +729,7 @@ private fun ToggleButton(label: String, onClick: () -> Unit, height: Dp, width: 
             color = LocalPadColors.current.label,
             fontFamily = LocalNxFont.current,
             fontWeight = FontWeight.SemiBold,
-            fontSize = LocalPadLabelSize.current.pinned(),
+            fontSize = NxTextSizes.padLabel.pinned(),
         )
     }
 }
@@ -769,13 +769,10 @@ private fun MotionButton(motion: PadMotion, height: Dp, width: Dp) {
             color = LocalPadColors.current.label,
             fontFamily = LocalNxFont.current,
             fontWeight = FontWeight.SemiBold,
-            fontSize = LocalPadLabelSize.current.pinned(),
+            fontSize = NxTextSizes.padLabel.pinned(),
         )
     }
 }
-
-/** The pad's small labels' size: [NxTextSizes.padLabel], bigger in the clusters over the game ([NxTextSizes.padLabelOverGame]). */
-val LocalPadLabelSize = staticCompositionLocalOf { NxTextSizes.padLabel }
 
 /**
  * The 3DS pad's own STYLUS and SWAP pills, the on-screen forms of its SELECT + L1 / SELECT + R1 chords: [stylusOn] says
@@ -824,7 +821,7 @@ private fun ToolButton(
             color = LocalPadColors.current.label,
             fontFamily = LocalNxFont.current,
             fontWeight = FontWeight.SemiBold,
-            fontSize = LocalPadLabelSize.current.pinned(),
+            fontSize = NxTextSizes.padLabel.pinned(),
         )
     }
 }
@@ -1402,10 +1399,7 @@ fun VirtualPadLeft(
     val emit = rememberEmit(onEvent)
     val stick = rememberStickChoice(useJoystick, onUseJoystickChange)
     // Always Charcoal: the clusters sit translucent over the game, whatever the portrait Pad theme.
-    CompositionLocalProvider(
-        LocalPadColors provides CharcoalPadColors,
-        LocalPadLabelSize provides if (overGame) NxTextSizes.padLabelOverGame else NxTextSizes.padLabel,
-    ) {
+    CompositionLocalProvider(LocalPadColors provides CharcoalPadColors) {
         BoxWithConstraints(modifier.fillMaxSize().padding(CLUSTER_PADDING.dp)) {
             val unit = clusterUnit(maxWidth.value, maxHeight.value).dp
             val arrange = rememberPadArrange(layout, with(LocalDensity.current) { unit.toPx() }, onGroupBounds)
@@ -1472,10 +1466,7 @@ fun VirtualPadRight(
 ) {
     val emit = rememberEmit(onEvent)
     // Always Charcoal: the clusters sit translucent over the game, whatever the portrait Pad theme.
-    CompositionLocalProvider(
-        LocalPadColors provides CharcoalPadColors,
-        LocalPadLabelSize provides if (overGame) NxTextSizes.padLabelOverGame else NxTextSizes.padLabel,
-    ) {
+    CompositionLocalProvider(LocalPadColors provides CharcoalPadColors) {
         BoxWithConstraints(modifier.fillMaxSize().padding(CLUSTER_PADDING.dp)) {
             val unit = clusterUnit(maxWidth.value, maxHeight.value).dp
             val arrange = rememberPadArrange(layout, with(LocalDensity.current) { unit.toPx() }, onGroupBounds)
