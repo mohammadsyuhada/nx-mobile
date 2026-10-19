@@ -429,18 +429,29 @@ private fun PadButton(
                     else faceLabelScale(textWidth, minOf(width, size).toPx())
                 }
             }
+            val drawn = fontSize.pinned() * scale
+            // An all-lowercase label (the Wii Classic Controller's a b x y) has no capital height, so the line box
+            // centres it low: it is lifted by a share of its size to sit in the middle of the button.
+            val lift = if (isLowercaseLabel(label)) with(LocalDensity.current) { drawn.toDp() } * LOWERCASE_LIFT else 0.dp
             Text(
                 label,
+                modifier = Modifier.offset(y = -lift),
                 color = color,
                 fontFamily = font,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = fontSize.pinned() * scale,
+                fontSize = drawn,
                 maxLines = 1,
                 softWrap = false,
             )
         }
     }
 }
+
+/** A label of letters that are all lowercase ([PadButton] lifts it). */
+internal fun isLowercaseLabel(label: String): Boolean = label.any { it.isLetter() } && label.none { it.isUpperCase() }
+
+/** How far an all-lowercase label is lifted, as a share of its font size. */
+private const val LOWERCASE_LIFT = 0.1f
 
 /**
  * The face cluster for [profile]: the X/Y/B/A diamond in a [size]×3 square, the N64's A, B and C diamond in a box
