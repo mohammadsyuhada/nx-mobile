@@ -53,6 +53,15 @@ class SaveArchiveTest {
         assertEquals(listOf("Imported 0 saves and 0 states", "1 other file ignored"), ImportSummary(ignored = 1).lines())
         assertEquals(listOf("Nothing to import"), ImportSummary().lines())
     }
+    @Test fun import_summaries_add_up() {
+        val a = ImportSummary(saves = 1, states = 2, markers = 3, identical = 4, replaced = 5, ignored = 6, skipped = listOf(SkippedFile("A.srm", SkipReason.NO_GAME)))
+        val b = ImportSummary(saves = 10, states = 20, markers = 30, identical = 40, replaced = 50, ignored = 60, skipped = listOf(SkippedFile("B.srm", SkipReason.UNREADABLE)))
+        assertEquals(
+            ImportSummary(11, 22, 33, 44, 55, 66, listOf(SkippedFile("A.srm", SkipReason.NO_GAME), SkippedFile("B.srm", SkipReason.UNREADABLE))),
+            a + b,
+        )
+        assertEquals(a, ImportSummary() + a)
+    }
     @Test fun skipped_file_text() {
         assertEquals(
             "Tetris.srm: matches Game Boy and Game Boy Advance",

@@ -49,6 +49,7 @@ import com.nxredux.mobile.runner.ContentRef
 import com.nxredux.mobile.runner.EmulatorRunner
 import com.nxredux.mobile.runner.GameSession
 import com.nxredux.mobile.settings.AppSettings
+import com.nxredux.mobile.settings.ImportResult
 import com.nxredux.mobile.settings.ImportSource
 import com.nxredux.mobile.settings.SaveTransfer
 import com.nxredux.mobile.settings.SaveTransferRules
@@ -56,6 +57,7 @@ import com.nxredux.mobile.settings.TransferReport
 import com.nxredux.mobile.storage.AllFilesAccess
 import com.nxredux.mobile.storage.FakeAllFilesAccess
 import com.nxredux.mobile.storage.FakeNotificationAccess
+import com.nxredux.mobile.storage.ImportSummary
 import com.nxredux.mobile.storage.NotificationAccess
 import com.nxredux.mobile.storage.FakeLocalFiles
 import com.nxredux.mobile.storage.FileRefs
@@ -9579,20 +9581,20 @@ class AppStateTest {
         assertEquals(SettingsKind.SAVES, page().rows[state.selection.value.index].kind)
     }
 
-    private class RecordingTransfer : SaveTransfer {
+    private class RecordingTransfer(private val result: ImportResult = ImportResult.Done(ImportSummary(saves = 1))) : SaveTransfer {
         val calls = mutableListOf<String>()
         override var importing = false
         override fun exportSaves(report: TransferReport) { calls += "export"; report("Exported 1 save and 0 states (0.0 MB)", true) }
-        override fun importSaves(source: ImportSource, move: Boolean, report: TransferReport) { calls += "import $source move=$move"; report("Imported 1 save and 0 states", true) }
+        override fun importSaves(source: ImportSource, progress: (String) -> Unit, done: (ImportResult) -> Unit) { calls += "import $source"; done(result) }
     }
 
     /** Reports progress at once and keeps the result for the test to deliver ([finish]). */
     private class SlowTransfer : SaveTransfer {
         override var importing = false
-        private var pending: TransferReport? = null
+        private var pending: ((ImportResult) -> Unit)? = null
         override fun exportSaves(report: TransferReport) = Unit
-        override fun importSaves(source: ImportSource, move: Boolean, report: TransferReport) { importing = true; pending = report; report("Working…", false) }
-        fun finish(text: String) { importing = false; pending!!(text, true) }
+        override fun importSaves(source: ImportSource, progress: (String) -> Unit, done: (ImportResult) -> Unit) { importing = true; pending = done; progress("Working…") }
+        fun finish(result: ImportResult) { importing = false; pending!!(result) }
     }
 
     @Test fun the_progress_notice_stays_until_the_summary_replaces_it() = runTest {
@@ -9600,13 +9602,13 @@ class AppStateTest {
         val st = state(MemorySettings(ContentRef("Home")), saveTransfer = transfer)
         st.load()
         st.openSettings(SettingsSection.IMPORT_SAVES)
-        st.onButton(NxButton.DOWN); st.onButton(NxButton.A)                 // From the home folder
+        st.onButton(NxButton.A)                                             // From a folder
         assertEquals("Working…", st.notice.value)
         advanceTimeBy(60_000); runCurrent()
         assertEquals("Working…", st.notice.value)                          // no timeout
         st.onButton(NxButton.DOWN)
         assertEquals("Working…", st.notice.value)                          // nor does a press clear it
-        transfer.finish("Imported 1 save and 0 states")
+        transfer.finish(ImportResult.Done(ImportSummary(saves = 1)))
         assertEquals("Imported 1 save and 0 states", st.notice.value)
         advanceTimeBy(3_001); runCurrent()
         assertNull(st.notice.value)                                         // the summary clears itself as any notice does
@@ -9742,25 +9744,30 @@ class AppStateTest {
         assertEquals("Exported 1 save and 0 states (0.0 MB)", st.notice.value)
     }
 
-    @Test fun import_page_picks_the_mode_then_the_source() = runTest {
+    @Test fun import_page_lists_the_three_sources() = runTest {
         val transfer = RecordingTransfer()
         val st = state(MemorySettings(ContentRef("Home")), saveTransfer = transfer)
         st.load()
         st.openSettings(SettingsSection.IMPORT_SAVES)
         fun page() = assertIs<Screen.Settings>(st.screen.value)
         assertEquals(
-            listOf(Triple(SettingsKind.IMPORT_MODE, "After importing", "Move"), Triple(SettingsKind.IMPORT_HOME, "From the home folder", null),
-                Triple(SettingsKind.IMPORT_ZIP, "From a zip file", null), Triple(SettingsKind.IMPORT_FOLDER, "From another folder", null)),
-            page().rows.map { Triple(it.kind, it.label, it.secondary) },
+            listOf(SettingsKind.IMPORT_FOLDER to "From a folder", SettingsKind.IMPORT_ZIP to "From a zip file", SettingsKind.IMPORT_RETROARCH to "From RetroArch"),
+            page().rows.map { it.kind to it.label },
         )
-        st.onButton(NxButton.RIGHT)                       // Copy
-        assertEquals("Copy", page().rows[0].secondary)
+        st.onButton(NxButton.A)
+        assertEquals(listOf("import FOLDER"), transfer.calls)
+        assertEquals("Imported 1 save and 0 states", st.notice.value)   // the summary as one notice line
         st.onButton(NxButton.DOWN); st.onButton(NxButton.A)
-        assertEquals(listOf("import HOME move=false"), transfer.calls)
-        st.onButton(NxButton.B); st.openSettings(SettingsSection.IMPORT_SAVES)
-        assertEquals("Move", page().rows[0].secondary)    // reset each time the page opens
-        st.onButton(NxButton.DOWN); st.onButton(NxButton.A)   // the page remembers its row (From the home folder), so one step is the zip
-        assertEquals("import ZIP move=true", transfer.calls.last())
+        st.onButton(NxButton.DOWN); st.onButton(NxButton.A)
+        assertEquals(listOf("import FOLDER", "import ZIP", "import RETROARCH"), transfer.calls)
+    }
+
+    @Test fun an_import_message_shows_as_the_notice() = runTest {
+        val st = state(MemorySettings(ContentRef("Home")), saveTransfer = RecordingTransfer(ImportResult.Message("Failed: boom")))
+        st.load()
+        st.openSettings(SettingsSection.IMPORT_SAVES)
+        st.onButton(NxButton.A)
+        assertEquals("Failed: boom", st.notice.value)
     }
 
     @Test fun pad_vibration_row_cycles_on_left_right_and_a_and_keeps_the_selection() = runTest {

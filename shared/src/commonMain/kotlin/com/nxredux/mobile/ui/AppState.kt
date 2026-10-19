@@ -85,6 +85,7 @@ import com.nxredux.mobile.storage.StateFormat
 import com.nxredux.mobile.settings.SecondaryAccent
 import com.nxredux.mobile.settings.OptionTextSize
 import com.nxredux.mobile.settings.AppSettings
+import com.nxredux.mobile.settings.ImportResult
 import com.nxredux.mobile.settings.ImportSource
 import com.nxredux.mobile.settings.SaveTransfer
 import com.nxredux.mobile.settings.SaveTransferRules
@@ -407,7 +408,7 @@ sealed interface Screen {
     data class ArtworkReset(val scopes: List<ResetScope>, val confirm: ResetScope? = null) : Screen
 }
 
-enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_MODE, IMPORT_HOME, IMPORT_ZIP, IMPORT_FOLDER, RESET_DEFAULTS, ALL_FILES,
+enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_FOLDER, IMPORT_ZIP, IMPORT_RETROARCH, RESET_DEFAULTS, ALL_FILES,
     LAYOUT_HOME, LAYOUT_CONSOLES, LAYOUT_COLLECTIONS, LAYOUT_TOOLS, LAYOUT_GAME_LISTS, LAYOUT_TITLE_HINTS, LAYOUT_SWITCHER, TEXT_SIZE }
 
 /**
@@ -818,7 +819,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private var foregroundJob: Job? = null            // onForeground's check (and the scan it starts)
     private var homeCheck: Job? = null                // the index start's home probe in flight (shared, see afterIndexStart)
     private var homeCheckFor: ContentRef? = null
-    private var importMove = true   // Import saves' After importing: Move until flipped, reset each time the page opens
     private val sectionSelections = HashMap<SettingsSection, ListSelection>()   // each section's row, remembered across visits
     private var settingsMenuSelection = ListSelection(0, 0)
     private var settingsSplit = false   // the UI draws Settings as two panes ([onSettingsSplit])
@@ -2895,7 +2895,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             is Screen.SettingsMenu -> settingsMenuSelection = _selection.value
             else -> Unit
         }
-        if (section == SettingsSection.IMPORT_SAVES) importMove = true
         val page = settingsPage(section)
         _screen.value = page
         _selection.value = (sectionSelections[section] ?: ListSelection(0, 0)).clampedTo(page.rows.size)
@@ -3063,10 +3062,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             SettingsRow(SettingsKind.IMPORT_SAVES, "Import saves"),
         )
         SettingsSection.IMPORT_SAVES -> listOf(
-            SettingsRow(SettingsKind.IMPORT_MODE, "After importing", if (importMove) "Move" else "Copy"),
-            SettingsRow(SettingsKind.IMPORT_HOME, "From the home folder"),
+            SettingsRow(SettingsKind.IMPORT_FOLDER, "From a folder"),
             SettingsRow(SettingsKind.IMPORT_ZIP, "From a zip file"),
-            SettingsRow(SettingsKind.IMPORT_FOLDER, "From another folder"),
+            SettingsRow(SettingsKind.IMPORT_RETROARCH, "From RetroArch"),
         )
         SettingsSection.DEFAULT_EMULATORS -> defaultEmulatorRows()
         SettingsSection.PAD_LAYOUT -> padLayoutRows()
@@ -3251,14 +3249,16 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         refreshSettings()
     }
 
-    /** Import saves → After importing: Move or Copy, so every press flips it. */
-    private fun flipImportMode() {
-        importMove = !importMove
-        refreshSettings()
-    }
-
     /** A save transfer's report: its progress notice stays until the result (done) replaces it. */
     private fun showTransferNotice(text: String, done: Boolean) = showNotice(text, sticky = !done)
+
+    /** Import saves from [source]: its progress notice stays until the result's notice (the summary as one line) replaces it. */
+    private fun importSaves(source: ImportSource) = deps.saveTransfer?.importSaves(source, { showNotice(it, sticky = true) }) { result ->
+        when (result) {
+            is ImportResult.Done -> showNotice(result.summary.lines().joinToString("; "))
+            is ImportResult.Message -> showNotice(result.text)
+        }
+    }
 
     /** Controls → Menu pad: two values, so every press flips it; the shell follows when Settings refreshes. */
     private fun flipMenuPad() {
@@ -3721,7 +3721,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     SettingsKind.SAVE_FORMAT -> cycleSaveFormat(step)
                     SettingsKind.STATE_FORMAT -> cycleStateFormat(step)
                     SettingsKind.EXTRACTED_NAME -> flipExtractedName()
-                    SettingsKind.IMPORT_MODE -> flipImportMode()
                     SettingsKind.PAD_LAYOUT_CONSOLE -> cyclePadLayoutConsole(step)
                     SettingsKind.ACCENT -> cycleAccent(step)
                     SettingsKind.SECONDARY_ACCENT -> cycleSecondaryAccent(step)
@@ -5028,10 +5027,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     SettingsKind.SAVES -> { sectionSelections[s.section] = _selection.value; openSettings(SettingsSection.SAVES) }
                     SettingsKind.EXPORT_SAVES -> deps.saveTransfer?.exportSaves(::showTransferNotice)
                     SettingsKind.IMPORT_SAVES -> { sectionSelections[s.section] = _selection.value; openSettings(SettingsSection.IMPORT_SAVES) }
-                    SettingsKind.IMPORT_MODE -> flipImportMode()
-                    SettingsKind.IMPORT_HOME -> deps.saveTransfer?.importSaves(ImportSource.HOME, importMove, ::showTransferNotice)
-                    SettingsKind.IMPORT_ZIP -> deps.saveTransfer?.importSaves(ImportSource.ZIP, importMove, ::showTransferNotice)
-                    SettingsKind.IMPORT_FOLDER -> deps.saveTransfer?.importSaves(ImportSource.FOLDER, importMove, ::showTransferNotice)
+                    SettingsKind.IMPORT_FOLDER -> importSaves(ImportSource.FOLDER)
+                    SettingsKind.IMPORT_ZIP -> importSaves(ImportSource.ZIP)
+                    SettingsKind.IMPORT_RETROARCH -> importSaves(ImportSource.RETROARCH)
                     SettingsKind.SAVE_FORMAT -> cycleSaveFormat(1)
                     SettingsKind.STATE_FORMAT -> cycleStateFormat(1)
                     SettingsKind.EXTRACTED_NAME -> flipExtractedName()

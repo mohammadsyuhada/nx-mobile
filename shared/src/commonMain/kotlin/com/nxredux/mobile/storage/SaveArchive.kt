@@ -88,6 +88,12 @@ data class ImportSummary(
             if (ignored > 0) add("$ignored other ${plural(ignored, "file")} ignored")
         }
     }
+
+    /** Both imports' counts added up, their skipped files one after the other (RetroArch reads several roots). */
+    operator fun plus(other: ImportSummary) = ImportSummary(
+        saves + other.saves, states + other.states, markers + other.markers, identical + other.identical,
+        replaced + other.replaced, ignored + other.ignored, skipped + other.skipped,
+    )
 }
 
 private fun plural(n: Int, word: String) = if (n == 1) word else word + "s"
