@@ -14,8 +14,6 @@ sealed interface NdsAction {
     data class CycleCorner(val delta: Int) : NdsAction
     /** L2: stylus mode turned on or off. */
     data class Stylus(val on: Boolean) : NdsAction
-    /** L2 with the landscape pad shown: hide the pad for finger touch. */
-    data object TouchMode : NdsAction
 }
 
 /** [forward]: pass the event on to the core. [action]: what the frontend does. */
@@ -30,8 +28,7 @@ data class NdsPen(val x: Float, val y: Float, val pressed: Boolean) {
 
 /**
  * NX Redux's DS controls (nxredux.com/emulators/nintendo-ds), before the core: R2 swaps screens, SELECT + Left/Right
- * cycles the layout, SELECT + Up/Down moves the inset, L2 toggles stylus mode, or, while the host says
- * [touchModeAvailable] (the landscape pad is shown on a touchscreen), asks for touch mode instead. In stylus mode the
+ * cycles the layout, SELECT + Up/Down moves the inset, L2 toggles stylus mode. In stylus mode the
  * d-pad and left stick move a pen on the bottom screen, faster the longer a direction is held (DraStic-like), and A
  * touches at it. A release always goes where its press went. R2 and L2 never reach the core. Pure: the host feeds events and ticks, and applies actions.
  */
@@ -51,11 +48,6 @@ class NdsHotkeys {
 
     var stylus = false
         private set
-    /**
-     * Host-set ([NdsTouchMode.available]): the landscape on-screen pad is shown on a touchscreen, so L2 asks for
-     * [NdsAction.TouchMode]. Stylus mode wins: while it is on, L2 still turns it off.
-     */
-    var touchModeAvailable: Boolean = false
     var pen = START
         private set
 
@@ -65,6 +57,13 @@ class NdsHotkeys {
     private var heldMs = 0L                      // how long a direction has been held
     private var stickX = 0f
     private var stickY = 0f
+
+    /** Stylus mode on or off: L2, or the pad's STYLUS pill. Off lifts the pen. */
+    fun toggleStylus(): NdsAction.Stylus {
+        stylus = !stylus
+        resetPen()   // off: lift the pen; on: a stick already held does not move it at once
+        return NdsAction.Stylus(stylus)
+    }
 
     fun onButton(button: NxButton, down: Boolean): NdsDecision {
         if (button == NxButton.SELECT) selectHeld = down   // SELECT itself still reaches the core
@@ -79,12 +78,7 @@ class NdsHotkeys {
         }
         val decision = when {
             button == NxButton.R2 -> NdsDecision(false, NdsAction.SwapScreens)
-            button == NxButton.L2 && touchModeAvailable && !stylus -> NdsDecision(false, NdsAction.TouchMode)
-            button == NxButton.L2 -> {
-                stylus = !stylus
-                resetPen()   // off: lift the pen; on: a stick already held does not move it at once
-                NdsDecision(false, NdsAction.Stylus(stylus))
-            }
+            button == NxButton.L2 -> NdsDecision(false, toggleStylus())
             selectHeld && (button == NxButton.LEFT || button == NxButton.RIGHT) ->
                 NdsDecision(false, NdsAction.CycleLayout(if (button == NxButton.RIGHT) 1 else -1))
             selectHeld && (button == NxButton.UP || button == NxButton.DOWN) ->

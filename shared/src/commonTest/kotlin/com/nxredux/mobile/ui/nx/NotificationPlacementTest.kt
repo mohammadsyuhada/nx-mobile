@@ -8,7 +8,7 @@ import kotlin.test.assertEquals
 /**
  * Where the in-game notifications sit. Over the landscape overlay pad the top corners hold its system row
  * (STICK / MENU left, SELECT / START right) and the bottom-left its d-pad, so the pill and the toasts go top-centre, the
- * toasts under the pill; anywhere else (portrait band, tabletop, a controller attached, DS touch mode) the corners.
+ * toasts under the pill; anywhere else (portrait band, tabletop, a controller attached) the corners.
  */
 class NotificationPlacementTest {
     @Test fun overTheLandscapeOverlayPadEverythingIsTopCentre() {

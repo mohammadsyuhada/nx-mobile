@@ -213,38 +213,9 @@ class NdsHotkeysTest {
         assertEquals(1, h.joystickDirection(hat = 1f, stick = 0f))
     }
 
-    @Test fun l2_enters_touch_mode_when_the_landscape_pad_is_shown() {
-        val h = NdsHotkeys()
-        h.touchModeAvailable = true
-        assertEquals(NdsDecision(false, NdsAction.TouchMode), h.onButton(NxButton.L2, down = true))
-        assertFalse(h.stylus)
-        assertEquals(NdsDecision(forward = false), h.onButton(NxButton.L2, down = false))   // its release is kept too
-    }
-
-    @Test fun l2_still_toggles_the_stylus_otherwise() {
+    @Test fun l2_toggles_the_stylus() {
         val h = NdsHotkeys()
         assertEquals(NdsDecision(false, NdsAction.Stylus(true)), h.onButton(NxButton.L2, down = true))
         assertTrue(h.stylus)
-    }
-
-    @Test fun with_the_stylus_on_l2_turns_it_off_before_touch_mode_is_offered() {
-        val h = stylusOn()
-        h.touchModeAvailable = NdsTouchMode.available(
-            hasTouchscreen = true, landscape = true, controllers = false, touchMode = false, stylus = h.stylus,
-        )
-        assertFalse(h.touchModeAvailable)
-        assertEquals(NdsDecision(false, NdsAction.Stylus(false)), h.down(NxButton.L2))
-        h.up(NxButton.L2)
-        h.touchModeAvailable = NdsTouchMode.available(
-            hasTouchscreen = true, landscape = true, controllers = false, touchMode = false, stylus = h.stylus,
-        )
-        assertEquals(NdsDecision(false, NdsAction.TouchMode), h.down(NxButton.L2))
-    }
-
-    @Test fun a_stale_touch_mode_flag_never_traps_the_stylus_on() {
-        val h = stylusOn()
-        h.touchModeAvailable = true
-        assertEquals(NdsDecision(false, NdsAction.Stylus(false)), h.down(NxButton.L2))
-        assertFalse(h.stylus)
     }
 }

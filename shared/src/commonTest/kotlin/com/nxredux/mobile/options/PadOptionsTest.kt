@@ -23,10 +23,33 @@ class PadOptionsTest {
         assertEquals("auto", PadOptions.segaPadRow.default)
     }
 
-    @Test fun nds_keeps_its_rows_and_gains_the_layout_row() {
-        val nds = ConsoleSettings.tableFor("NDS")
-        assertEquals(NdsOptions.table, nds.dropLast(1))
-        assertEquals(PadOptions.layoutRow, nds.last())
+    @Test fun nds_keeps_its_rows_and_gains_the_portrait_pad_and_layout_rows() {
+        assertEquals(NdsOptions.table + PadOptions.portraitPadRow + PadOptions.layoutRow, ConsoleSettings.tableFor("NDS"))
+    }
+
+    @Test fun portrait_pad_row_only_for_ds_and_3ds() {
+        for (tag in listOf("NDS", "3DS", " nds ")) assertTrue(PadOptions.portraitPadRow in ConsoleSettings.tableFor(tag), tag)
+        for (tag in listOf("GBA", "MD", "PS", "WII", "")) assertFalse(PadOptions.portraitPadRow in ConsoleSettings.tableFor(tag), tag)
+        val row = PadOptions.portraitPadRow
+        assertEquals("nx_portrait_pad", row.key)
+        assertEquals("Portrait Pad", row.label)
+        assertEquals(listOf(PadOptions.SHOWN, PadOptions.HIDDEN), row.values)
+        assertEquals(PadOptions.SHOWN, row.default)
+        assertEquals(listOf("Shown", "Hidden"), row.valueLabels)
+        assertFalse(row.visual)
+        assertFalse(row.atLaunch)   // a change applies live in the running game's Console Settings
+        assertTrue(row.info.lines().all { it.length <= 48 }, row.info)
+        assertEquals(row, FrontendOptions.option(PadOptions.PORTRAIT_PAD))
+    }
+
+    @Test fun portrait_pad_hidden_only_when_set_on_a_two_screen_console() {
+        val hidden = mapOf(PadOptions.PORTRAIT_PAD to PadOptions.HIDDEN)
+        assertTrue(PadOptions.portraitPadHidden("NDS", hidden))
+        assertTrue(PadOptions.portraitPadHidden("3DS", hidden))
+        assertFalse(PadOptions.portraitPadHidden("GBA", hidden))   // a stray key on another console does nothing
+        assertFalse(PadOptions.portraitPadHidden("NDS", emptyMap()))
+        assertFalse(PadOptions.portraitPadHidden("NDS", mapOf(PadOptions.PORTRAIT_PAD to PadOptions.SHOWN)))
+        assertFalse(PadOptions.portraitPadHidden("NDS", mapOf(PadOptions.PORTRAIT_PAD to "junk")))
     }
 
     @Test fun keys_are_unique_and_findable() {

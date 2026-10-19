@@ -1,10 +1,62 @@
 # licence: modifies Azahar (https://github.com/azahar-emu/azahar), GPL-2.0 or later (its source files; license.txt is
 # the GPLv2 text; see LICENSES/azahar.txt); this patch is distributed under the same licence.
+diff --git a/src/citra_libretro/citra_libretro.cpp b/src/citra_libretro/citra_libretro.cpp
+index 8a65f9d..ec47bbc 100644
+--- a/src/citra_libretro/citra_libretro.cpp
++++ b/src/citra_libretro/citra_libretro.cpp
+@@ -223,9 +223,16 @@ void retro_run() {
+         return;
+     }
+ 
++    static bool screen_swap_button_state = false;
++    static bool screens_swapped = false;
++
+     // Check to see if we actually have any config updates to process.
+     if (LibRetro::HasUpdatedConfig()) {
+         LibRetro::ParseCoreOptions();
++        // nx-mobile 2026-10-20: re-reading the options resets swap_screen to citra_swap_screen; keep
++        // a swap made with the swap button (toggled, or held right now).
++        if (LibRetro::settings.swap_screen_mode == "Toggle" ? screens_swapped : screen_swap_button_state)
++            Settings::values.swap_screen = !Settings::values.swap_screen.GetValue();
+         Core::System::GetInstance().ApplySettings();
+         emu_instance->emu_window->UpdateLayout();
+     }
+@@ -237,8 +244,6 @@ void retro_run() {
+     }
+ 
+     // Check if the screen swap button is pressed
+-    static bool screen_swap_button_state = false;
+-    static bool screens_swapped = false;
+     bool screen_swap_btn =
+         !!LibRetro::CheckInput(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3);
+     if (screen_swap_btn != screen_swap_button_state) {
 diff --git a/src/citra_libretro/core_settings.cpp b/src/citra_libretro/core_settings.cpp
-index 53fb164..d51f45e 100644
+index 53fb164..8e07396 100644
 --- a/src/citra_libretro/core_settings.cpp
 +++ b/src/citra_libretro/core_settings.cpp
-@@ -1123,7 +1123,9 @@ static void ParseInputOptions(void) {
+@@ -1043,6 +1043,21 @@ static void ParseLayoutOptions(void) {
+     auto large_screen_proportion =
+         LibRetro::FetchVariable(config::layout::large_screen_proportion, "4.00");
+     Settings::values.large_screen_proportion = std::stof(large_screen_proportion);
++
++    // nx-mobile 2026-10-20: Large screen's small screen sits top-right. Upstream's default is
++    // BottomRight, and the libretro core never sets it.
++    Settings::values.small_screen_position = Settings::SmallScreenPosition::TopRight;
++
++    // nx-mobile 2026-10-20: the app sets this per orientation (landscape: 3, the top screen taking
++    // three quarters of the height); not a declared option, so it is absent from the core's list.
++    Settings::values.stacked_small_proportion =
++        std::max(1.f, std::stof(LibRetro::FetchVariable("citra_stacked_small_proportion", "1")));
++    // nx-mobile 2026-10-20: set by the app while its on-screen buttons are over the game.
++    Settings::values.touch_main_only =
++        LibRetro::FetchVariable("citra_touch_main_only", "disabled") == "enabled";
++    // nx-mobile 2026-10-20: set by the app while its stylus mode is on.
++    Settings::values.cursor_always_visible =
++        LibRetro::FetchVariable("citra_cursor_visible", "disabled") == "enabled";
+ }
+ 
+ static void ParseStorageOptions(void) {
+@@ -1123,7 +1138,9 @@ static void ParseInputOptions(void) {
              "port:0,sensitivity:" + std::to_string(LibRetro::settings.motion_sensitivity) +
              ",engine:libretro";
      } else {
@@ -15,6 +67,247 @@ index 53fb164..d51f45e 100644
      }
  }
  
+diff --git a/src/citra_libretro/emu_window/libretro_window.cpp b/src/citra_libretro/emu_window/libretro_window.cpp
+index f8cfb2c..3c3f006 100644
+--- a/src/citra_libretro/emu_window/libretro_window.cpp
++++ b/src/citra_libretro/emu_window/libretro_window.cpp
+@@ -281,13 +281,20 @@ LayoutGeometry ComputeLayoutGeometry() {
+         baseY *= scaling;
+         break;
+     case Settings::LayoutOption::Default:
+-    default:
+-        baseX = Core::kScreenTopWidth;
+-        baseY = Core::kScreenTopHeight + Core::kScreenBottomHeight;
++    default: {
++        // nx-mobile: the second screen stacked_small_proportion times smaller (1 upstream), as
++        // DefaultFrameLayout draws it, so the frame has no empty band below it.
++        const float p = Settings::values.stacked_small_proportion;
++        const unsigned large_w = swapped ? Core::kScreenBottomWidth : Core::kScreenTopWidth;
++        const unsigned small_w = static_cast<unsigned>(
++            (swapped ? Core::kScreenTopWidth : Core::kScreenBottomWidth) / p);
++        baseX = std::max(large_w, small_w);
++        baseY = Core::kScreenTopHeight + static_cast<unsigned>(Core::kScreenBottomHeight / p);
+         baseX *= scaling;
+         baseY *= scaling;
+         break;
+     }
++    }
+ 
+     return {baseX, baseY, emulated_pointer};
+ }
+diff --git a/src/citra_libretro/input/mouse_tracker.cpp b/src/citra_libretro/input/mouse_tracker.cpp
+index a4ba964..52f5c30 100644
+--- a/src/citra_libretro/input/mouse_tracker.cpp
++++ b/src/citra_libretro/input/mouse_tracker.cpp
+@@ -12,6 +12,7 @@
+ #include "citra_libretro/input/mouse_tracker.h"
+ #include "common/settings.h"
+ #include "core/frontend/framebuffer_layout.h"
++#include "video_core/cursor_dot.h"
+ 
+ #ifdef ENABLE_OPENGL
+ #include <glad/glad.h>
+@@ -133,8 +134,11 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
+                           const Layout::FramebufferLayout& layout) {
+     bool state = false;
+     bool wasMoved = false;
++    // nx-mobile: no finger or mouse touch on a bottom screen that is not the main one.
++    const bool pointer_blocked =
++        Settings::values.touch_main_only && !Settings::values.swap_screen.GetValue();
+ 
+-    if (LibRetro::settings.enable_mouse_touchscreen) {
++    if (LibRetro::settings.enable_mouse_touchscreen && !pointer_blocked) {
+         // Check mouse input
+         state |= LibRetro::CheckInput(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT);
+ 
+@@ -161,7 +165,7 @@ void MouseTracker::Update(int bufferWidth, int bufferHeight,
+         }
+     }
+ 
+-    if (LibRetro::settings.enable_touch_touchscreen) {
++    if (LibRetro::settings.enable_touch_touchscreen && !pointer_blocked) {
+         // Check touchscreen input
+         state |= LibRetro::CheckInput(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
+ 
+@@ -263,7 +267,8 @@ Frontend::EmuWindow::CursorInfo MouseTracker::GetCursorInfo() {
+     uint64_t since_last_moved =
+         std::chrono::duration_cast<std::chrono::seconds>(current - last_moved).count();
+     constexpr auto timeout_secs = 4; // TODO: Make this configurable maybe? -OS
+-    if (LibRetro::settings.enable_touch_pointer_timeout && since_last_moved >= timeout_secs) {
++    if (LibRetro::settings.enable_touch_pointer_timeout && since_last_moved >= timeout_secs &&
++        !Settings::values.cursor_always_visible) { // nx-mobile: stylus mode keeps it shown
+         visible = false;
+     }
+     return {visible, projectedX, projectedY};
+@@ -280,12 +285,16 @@ OpenGLCursorRenderer::OpenGLCursorRenderer() {
+         vertex += fragment_shader_precision_OES;
+     }
+ 
++    // nx-mobile: a colour per vertex, for the pen dot (video_core/cursor_dot.h).
+     vertex += R"(
+         in vec2 position;
++        in vec4 vertexColor;
++        out vec4 dotColor;
+ 
+         void main()
+         {
+             gl_Position = vec4(position, 0.0, 1.0);
++            dotColor = vertexColor;
+         }
+     )";
+ 
+@@ -294,11 +303,12 @@ OpenGLCursorRenderer::OpenGLCursorRenderer() {
+         fragment += fragment_shader_precision_OES;
+     }
+     fragment += R"(
++        in vec4 dotColor;
+         out vec4 color;
+ 
+         void main()
+         {
+-            color = vec4(1.0, 1.0, 1.0, 1.0);
++            color = dotColor;
+         }
+     )";
+ 
+@@ -310,10 +320,14 @@ OpenGLCursorRenderer::OpenGLCursorRenderer() {
+ 
+     shader.Create(vertex.c_str(), fragment.c_str());
+ 
++    const GLsizei stride = sizeof(float) * CursorDot::kFloatsPerVertex;
+     auto positionVariable = (GLuint)glGetAttribLocation(shader.handle, "position");
+     glEnableVertexAttribArray(positionVariable);
+-
+-    glVertexAttribPointer(positionVariable, 2, GL_FLOAT, GL_FALSE, 0, 0);
++    glVertexAttribPointer(positionVariable, 2, GL_FLOAT, GL_FALSE, stride, nullptr);
++    auto colorVariable = (GLuint)glGetAttribLocation(shader.handle, "vertexColor");
++    glEnableVertexAttribArray(colorVariable);
++    glVertexAttribPointer(colorVariable, 4, GL_FLOAT, GL_FALSE, stride,
++                          reinterpret_cast<const void*>(sizeof(float) * 2));
+ }
+ 
+ OpenGLCursorRenderer::~OpenGLCursorRenderer() {
+@@ -325,43 +339,22 @@ OpenGLCursorRenderer::~OpenGLCursorRenderer() {
+ void OpenGLCursorRenderer::Render(int bufferWidth, int bufferHeight, float projectedX,
+                                   float projectedY, float renderRatio,
+                                   const Layout::FramebufferLayout& layout, void* framebuffer_data) {
+-    // Use shared coordinate calculation
+-    CursorCoordinates coords(bufferWidth, bufferHeight, projectedX, projectedY, renderRatio,
+-                             layout);
++    // nx-mobile: the pen dot (video_core/cursor_dot.h); GL's y points up, so the centre's flips.
++    const float cx = (projectedX / bufferWidth) * 2 - 1;
++    const float cy = -((projectedY / bufferHeight) * 2 - 1);
++    const std::vector<float> dot =
++        CursorDot::Vertices(cx, cy, renderRatio / bufferWidth * 2, renderRatio / bufferHeight * 2);
+ 
+     glUseProgram(shader.handle);
+-
+     glBindVertexArray(vao.handle);
+ 
+-    // clang-format off
+-    GLfloat cursor[] = {
+-            // | in the cursor
+-            coords.verticalLeft,  coords.verticalTop,
+-            coords.verticalRight, coords.verticalTop,
+-            coords.verticalRight, coords.verticalBottom,
+-
+-            coords.verticalLeft,  coords.verticalTop,
+-            coords.verticalRight, coords.verticalBottom,
+-            coords.verticalLeft,  coords.verticalBottom,
+-
+-            // - in the cursor
+-            coords.horizontalLeft,  coords.horizontalTop,
+-            coords.horizontalRight, coords.horizontalTop,
+-            coords.horizontalRight, coords.horizontalBottom,
+-
+-            coords.horizontalLeft,  coords.horizontalTop,
+-            coords.horizontalRight, coords.horizontalBottom,
+-            coords.horizontalLeft,  coords.horizontalBottom
+-    };
+-    // clang-format on
+-
+     glEnable(GL_BLEND);
+-    glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE_MINUS_SRC_COLOR);
++    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+ 
+     glBindBuffer(GL_ARRAY_BUFFER, vbo.handle);
+-    glBufferData(GL_ARRAY_BUFFER, sizeof(cursor), cursor, GL_STATIC_DRAW);
++    glBufferData(GL_ARRAY_BUFFER, dot.size() * sizeof(float), dot.data(), GL_STREAM_DRAW);
+ 
+-    glDrawArrays(GL_TRIANGLES, 0, 12);
++    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(dot.size() / CursorDot::kFloatsPerVertex));
+ 
+     glBindVertexArray(0);
+     glUseProgram(0);
+@@ -393,49 +386,28 @@ void SoftwareCursorRenderer::Render(int bufferWidth, int bufferHeight, float pro
+         return; // No framebuffer data available
+     }
+ 
+-    // Convert coordinates to screen space
+-    int centerX = static_cast<int>(projectedX);
+-    int centerY = static_cast<int>(projectedY);
+-    int radius = static_cast<int>(renderRatio);
+-
+-    // Calculate cursor dimensions within bounds
+-    int verticalLeft = std::max(centerX - radius / 5, static_cast<int>(layout.bottom_screen.left));
+-    int verticalRight =
+-        std::min(centerX + radius / 5, static_cast<int>(layout.bottom_screen.right));
+-    int verticalTop = std::max(centerY - radius, static_cast<int>(layout.bottom_screen.top));
+-    int verticalBottom = std::min(centerY + radius, static_cast<int>(layout.bottom_screen.bottom));
+-
+-    int horizontalLeft = std::max(centerX - radius, static_cast<int>(layout.bottom_screen.left));
+-    int horizontalRight = std::min(centerX + radius, static_cast<int>(layout.bottom_screen.right));
+-    int horizontalTop = std::max(centerY - radius / 5, static_cast<int>(layout.bottom_screen.top));
+-    int horizontalBottom =
+-        std::min(centerY + radius / 5, static_cast<int>(layout.bottom_screen.bottom));
+-
+-    // Draw cursor directly to framebuffer (assuming RGBA8888 format)
++    // nx-mobile: the pen dot (video_core/cursor_dot.h): the dark ring's disc, then the light disc, kept to the bottom
++    // screen. Both colours are grey, so the pixel's channel order does not matter.
++    const float r = renderRatio;
+     uint32_t* pixels = static_cast<uint32_t*>(framebuffer_data);
+-    const uint32_t cursorColor = 0xFFFFFFFF; // White cursor
+-
+-    // Draw vertical line of cursor
+-    for (int y = verticalTop; y < verticalBottom; ++y) {
+-        for (int x = verticalLeft; x < verticalRight; ++x) {
+-            if (x >= 0 && x < bufferWidth && y >= 0 && y < bufferHeight) {
+-                int pixelIndex = y * bufferWidth + x;
+-                // XOR blend for visibility on any background
+-                pixels[pixelIndex] ^= cursorColor;
+-            }
+-        }
+-    }
+-
+-    // Draw horizontal line of cursor
+-    for (int y = horizontalTop; y < horizontalBottom; ++y) {
+-        for (int x = horizontalLeft; x < horizontalRight; ++x) {
+-            if (x >= 0 && x < bufferWidth && y >= 0 && y < bufferHeight) {
+-                int pixelIndex = y * bufferWidth + x;
+-                // XOR blend for visibility on any background
+-                pixels[pixelIndex] ^= cursorColor;
++    const auto disc = [&](float radius, uint32_t colour) {
++        const int left = std::max(static_cast<int>(projectedX - radius), static_cast<int>(layout.bottom_screen.left));
++        const int right = std::min(static_cast<int>(projectedX + radius) + 1, static_cast<int>(layout.bottom_screen.right));
++        const int top = std::max(static_cast<int>(projectedY - radius), static_cast<int>(layout.bottom_screen.top));
++        const int bottom = std::min(static_cast<int>(projectedY + radius) + 1, static_cast<int>(layout.bottom_screen.bottom));
++        for (int y = top; y < bottom; ++y) {
++            for (int x = left; x < right; ++x) {
++                const float dx = x + 0.5f - projectedX;
++                const float dy = y + 0.5f - projectedY;
++                if (dx * dx + dy * dy <= radius * radius && x >= 0 && x < bufferWidth && y >= 0 &&
++                    y < bufferHeight) {
++                    pixels[y * bufferWidth + x] = colour;
++                }
+             }
+         }
+-    }
++    };
++    disc(r, 0xFF000000);
++    disc(r * CursorDot::kInnerShare, 0xFFD8D8D8);
+ }
+ 
+ } // namespace Input
 diff --git a/src/common/file_util.cpp b/src/common/file_util.cpp
 index 3168a26..510b7fd 100644
 --- a/src/common/file_util.cpp
@@ -65,6 +358,27 @@ index 3168a26..510b7fd 100644
  
      LOG_ERROR(Common_Filesystem, "Stat failed {}: {}", filename, GetLastErrorMsg());
      return 0;
+diff --git a/src/common/settings.h b/src/common/settings.h
+index c83f322..2c5a18e 100644
+--- a/src/common/settings.h
++++ b/src/common/settings.h
+@@ -575,6 +575,16 @@ struct Values {
+     SwitchableSetting<float, true> large_screen_proportion{4.f, 1.f, 16.f,
+                                                            Keys::large_screen_proportion};
+     SwitchableSetting<int> screen_gap{0, Keys::screen_gap};
++    // nx-mobile: how many times smaller the second screen is in the Default (top over bottom)
++    // layout; 1 upstream. The libretro core reads it from citra_stacked_small_proportion.
++    float stacked_small_proportion = 1.f;
++    // nx-mobile: the frontend's on-screen buttons are over the game, so a finger touch reaches the
++    // bottom screen only while it is the main one (swapped). The libretro core reads it from
++    // citra_touch_main_only. The right-stick cursor (R3) still touches anywhere.
++    bool touch_main_only = false;
++    // nx-mobile: the frontend's stylus mode is on, so the touch cursor stays visible however long it
++    // is left still (citra_cursor_visible); otherwise it hides after its idle timeout.
++    bool cursor_always_visible = false;
+     SwitchableSetting<SmallScreenPosition> small_screen_position{SmallScreenPosition::BottomRight,
+                                                                  Keys::small_screen_position};
+     Setting<u16> custom_top_x{0, Keys::custom_top_x};
 diff --git a/src/core/file_sys/savedata_archive.cpp b/src/core/file_sys/savedata_archive.cpp
 index 4a6b7e9..d72c12e 100644
 --- a/src/core/file_sys/savedata_archive.cpp
@@ -97,6 +411,59 @@ index bfe8ed9..45ca0a9 100644
  
      std::string GetName() const override {
          return "SaveDataArchive: " + mount_point;
+diff --git a/src/core/frontend/framebuffer_layout.cpp b/src/core/frontend/framebuffer_layout.cpp
+index 3a31142..e65961a 100644
+--- a/src/core/frontend/framebuffer_layout.cpp
++++ b/src/core/frontend/framebuffer_layout.cpp
+@@ -55,7 +55,8 @@ static Common::Rectangle<T> MaxRectangle(Common::Rectangle<T> bounding_window,
+ }
+ 
+ FramebufferLayout DefaultFrameLayout(u32 width, u32 height, bool swapped, bool upright) {
+-    return LargeFrameLayout(width, height, swapped, upright, 1.0f,
++    return LargeFrameLayout(width, height, swapped, upright,
++                            Settings::values.stacked_small_proportion,
+                             Settings::SmallScreenPosition::BelowLarge);
+ }
+ 
+@@ -519,9 +520,16 @@ FramebufferLayout FrameLayoutFromResolutionScale(u32 res_scale, bool is_secondar
+                                         Settings::values.upright_screen.GetValue());
+             break;
+         case Settings::LayoutOption::Default:
+-        default:
+-            width = Core::kScreenTopWidth * res_scale;
+-            height = (Core::kScreenTopHeight + Core::kScreenBottomHeight) * res_scale + gap;
++        default: {
++            // nx-mobile: the second screen stacked_small_proportion times smaller (1 upstream).
++            const bool swapped = Settings::values.swap_screen.GetValue();
++            const float p = Settings::values.stacked_small_proportion;
++            const u32 large_w = swapped ? Core::kScreenBottomWidth : Core::kScreenTopWidth;
++            const u32 small_w = static_cast<u32>(
++                (swapped ? Core::kScreenTopWidth : Core::kScreenBottomWidth) / p);
++            const u32 small_h = static_cast<u32>(Core::kScreenTopHeight / p);
++            width = std::max(large_w, small_w) * res_scale;
++            height = (Core::kScreenTopHeight + small_h) * res_scale + gap;
+ 
+             if (Settings::values.upright_screen.GetValue()) {
+                 std::swap(width, height);
+@@ -530,6 +538,7 @@ FramebufferLayout FrameLayoutFromResolutionScale(u32 res_scale, bool is_secondar
+                                         Settings::values.upright_screen.GetValue());
+             break;
+         }
++        }
+     }
+ 
+     return layout;
+@@ -705,7 +714,9 @@ std::pair<unsigned, unsigned> GetMinimumSizeFromLayout(Settings::LayoutOption la
+     case Settings::LayoutOption::Default:
+     default:
+         min_width = Core::kScreenTopWidth;
+-        min_height = Core::kScreenTopHeight + Core::kScreenBottomHeight;
++        min_height = Core::kScreenTopHeight +
++                     static_cast<u32>(Core::kScreenBottomHeight /
++                                      Settings::values.stacked_small_proportion);
+         break;
+     }
+     if (upright_screen) {
 diff --git a/src/core/hle/service/nim/nim_aoc.cpp b/src/core/hle/service/nim/nim_aoc.cpp
 index 27137a2..dd6e725 100644
 --- a/src/core/hle/service/nim/nim_aoc.cpp
@@ -163,11 +530,97 @@ index e602bd3..b76b22c 100644
      }
  }
  
+diff --git a/src/video_core/cursor_dot.h b/src/video_core/cursor_dot.h
+new file mode 100644
+index 0000000..bb33f02
+--- /dev/null
++++ b/src/video_core/cursor_dot.h
+@@ -0,0 +1,41 @@
++// Copyright 2026 NX Redux
++// Licensed under GPLv2 or any later version
++// Refer to the license.txt file included.
++
++// nx-mobile: the stylus cursor drawn as NX Redux's DS pen dot (a light #D8D8D8 disc in a dark ring) instead of the
++// upstream white crosshair, by every cursor renderer (OpenGL, Vulkan, software).
++
++#pragma once
++
++#include <cmath>
++#include <vector>
++
++namespace CursorDot {
++
++constexpr int kSegments = 24;
++/// The light disc's radius as a share of the dot's: the dark ring is the rest (the DS pen: 14 dp with a 2 dp ring).
++constexpr float kInnerShare = 5.0f / 7.0f;
++constexpr float kInk = 216.0f / 255.0f;
++constexpr int kFloatsPerVertex = 6; // x, y, r, g, b, a
++
++/// Triangles for a dot centred at (cx, cy) with an outer radius of rx by ry, all in the caller's device coordinates:
++/// the ring's disc first, the light disc over it. Each vertex is kFloatsPerVertex floats.
++inline std::vector<float> Vertices(float cx, float cy, float rx, float ry) {
++    std::vector<float> v;
++    v.reserve(2 * kSegments * 3 * kFloatsPerVertex);
++    const auto disc = [&](float sx, float sy, float c, float a) {
++        const auto push = [&](float x, float y) { v.insert(v.end(), {x, y, c, c, c, a}); };
++        for (int i = 0; i < kSegments; ++i) {
++            const float a0 = 6.2831853f * i / kSegments;
++            const float a1 = 6.2831853f * (i + 1) / kSegments;
++            push(cx, cy);
++            push(cx + sx * std::cos(a0), cy + sy * std::sin(a0));
++            push(cx + sx * std::cos(a1), cy + sy * std::sin(a1));
++        }
++    };
++    disc(rx, ry, 0.0f, 0.85f);
++    disc(rx * kInnerShare, ry * kInnerShare, kInk, 0.95f);
++    return v;
++}
++
++} // namespace CursorDot
+diff --git a/src/video_core/host_shaders/vulkan_cursor.frag b/src/video_core/host_shaders/vulkan_cursor.frag
+index e83cd2e..b9b273f 100644
+--- a/src/video_core/host_shaders/vulkan_cursor.frag
++++ b/src/video_core/host_shaders/vulkan_cursor.frag
+@@ -5,8 +5,9 @@
+ #version 450 core
+ #extension GL_ARB_separate_shader_objects : enable
+ 
++layout (location = 0) in vec4 frag_color; // nx-mobile: the pen dot's colour
+ layout (location = 0) out vec4 color;
+ 
+ void main() {
+-    color = vec4(1.0, 1.0, 1.0, 1.0);
++    color = frag_color;
+ }
+diff --git a/src/video_core/host_shaders/vulkan_cursor.vert b/src/video_core/host_shaders/vulkan_cursor.vert
+index 7ff2cfe..5ba2a78 100644
+--- a/src/video_core/host_shaders/vulkan_cursor.vert
++++ b/src/video_core/host_shaders/vulkan_cursor.vert
+@@ -6,7 +6,11 @@
+ #extension GL_ARB_separate_shader_objects : enable
+ 
+ layout (location = 0) in vec2 vert_position;
++layout (location = 1) in vec4 vert_color; // nx-mobile: the pen dot's per-vertex colour (video_core/cursor_dot.h)
++
++layout (location = 0) out vec4 frag_color;
+ 
+ void main() {
+     gl_Position = vec4(vert_position, 0.0, 1.0);
++    frag_color = vert_color;
+ }
 diff --git a/src/video_core/renderer_vulkan/renderer_vulkan.cpp b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
-index 5221fdf..bc7f4ed 100644
+index 5221fdf..b050db2 100644
 --- a/src/video_core/renderer_vulkan/renderer_vulkan.cpp
 +++ b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
-@@ -253,6 +253,11 @@ void RendererVulkan::RenderToWindow(PresentWindow& window, const Layout::Framebu
+@@ -20,6 +20,7 @@
+ #include "video_core/host_shaders/vulkan_present_interlaced_frag.h"
+ #include "video_core/host_shaders/vulkan_present_vert.h"
+ 
++#include "video_core/cursor_dot.h"
+ #include "video_core/host_shaders/vulkan_cursor_frag.h"
+ #include "video_core/host_shaders/vulkan_cursor_vert.h"
+ 
+@@ -253,6 +254,11 @@ void RendererVulkan::RenderToWindow(PresentWindow& window, const Layout::Framebu
  
          DrawScreens(frame, layout, flipped);
          scheduler.Flush(frame->render_ready);
@@ -179,3 +632,112 @@ index 5221fdf..bc7f4ed 100644
          window.Present(frame);
          if ((secondaryWindowEnabled && isSecondaryWindow) || (!secondaryWindowEnabled)) {
              Core::PerfStats::game_frames_updated = false;
+@@ -487,24 +493,33 @@ void RendererVulkan::BuildPipelines() {
+ 
+     // Build cursor pipeline (simple position-only, inverted color blending)
+     {
++        // nx-mobile: position and colour per vertex (the pen dot, video_core/cursor_dot.h).
+         const vk::VertexInputBindingDescription cursor_binding = {
+             .binding = 0,
+-            .stride = sizeof(float) * 2,
++            .stride = sizeof(float) * CursorDot::kFloatsPerVertex,
+             .inputRate = vk::VertexInputRate::eVertex,
+         };
+ 
+-        const vk::VertexInputAttributeDescription cursor_attribute = {
+-            .location = 0,
+-            .binding = 0,
+-            .format = vk::Format::eR32G32Sfloat,
+-            .offset = 0,
++        const std::array cursor_attributes = {
++            vk::VertexInputAttributeDescription{
++                .location = 0,
++                .binding = 0,
++                .format = vk::Format::eR32G32Sfloat,
++                .offset = 0,
++            },
++            vk::VertexInputAttributeDescription{
++                .location = 1,
++                .binding = 0,
++                .format = vk::Format::eR32G32B32A32Sfloat,
++                .offset = sizeof(float) * 2,
++            },
+         };
+ 
+         const vk::PipelineVertexInputStateCreateInfo cursor_vertex_input = {
+             .vertexBindingDescriptionCount = 1,
+             .pVertexBindingDescriptions = &cursor_binding,
+-            .vertexAttributeDescriptionCount = 1,
+-            .pVertexAttributeDescriptions = &cursor_attribute,
++            .vertexAttributeDescriptionCount = static_cast<u32>(cursor_attributes.size()),
++            .pVertexAttributeDescriptions = cursor_attributes.data(),
+         };
+ 
+         const vk::PipelineInputAssemblyStateCreateInfo cursor_input_assembly = {
+@@ -528,8 +543,8 @@ void RendererVulkan::BuildPipelines() {
+ 
+         const vk::PipelineColorBlendAttachmentState cursor_blend_attachment = {
+             .blendEnable = true,
+-            .srcColorBlendFactor = vk::BlendFactor::eOneMinusDstColor,
+-            .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcColor,
++            .srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,          // nx-mobile: the pen dot over the picture
++            .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
+             .colorBlendOp = vk::BlendOp::eAdd,
+             .srcAlphaBlendFactor = vk::BlendFactor::eOne,
+             .dstAlphaBlendFactor = vk::BlendFactor::eZero,
+@@ -1081,45 +1096,21 @@ void RendererVulkan::DrawCursor(const Layout::FramebufferLayout& layout) {
+     const float rw = ratio / buf_w;
+     const float rh = ratio / buf_h;
+ 
+-    // Bottom screen bounds in NDC
+-    const float bl = (layout.bottom_screen.left / buf_w) * 2.0f - 1.0f;
+-    const float bt = (layout.bottom_screen.top / buf_h) * 2.0f - 1.0f;
+-    const float br = (layout.bottom_screen.right / buf_w) * 2.0f - 1.0f;
+-    const float bb = (layout.bottom_screen.bottom / buf_h) * 2.0f - 1.0f;
+-
+-    // Crosshair geometry clamped to bottom screen bounds
+-    const float vl = std::fmax(cx - rw / 5.0f, bl);
+-    const float vr = std::fmin(cx + rw / 5.0f, br);
+-    const float vt = std::fmax(cy - rh, bt);
+-    const float vb = std::fmin(cy + rh, bb);
++    // nx-mobile: the pen dot (video_core/cursor_dot.h) instead of the crosshair.
++    const std::vector<float> vertices = CursorDot::Vertices(cx, cy, rw * 2.0f, rh * 2.0f);
++    const u32 vertex_count = static_cast<u32>(vertices.size() / CursorDot::kFloatsPerVertex);
+ 
+-    const float hl = std::fmax(cx - rw, bl);
+-    const float hr = std::fmin(cx + rw, br);
+-    const float ht = std::fmax(cy - rh / 5.0f, bt);
+-    const float hb = std::fmin(cy + rh / 5.0f, bb);
+-
+-    // 12 vertices = 4 triangles (2 for vertical bar, 2 for horizontal bar)
+-    // clang-format off
+-    const float vertices[] = {
+-        // Vertical bar
+-        vl, vt,  vr, vt,  vr, vb,
+-        vl, vt,  vr, vb,  vl, vb,
+-        // Horizontal bar
+-        hl, ht,  hr, ht,  hr, hb,
+-        hl, ht,  hr, hb,  hl, hb,
+-    };
+-    // clang-format on
+-
+-    const u64 size = sizeof(vertices);
++    const u64 size = vertices.size() * sizeof(float);
+     auto [data, offset, invalidate] = vertex_buffer.Map(size, 16);
+-    std::memcpy(data, vertices, size);
++    std::memcpy(data, vertices.data(), size);
+     vertex_buffer.Commit(size);
+ 
+-    scheduler.Record([this, offset = offset, pipeline = cursor_pipeline](vk::CommandBuffer cmdbuf) {
++    scheduler.Record([this, offset = offset, vertex_count,
++                      pipeline = cursor_pipeline](vk::CommandBuffer cmdbuf) {
+         cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+-        cmdbuf.bindVertexBuffers(0, vertex_buffer.Handle(), {0});
+-        const u32 first_vertex = static_cast<u32>(offset) / (sizeof(float) * 2);
+-        cmdbuf.draw(12, 1, first_vertex, 0);
++        // The mapped offset is 16-aligned, not a multiple of the 24-byte vertex: bind at it.
++        cmdbuf.bindVertexBuffers(0, vertex_buffer.Handle(), {static_cast<vk::DeviceSize>(offset)});
++        cmdbuf.draw(vertex_count, 1, 0, 0);
+     });
+ }
+ 

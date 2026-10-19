@@ -90,7 +90,7 @@ class PlayerSlots(val players: Int, outOfPlay: Set<DeviceKey> = emptySet()) {
 
 /**
  * Which connected pads count as "a controller is attached" for the on-screen pad and the layout decisions that follow it
- * (landscape clusters, the portrait band rule, tabletop, DS touch mode). The in-game hints follow every attached pad.
+ * (landscape clusters, the portrait band rule, tabletop). The in-game hints follow every attached pad.
  */
 object PadPresence {
     /**

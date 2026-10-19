@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.ActivityManager
 import android.app.AlertDialog
 import android.content.Context
-import android.content.pm.PackageManager
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -41,11 +40,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.unit.DpSize
 import com.nxredux.mobile.ui.nx.LocalWindowSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
@@ -63,9 +60,21 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import com.nxredux.mobile.ui.nx.symmetricCutoutInset
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.Alignment
 import androidx.core.view.WindowCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -194,6 +203,7 @@ import com.nxredux.mobile.ui.nx.SlotUi
 import com.nxredux.mobile.ui.nx.PadStickModes
 import com.nxredux.mobile.ui.nx.VirtualPad
 import com.nxredux.mobile.ui.nx.PadMotion
+import com.nxredux.mobile.ui.nx.PadTools
 import com.nxredux.mobile.ui.nx.CLUSTER_MAX_WIDTH_SHARE
 import com.nxredux.mobile.ui.nx.VirtualPadLeft
 import com.nxredux.mobile.ui.nx.VirtualPadRight
@@ -250,9 +260,6 @@ class GameActivity : ComponentActivity() {
         // Instance-state key: the slot to resume from when the system recreates this activity after a process kill.
         private const val KEY_RESUME_SLOT = "nx_resume_slot"
         private const val NDS_INSET_MARGIN_DP = 8f   // the PiP inset's margin inside the big screen
-        private const val NDS_CHIP_MARGIN_DP = 12f   // the touch-mode "Controls" chip's margin (ControlsChip's 12.dp)
-        private const val NDS_CHIP_EST_W_DP = 96f    // the chip's size until it is first measured
-        private const val NDS_CHIP_EST_H_DP = 40f
         private const val NDS_LABEL_MS = 1500L   // a DS hotkey's label ("Bottom screen", "Stylus on")
         private const val PLAYER_NOTICE_MS = 2500L   // "Player 2: <pad>" when a pad takes a player slot
         private const val NETPLAY_NOTICE_MS = 5000L   // netplay: "Netplay ended ...", "Using <core> for this match ..."
@@ -417,16 +424,11 @@ class GameActivity : ComponentActivity() {
             event.device?.let { d -> PadFaceLayout.detectDevice(event.deviceId, d.isVirtual, d.vendorId, d.name.orEmpty()) }
                 .also { padLayouts[event.deviceId] = it }
 
-    /** A controller connect or disconnect (the controller list changed since the last layout) also ends DS touch mode. */
     private fun onInputDevicesChanged() {
-        if (controllerNames() != loggedControllers) ndsTouchMode = false
         applyLayout(resources.configuration.orientation)
         if (menuOpen) menuModel?.let(::publishPlayers)
     }
-    /**
-     * The controller names of the last [applyLayout] (logged once per change, to confirm hardware names); a device event
-     * that changes them ends DS touch mode ([onInputDevicesChanged]).
-     */
+    /** The controller names of the last [applyLayout] (logged once per change, to confirm hardware names). */
     private var loggedControllers: List<String>? = null
 
     /** A physical controller is attached: the in-game hints show the standard A/B art, else the on-screen pad's labels. */
@@ -554,16 +556,6 @@ class GameActivity : ComponentActivity() {
     private var ndsFrameWarned = false                      // the "not 256x384" warning is logged once
     private var ndsRenderMode: String? = null               // melonds_render_mode this game started with (the notice's)
     private val ndsHotkeys = NdsHotkeys()        // a new activity, a new instance: stylus mode is off at every launch
-    // DS landscape touch mode (L2 with the landscape pad shown): the pad clusters hidden for finger touch on the bottom
-    // screen, a "Controls" chip to bring them back. Not persisted: a launch, rotation or controller change ends it.
-    private var ndsTouchMode = false
-    private var ndsChipView: ComposeView? = null   // the "Controls" chip while in touch mode
-    // The chip's corner, clear of the touchable screen ([NdsTouchMode.chipCorner]); the chip keeps clear of a cutout there.
-    private val ndsChipCorner = mutableStateOf(NdsTouchMode.ChipCorner.TOP_END)
-    private var ndsChipSize: IntSize? = null        // the chip as measured, px (without its margin)
-    private var cutoutMax = 0                       // the largest display-cutout inset on any side, px
-    // Read once: without a touchscreen there is no finger touch, so L2 stays the stylus toggle.
-    private val hasTouchscreen by lazy { packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN) }
     private val ndsHat = DpadHat()               // hardware hat directions the core has been given (the forwarded ones)
     private var ndsHatX = 0
     private var ndsHatY = 0
@@ -575,12 +567,13 @@ class GameActivity : ComponentActivity() {
 
     // ---- Nintendo 3DS controls (N3dsHotkeys): the core draws both screens and its own touch cursor ----
     private val n3dsHotkeys = N3dsHotkeys()     // a new activity, a new instance: stylus mode is off at every launch
-    private var n3dsLayout: String? = null      // citra_layout_option as in effect (launch, menu, hotkey, restore)
     private var n3dsHatX = 0
     private var n3dsHatY = 0
     private var n3dsHwRight = 0f to 0f          // the hardware right stick as last read
     private var n3dsPadRight = 0f to 0f         // the on-screen C-stick as last moved (New 3DS controls)
     private var n3dsSentRight = 0f to 0f        // the right stick as last sent to the core
+    private val n3dsStylusOn = mutableStateOf(false)   // stylus mode, as the pad's STYLUS pill shows it
+    private val ndsStylusOn = mutableStateOf(false)    // the DS's, likewise
     private var n3dsTickJob: Job? = null        // ticks the hotkeys while they ask ([N3dsHotkeys.ticking])
     private val isN3ds: Boolean get() = N3dsOptions.appliesTo(gameTag)
     private val isDc: Boolean get() = DcInput.appliesTo(gameTag)
@@ -671,6 +664,10 @@ class GameActivity : ComponentActivity() {
     private var notificationsView: ComposeView? = null
     /** The landscape overlay pad (the clusters over the game) is laid out: the notifications move top-centre, clear of it. */
     private val overlayPadShown = mutableStateOf(false)
+    // Whether the current layout was built with the portrait band hidden ([portraitPadHidden]): a change re-lays out.
+    private var layoutPadHidden = false
+    // Portrait with the band hidden: the clusters' top, screen px (they cover from there down); null without them.
+    private var portraitClusterTop: Int? = null
     private var tickJob: Job? = null
 
     // ---- Flex mode (tabletop) ----
@@ -717,11 +714,6 @@ class GameActivity : ComponentActivity() {
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.root)) { _, insets ->
             val cutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
             val top = cutout.top
-            val max = maxOf(cutout.left, cutout.top, cutout.right, cutout.bottom)
-            if (max != cutoutMax) {
-                cutoutMax = max
-                placeNdsChip()
-            }
             if (top != cutoutTop) {
                 cutoutTop = top
                 applyGameTopMargin(resources.configuration.orientation)
@@ -1115,7 +1107,17 @@ class GameActivity : ComponentActivity() {
         val netplayPad = if (np != null) NetplayPads.forSession(tag, descriptor?.id) else null
         shaderValues = ShaderOptions.fromConfig(resolved.values)
         presetNames = withContext(Dispatchers.IO) { Shaders.presets(sdRoot) }
-        val options = FrontendOptions.coreValues(resolved.values).map { (k, v) -> Variable(k, v) }
+        val options = FrontendOptions.coreValues(resolved.values)
+            .filterNot { (k, _) -> k == N3dsOptions.LAYOUT && N3dsOptions.appliesTo(tag) }   // set from the row below
+            .map { (k, v) -> Variable(k, v) } +
+            // 3DS Top over bottom: a bigger top screen in landscape (onConfigurationChanged follows a rotation).
+            if (N3dsOptions.appliesTo(tag)) listOf(
+                Variable(N3dsOptions.STACKED_SMALL_PROPORTION, N3dsOptions.stackedSmallProportion(isLandscape())),
+                Variable(N3dsOptions.TOUCH_MAIN_ONLY, N3dsOptions.touchMainOnly(overlayPadShown.value)),
+                Variable(N3dsOptions.CURSOR_VISIBLE, N3dsOptions.cursorVisible(false)),   // stylus mode is off at launch
+                // The locked core layout ([N3dsOptions.LAYOUT]) from the row in use; the descriptor's default is replaced.
+                Variable(N3dsOptions.LAYOUT, N3dsOptions.layoutFor(frontendValues, isLandscape(), ndsControllerMode())),
+            ) else emptyList()
         // netplay link: gambatte gets its link options; a GBA link engine starts now, before the core loads, so
         // a joiner learns the host's gpsp_serial from its READY and runs with it (the handheld reloads instead).
         val linkKind = np?.let { NetplayCores.link(it.coreId) }
@@ -1720,8 +1722,8 @@ class GameActivity : ComponentActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        ndsTouchMode = false   // a rotation starts with the pad shown
         applyLayout(newConfig.orientation)   // also re-sizes the menu and the notifications to the game area
+        if (isN3ds) applyOptions(listOf(Variable(N3dsOptions.STACKED_SMALL_PROPORTION, N3dsOptions.stackedSmallProportion(isLandscape(newConfig.orientation)))))
         // The motion level is captured in the display's frame: a new rotation takes the phone's attitude as level again.
         if (isWii) displayRotation().let { r -> if (r != lastRotation) { lastRotation = r; motionSensors?.recenter() } }
         if (retroView != null) {
@@ -1744,9 +1746,10 @@ class GameActivity : ComponentActivity() {
         val game = findViewById<FrameLayout>(R.id.gameContainer)
         padViews.forEach { root.removeView(it) }
         padViews.clear()
-        ndsChipView = null
         dpadHat.clear()
         overlayPadShown.value = false   // set again below where the landscape clusters are added
+        layoutPadHidden = portraitPadHidden()
+        portraitClusterTop = null
 
         val portrait = !isLandscape(orientation)
         val pads = controllers()
@@ -1762,62 +1765,117 @@ class GameActivity : ComponentActivity() {
         val tt = tabletop(names)
         if (tt != null) {
             applyTabletopLayout(root, game, tt, names, portrait, orientation)
+            syncN3dsCore()
             return
         }
         if (portrait) {
             // Portrait keeps the bottom pad band for a clip-on controller, so it has its placeholder and the game stays in
             // the top area. Any other controller drops it (PadBandRule): no pad, and the game area runs to the screen bottom.
+            // A DS / 3DS player can hide the band (Portrait Pad): the game runs to the bottom too, under the clusters.
             val bandPx = portraitBandPx(names)
             game.layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
             ).apply { bottomMargin = bandPx; topMargin = cutoutTop }
             if (bandPx > 0) {
                 val bandLayout = padLayout(PadShape.PORTRAIT)
-                val pad = composePad { PadThemeProvider(padTheme) { VirtualPad(::onPad, Modifier.fillMaxSize(), analog = true, onStick = ::onStick, profile = padProfile(), useJoystick = PadStickModes[padStickKey, padProfile().stickByDefault], onUseJoystickChange = ::onPadStickMode, onCStick = padCStick(), motion = padMotion(), latched = gcLatched.value, layout = bandLayout) } }
+                val pad = composePad { PadThemeProvider(padTheme) { VirtualPad(::onPad, Modifier.fillMaxSize(), analog = true, onStick = ::onStick, profile = padProfile(), useJoystick = PadStickModes[padStickKey, padProfile().stickByDefault], onUseJoystickChange = ::onPadStickMode, onCStick = padCStick(), motion = padMotion(), latched = gcLatched.value, layout = bandLayout, tools = padTools()) } }
                 addPad(root, pad, FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT, bandPx, Gravity.BOTTOM))
+            } else if (layoutPadHidden && names.isEmpty()) {
+                // The clusters over the lower half only: the upper screen (the touch screen, once swapped up) stays free to touch.
+                // A controller hides them, as in landscape.
+                val height = resources.displayMetrics.heightPixels / 2
+                addOverlayClusters(root, height)
+                portraitClusterTop = resources.displayMetrics.heightPixels - height
+            }
+            if (PadOptions.hasPortraitPadRow(layoutTag()) && PadBandRule.keepPadBand(portrait = true, names)) {
+                val hidden = layoutPadHidden
+                val toggle = composePad { PortraitPadToggle(hidden, if (hidden) padLandscapeAlpha.value else 1f, ::togglePortraitPad) }
+                addPad(root, toggle, FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.END))
             }
         } else {
             // Landscape: full-screen game. Show the transparent corner clusters only when no controller
             // is attached; a connected controller hides them for an unobstructed screen.
             game.layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-            if (names.isEmpty() && ndsTouchMode) {
-                // DS touch mode: no clusters, only the chip that brings them back (and turns bottom-screen touch off). Its
-                // corner follows the touch-mode regions once relayoutFrontend lays them out (placeNdsChip).
-                val chip = composePad {
-                    ControlsChip(NdsTouchMode.chipAlpha(padLandscapeAlpha.value), ndsChipCorner.value, ::onNdsChipSize, ::leaveNdsTouchMode)
-                }
-                ndsChipView = chip
-                addPad(root, chip, FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, ndsChipCorner.value.gravity()))
-            } else if (names.isEmpty()) {
-                // Half the width each, so the two never overlap; the unit is the height's ([clusterUnit]), and only a
-                // screen too narrow for two of those (the Flip's cover) fits it to the half.
-                val halfW = (resources.displayMetrics.widthPixels * CLUSTER_MAX_WIDTH_SHARE).toInt()
-                // The clusters overlay the game: drawn at the Pad Opacity (landscape) setting, touch targets unchanged.
-                val overlayLayout = padLayout(PadShape.OVERLAY)
-                val left = composePad {
-                    VirtualPadLeft(::onPad, ::onStick, Modifier.fillMaxSize().clearOfCutoutBothSides(WindowInsetsSides.Start).alpha(padLandscapeAlpha.value), profile = padProfile(),
-                        useJoystick = PadStickModes[padStickKey, padProfile().stickByDefault], onUseJoystickChange = ::onPadStickMode, overGame = true, motion = padMotion(), latched = gcLatched.value, layout = overlayLayout)
-                }
-                val right = composePad {
-                    VirtualPadRight(::onPad, Modifier.fillMaxSize().clearOfCutoutBothSides(WindowInsetsSides.End).alpha(padLandscapeAlpha.value), profile = padProfile(), overGame = true, onCStick = padCStick(), latched = gcLatched.value, layout = overlayLayout)
-                }
-                addPad(root, left, FrameLayout.LayoutParams(
-                    halfW, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.START or Gravity.BOTTOM))
-                addPad(root, right, FrameLayout.LayoutParams(
-                    halfW, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.END or Gravity.BOTTOM))
-                overlayPadShown.value = true
+            if (names.isEmpty()) {
+                addOverlayClusters(root, FrameLayout.LayoutParams.MATCH_PARENT)
             }
         }
-        updateTouchModeAvailable(names, landscape = !portrait)
         game.requestLayout()
         updatePadVisibility()
+        syncN3dsCore()
         menuView?.layoutParams = menuLayoutParams(orientation)
         notificationsView?.layoutParams = menuLayoutParams(orientation)
         // The DS layouts follow the new area (gameContainer's size listener does too, once it is laid out).
         game.post { relayoutFrontend() }
+    }
+
+    /**
+     * The two pad clusters over the game, [height] px tall from the bottom: the landscape pad, and portrait's with the
+     * band hidden ([portraitPadHidden]).
+     */
+    private fun addOverlayClusters(root: FrameLayout, height: Int) {
+        // Half the width each, so the two never overlap; the unit is the height's ([clusterUnit]), and only a
+        // screen too narrow for two of those (the Flip's cover, portrait) fits it to the half.
+        val halfW = (resources.displayMetrics.widthPixels * CLUSTER_MAX_WIDTH_SHARE).toInt()
+        // The clusters overlay the game: drawn at the Pad Opacity (landscape) setting, touch targets unchanged.
+        val overlayLayout = padLayout(PadShape.OVERLAY)
+        val left = composePad {
+            VirtualPadLeft(::onPad, ::onStick, Modifier.fillMaxSize().clearOfCutoutBothSides(WindowInsetsSides.Start).alpha(padLandscapeAlpha.value), profile = padProfile(),
+                useJoystick = PadStickModes[padStickKey, padProfile().stickByDefault], onUseJoystickChange = ::onPadStickMode, overGame = true, motion = padMotion(), latched = gcLatched.value, layout = overlayLayout, tools = padTools())
+        }
+        val right = composePad {
+            VirtualPadRight(::onPad, Modifier.fillMaxSize().clearOfCutoutBothSides(WindowInsetsSides.End).alpha(padLandscapeAlpha.value), profile = padProfile(), overGame = true, onCStick = padCStick(), latched = gcLatched.value, layout = overlayLayout, tools = padTools())
+        }
+        addPad(root, left, FrameLayout.LayoutParams(halfW, height, Gravity.START or Gravity.BOTTOM))
+        addPad(root, right, FrameLayout.LayoutParams(halfW, height, Gravity.END or Gravity.BOTTOM))
+        overlayPadShown.value = true
+    }
+
+    /**
+     * 3DS: the core's layout from the row in use (orientation, controller); with the clusters over the game, a finger
+     * touching the bottom screen only while it is the main one (the core's rule); and the cursor kept shown in stylus mode.
+     * A value the core has is not sent again.
+     */
+    private fun syncN3dsCore() {
+        if (!isN3ds) return
+        applyOptions(listOf(
+            Variable(N3dsOptions.LAYOUT, N3dsOptions.layoutFor(frontendValues, isLandscape(), ndsControllerMode())),
+            Variable(N3dsOptions.TOUCH_MAIN_ONLY, N3dsOptions.touchMainOnly(overlayPadShown.value)),
+            Variable(N3dsOptions.CURSOR_VISIBLE, N3dsOptions.cursorVisible(n3dsHotkeys.stylus)),
+        ))
+    }
+
+    /** The tag the layout goes by: the intent's until startEmulator sets [gameTag] (onCreate lays out before it). */
+    private fun layoutTag(): String = intent.getStringExtra(EXTRA_TAG) ?: gameTag
+
+    /** DS / 3DS Portrait Pad is Hidden: portrait drops the band for the clusters over the game ([PadOptions.portraitPadRow]). */
+    private fun portraitPadHidden(): Boolean = PadOptions.portraitPadHidden(layoutTag(), frontendValues)
+
+    /**
+     * The corner icon's long press: the portrait band hidden or back, applied now and saved for the console (and the
+     * game's own file, when it has one, so the change is not hidden by it).
+     */
+    private fun togglePortraitPad() {
+        val key = PadOptions.PORTRAIT_PAD
+        if (key in lockedOptions) { toast("Portrait Pad is locked in the config"); return }
+        val next = if (portraitPadHidden()) PadOptions.SHOWN else PadOptions.HIDDEN
+        releaseAllGameInput()   // the pad goes away under the fingers: nothing it held may stick in the core
+        applyFrontend(frontendValues + (key to next))
+        val store = configStore ?: return
+        lifecycleScope.launch {
+            val written = configWrites.withLock {
+                withContext(Dispatchers.IO) {
+                    runCatching { store.saveConsoleKey(key, next) }
+                        .onFailure { NxLog.w("GameActivity", "saving $key failed", it) }.getOrNull()
+                }
+            }
+            if (written == null) { toast("Could not save Portrait Pad"); return@launch }
+            if (configSource == ConfigSource.NONE) configSource = ConfigSource.CONSOLE
+            lockedOptions = written.locked + forcedOptions
+        }
     }
 
     /**
@@ -1850,7 +1908,6 @@ class GameActivity : ComponentActivity() {
             }
             TabletopPad.NONE -> Unit
         }
-        updateTouchModeAvailable(names, landscape = !portrait)
         game.requestLayout()
         updatePadVisibility()
         menuView?.layoutParams = menuLayoutParams(orientation)
@@ -1887,10 +1944,10 @@ class GameActivity : ComponentActivity() {
 
     /**
      * The portrait pad band's height: the [PAD_PORTRAIT_CM] band, or 0 when [PadBandRule] drops it (a non-clip-on
-     * controller, [names] from [layoutControllerNames]).
+     * controller, [names] from [layoutControllerNames]) or the player hid it ([portraitPadHidden]).
      */
     private fun portraitBandPx(names: List<String> = layoutControllerNames()): Int {
-        if (!PadBandRule.keepPadBand(portrait = true, names)) return 0
+        if (!PadBandRule.keepPadBand(portrait = true, names) || portraitPadHidden()) return 0
         val dm = resources.displayMetrics
         return padBandPx(PAD_PORTRAIT_CM, dm.ydpi, dm.density, dm.heightPixels.toFloat()).toInt()
     }
@@ -1912,11 +1969,12 @@ class GameActivity : ComponentActivity() {
 
     /**
      * Landscape: the corner pads overlap the full-screen menu, so hide them while it is open and let touch
-     * reach the menu. Portrait keeps its pad band: it sits below the menu and drives it.
+     * reach the menu; so does portrait with the band hidden. Portrait keeps its pad band: it sits below the menu and drives it.
      */
     private fun updatePadVisibility() {
         // Tabletop keeps its controls too: they sit below the hinge, under the menu's area.
-        val hide = menuOpen && resources.configuration.orientation != Configuration.ORIENTATION_PORTRAIT && tabletop() == null
+        val overGame = resources.configuration.orientation != Configuration.ORIENTATION_PORTRAIT || layoutPadHidden
+        val hide = menuOpen && overGame && tabletop() == null
         padViews.forEach { it.visibility = if (hide) View.GONE else View.VISIBLE }
     }
 
@@ -1926,7 +1984,7 @@ class GameActivity : ComponentActivity() {
         return im.inputDeviceIds.toList().mapNotNull { id -> im.getInputDevice(id) }.filter(::isPad)
     }
 
-    /** The names of every attached [controllers]: logged, and a change ends DS touch mode ([onInputDevicesChanged]). */
+    /** The names of every attached [controllers]. */
     private fun controllerNames(): List<String> = controllers().map { it.name }
 
     /**
@@ -1942,35 +2000,6 @@ class GameActivity : ComponentActivity() {
                 NxTheme { PadVibrationProvider(padVibration) { content() } }
             }
         }
-
-    /**
-     * Moves the touch-mode "Controls" chip to the first game-area corner clear of the touchable screen ([ndsRegions], so
-     * called whenever they change). The game area is the whole root in landscape, so its corners are the chip's.
-     */
-    private fun placeNdsChip() {
-        val chip = ndsChipView ?: return
-        val game = findViewById<FrameLayout>(R.id.gameContainer)
-        if (game.width <= 0 || game.height <= 0) return
-        val d = resources.displayMetrics.density
-        val size = ndsChipSize ?: IntSize((NDS_CHIP_EST_W_DP * d).roundToInt(), (NDS_CHIP_EST_H_DP * d).roundToInt())
-        val corner = NdsTouchMode.chipCorner(
-            ndsRegions, game.width.toFloat(), game.height.toFloat(), size.width.toFloat(), size.height.toFloat(),
-            margin = NDS_CHIP_MARGIN_DP * d + cutoutMax,   // conservative: any cutout could sit beside the chip
-        )
-        ndsChipCorner.value = corner
-        val lp = chip.layoutParams as? FrameLayout.LayoutParams ?: return
-        if (lp.gravity != corner.gravity()) {
-            lp.gravity = corner.gravity()
-            chip.layoutParams = lp
-        }
-    }
-
-    /** The chip's measured size: placed again (posted, out of the layout pass) when it differs from what was used. */
-    private fun onNdsChipSize(size: IntSize) {
-        if (size == ndsChipSize) return
-        ndsChipSize = size
-        findViewById<FrameLayout>(R.id.root).post { placeNdsChip() }
-    }
 
     private fun addPad(root: FrameLayout, view: ComposeView, lp: FrameLayout.LayoutParams) {
         // Added after gameContainer -> overlays it; below the notifications (a rotation re-adds the pads).
@@ -1990,8 +2019,14 @@ class GameActivity : ComponentActivity() {
         frontendValues = values
         val segaSetting = values[PadOptions.SEGA_PAD] ?: SegaPadType.AUTO
         if (segaSetting != oldSegaSetting && PadMap.isSegaPadTag(gameTag)) applySegaPad(segaSetting)
-        if (isN3ds) applyN3dsNewControls(values[N3dsOptions.NEW_CONTROLS])
+        if (isN3ds) {
+            applyN3dsNewControls(values[N3dsOptions.NEW_CONTROLS])
+            syncN3dsCore()   // a layout row changed in the menu, or the hotkey's
+        }
         if (isWii && wiiPad != null) applyWii(values)   // before the launch resolves it, the launch reads the values itself
+        // Portrait Pad changed (the menu, the corner icon, or the launch's values after onCreate's layout). Posted: the
+        // icon's own view is still dispatching its long press.
+        if (portraitPadHidden() != layoutPadHidden) findViewById<FrameLayout>(R.id.root).post { applyLayout(resources.configuration.orientation) }
         val s = FrontendSettings.parse(values)
         padLandscapeAlpha.value = s.padLandscapeAlpha
         val view = retroView ?: return
@@ -2214,6 +2249,30 @@ class GameActivity : ComponentActivity() {
     /** The pad's motion button ([PadMotion]): Wiimote types on a phone with both sensors; none without them. */
     private fun padMotion(): PadMotion? =
         if (isWii && padProfile().motionButton && motionSensors?.hasSensors == true) PadMotion(wiiMotionOn, ::toggleWiiMotion, ::recenterWiiMotion) else null
+
+    /** The DS / 3DS pad's STYLUS and SWAP pills ([PadTools]); none on other consoles. Read in composition: the stylus pill follows its state. */
+    private fun padTools(): PadTools? = when {
+        N3dsOptions.appliesTo(layoutTag()) -> PadTools(n3dsStylusOn.value, ::toggleN3dsStylus, ::onN3dsSwap)
+        NdsOptions.appliesTo(layoutTag()) -> PadTools(ndsStylusOn.value, ::toggleNdsStylus) { down -> if (down) applyNdsAction(NdsAction.SwapScreens) }
+        else -> null
+    }
+
+    /** The DS STYLUS pill: L2's stylus toggle. */
+    private fun toggleNdsStylus() {
+        applyNdsAction(ndsHotkeys.toggleStylus())
+        syncPen()
+    }
+
+    /** The STYLUS pill: SELECT + L1's stylus toggle. */
+    private fun toggleN3dsStylus() {
+        applyN3dsAction(n3dsHotkeys.toggleStylus())
+        syncN3dsCursor()
+    }
+
+    /** The SWAP pill: Azahar's swap-screens key (L3), held as long as the pill. */
+    private fun onN3dsSwap(down: Boolean) {
+        retroView?.sendKeyEvent(if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BUTTON_THUMBL)
+    }
 
     /** The pad's small right stick: the New 3DS C-stick, or on Wii the Classic Controller's right stick only. */
     private fun padCStick(): ((Float, Float) -> Unit)? = when {
@@ -2466,6 +2525,9 @@ class GameActivity : ComponentActivity() {
      */
     private fun relayoutFrontend() {
         val view = retroView ?: return
+        // Portrait with the band hidden: no touch reaches the game under the clusters (the 3DS core takes the touches whole;
+        // the DS screen under them is also off in its regions). The game area starts at the cutout.
+        view.touchCutoffY = portraitClusterTop?.let { (it - cutoutTop).toFloat() } ?: Float.POSITIVE_INFINITY
         if (!view.isAttachedToWindow) return   // the GL thread is gone once detached
         val game = findViewById<FrameLayout>(R.id.gameContainer)
         val w = game.width.toFloat()
@@ -2481,7 +2543,6 @@ class GameActivity : ComponentActivity() {
         if (nds == null && ndsSplit && !gameReady) return
         ndsRegions = nds ?: emptyList()
         positionPen()
-        placeNdsChip()
         setNdsSplit(nds != null)
         if (nds != null) {
             val whole = RectF(0f, 0f, 1f, 1f)
@@ -2529,11 +2590,11 @@ class GameActivity : ComponentActivity() {
         }
         val landscape = isLandscape()
         return NdsLayout.regions(
-            // Touch mode shows the bottom screen big for the fingers: drawn only, never saved (nx_nds_big_screen stands).
-            w, h, landscape, NdsTouchMode.settings(NdsSettings.parse(frontendValues), ndsTouchMode), NDS_INSET_MARGIN_DP * resources.displayMetrics.density,
+            w, h, landscape, NdsSettings.parse(frontendValues), NDS_INSET_MARGIN_DP * resources.displayMetrics.density,
             controllerMode = ndsControllerMode(),
-            // The same condition applyLayout shows the landscape pad clusters on (no controller, not in touch mode).
-            padOverGame = landscape && layoutControllerNames().isEmpty() && !ndsTouchMode,
+            // The same condition applyLayout shows the landscape pad clusters on (no controller).
+            padOverGame = landscape && layoutControllerNames().isEmpty(),
+            portraitPadOver = portraitClusterTop != null,   // portrait with the band hidden: the clusters over the game
         )
     }
 
@@ -2570,9 +2631,7 @@ class GameActivity : ComponentActivity() {
     private fun applyNdsAction(action: NdsAction) {
         val landscape = isLandscape()
         when (action) {
-            // Ignored in touch mode: the bottom screen is shown big there whatever the setting, so a swap would change nothing
-            // visible, only the saved big screen (and touch mode ends on any controller connect, the only other R2 source).
-            NdsAction.SwapScreens -> if (!ndsTouchMode) setNdsKey(NdsOptions.swapBigScreen(frontendValues))
+            NdsAction.SwapScreens -> setNdsKey(NdsOptions.swapBigScreen(frontendValues))
             is NdsAction.CycleLayout -> {
                 // From the layout showing: Auto resolves for the game area as ndsLayout lays it out.
                 val game = findViewById<FrameLayout>(R.id.gameContainer)
@@ -2584,32 +2643,11 @@ class GameActivity : ComponentActivity() {
                 setNdsKey(key to value, "PiP: " + NdsOptions.valueLabel(key, value))
             }
             is NdsAction.Stylus -> {
+                ndsStylusOn.value = action.on
                 if (action.on) releaseStylusInputs()
-                updateTouchModeAvailable()   // stylus off with the landscape pad shown: the next L2 enters touch mode
                 showNdsLabel(if (action.on) "Stylus on" else "Stylus off")
             }
-            NdsAction.TouchMode -> {
-                ndsTouchMode = true
-                releaseAllGameInput()   // the pad goes away under the finger: nothing it held may stick in the core
-                // Posted: L2's own pad view is still dispatching this touch.
-                findViewById<FrameLayout>(R.id.root).post { applyLayout(resources.configuration.orientation) }
-                showNdsLabel("Touch mode — tap Controls to return")
-            }
         }
-    }
-
-    /** L2 asks for touch mode exactly while the landscape clusters are shown on a touchscreen and the stylus is off. */
-    private fun updateTouchModeAvailable(names: List<String> = layoutControllerNames(), landscape: Boolean = isLandscape()) {
-        ndsHotkeys.touchModeAvailable = NdsTouchMode.available(
-            hasTouchscreen, landscape, controllers = names.isNotEmpty(), touchMode = ndsTouchMode, stylus = ndsHotkeys.stylus,
-        )
-    }
-
-    /** The "Controls" chip: the landscape pad back, bottom-screen touch off again. */
-    private fun leaveNdsTouchMode() {
-        if (!ndsTouchMode) return
-        ndsTouchMode = false
-        findViewById<FrameLayout>(R.id.root).post { applyLayout(resources.configuration.orientation) }
     }
 
     /**
@@ -2736,7 +2774,6 @@ class GameActivity : ComponentActivity() {
 
     /** Picks the 3DS hotkeys' core values out of [values] (launch, a menu change, a restore); other keys are ignored. */
     private fun n3dsCoreValues(values: Map<String, String>) {
-        values[N3dsOptions.LAYOUT]?.let { n3dsLayout = it.ifEmpty { null } }
         values[N3dsOptions.DEADZONE]?.let { n3dsHotkeys.deadzone = N3dsOptions.deadzone(it) }
     }
 
@@ -2768,14 +2805,16 @@ class GameActivity : ComponentActivity() {
     private fun applyN3dsAction(action: N3dsAction) {
         when (action) {
             is N3dsAction.CycleLayout -> {
-                val (key, value) = N3dsOptions.cycleLayout(n3dsLayout, action.delta)
+                // The row in use (orientation, controller), as the DS's; applyFrontend sets the core's layout from it.
+                val (key, value) = N3dsOptions.cycleLayout(frontendValues, isLandscape(), ndsControllerMode(), action.delta)
                 if (key in lockedOptions) return
-                n3dsLayout = value
-                applyOptions(listOf(Variable(key, value)))   // Azahar re-lays its screens out on its next frame
+                applyFrontend(frontendValues + (key to value))   // Azahar re-lays its screens out on its next frame
                 showNdsLabel(N3dsOptions.layoutLabel(value))
                 persistGameKey(key, value)
             }
             is N3dsAction.Stylus -> {
+                n3dsStylusOn.value = action.on
+                syncN3dsCore()   // the cursor stays shown while stylus mode is on
                 // On: the d-pad, left stick and A now drive the cursor, so the core must not keep what they held. Off: the
                 // hotkeys lift a touch held, and syncN3dsCursor gives the right stick back.
                 if (action.on) releaseStylusInputs()
@@ -3334,10 +3373,7 @@ class GameActivity : ComponentActivity() {
                     configSource = next.source
                     lockedOptions = next.locked
                     storedValues = next.values
-                    n3dsCoreValues(mapOf(
-                        N3dsOptions.LAYOUT to (next.values[N3dsOptions.LAYOUT] ?: ""),
-                        N3dsOptions.DEADZONE to (next.values[N3dsOptions.DEADZONE] ?: ""),
-                    ))
+                    n3dsCoreValues(mapOf(N3dsOptions.DEADZONE to (next.values[N3dsOptions.DEADZONE] ?: "")))
                     applyFrontend(FrontendOptions.fromConfig(next.values, gameTag))
                     applyShader(ShaderOptions.fromConfig(next.values))
                 }
@@ -4174,26 +4210,36 @@ internal fun reuseRealPathCopy(copyExists: Boolean, copyLength: Long, size: Long
     copyExists && size >= 0 && copyLength == size && storedStamp?.trim() == stamp
 
 /**
- * DS touch mode's way back to the pad: a small chip in [corner] (clear of the touchable screen), clear of a cutout on that
- * corner's sides. [onSize]: the chip's own size, without its margin.
+ * The DS / 3DS portrait pad's hide / show icon in the bottom-right corner: a long press flips the band; a tap does
+ * nothing, so a thumb landing on it mid-game changes nothing. The chevron points where the band goes: down to hide it,
+ * up (over the game, [hidden]) to bring it back.
  */
 @Composable
-private fun ControlsChip(alpha: Float, corner: NdsTouchMode.ChipCorner, onSize: (IntSize) -> Unit, onClick: () -> Unit) {
-    val sides = (if (corner.end) WindowInsetsSides.Right else WindowInsetsSides.Left) +
-        (if (corner.top) WindowInsetsSides.Top else WindowInsetsSides.Bottom)
+private fun PortraitPadToggle(hidden: Boolean, alpha: Float, onLongPress: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    val action by rememberUpdatedState(onLongPress)
+    val ink = LocalNxColors.current.main
     Box(
-        Modifier.windowInsetsPadding(WindowInsets.displayCutout.only(sides)).padding(12.dp).alpha(alpha).onSizeChanged(onSize)
-            .background(Color(0xCC000000), RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+        Modifier.windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Right + WindowInsetsSides.Bottom))
+            .padding(6.dp).size(36.dp).alpha(alpha)
+            .background(Color(0x66000000), CircleShape)
+            .pointerInput(Unit) {
+                detectTapGestures(onLongPress = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    action()
+                })
+            },
+        contentAlignment = Alignment.Center,
     ) {
-        Text("Controls", color = LocalNxColors.current.main, fontSize = 14.sp)
+        Canvas(Modifier.size(width = 14.dp, height = 8.dp)) {
+            val (tip, ends) = if (hidden) 0f to size.height else size.height to 0f
+            val path = Path().apply {
+                moveTo(0f, ends); lineTo(size.width / 2f, tip); lineTo(size.width, ends)
+            }
+            drawPath(path, ink, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+        }
     }
 }
-
-/** The FrameLayout gravity for a chip corner (END is the right edge, as in [NdsTouchMode.chipCorner]). */
-private fun NdsTouchMode.ChipCorner.gravity(): Int =
-    (if (top) Gravity.TOP else Gravity.BOTTOM) or (if (end) Gravity.RIGHT else Gravity.LEFT)
 
 /** Keeps a landscape pad cluster clear of a camera cutout on its own screen edge ([side]). */
 @Composable

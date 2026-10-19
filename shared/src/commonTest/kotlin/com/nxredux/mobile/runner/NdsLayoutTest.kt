@@ -1,6 +1,7 @@
 package com.nxredux.mobile.runner
 
 import com.nxredux.mobile.options.NdsLandscapeLayout
+import com.nxredux.mobile.options.NdsOptions
 import com.nxredux.mobile.options.NdsPortraitLayout
 import com.nxredux.mobile.options.NdsScreen
 import com.nxredux.mobile.options.NdsSettings
@@ -38,12 +39,12 @@ class NdsLayoutTest {
         NdsLayout.regions(w, h, landscape, s, margin)
 
     @Test fun portrait_pip_puts_the_big_screen_on_top_and_the_inset_in_its_corner() {
-        val r = layout(1080f, 1500f, landscape = false, NdsSettings(portrait = NdsPortraitLayout.PIP))
+        val r = layout(1080f, 1500f, landscape = false, NdsSettings(portrait = NdsPortraitLayout.PIP, corner = PipCorner.BOTTOM_RIGHT))
         assertEquals(listOf(NdsScreen.TOP, NdsScreen.BOTTOM), r.map { it.screen })
         rect(PxRect(0f, 0f, 1080f, 810f), r[0].dst, "big")
         rect(PxRect(703.6f, 522.7f, 356.4f, 267.3f), r[1].dst, "inset")
         assertEquals(listOf(true, false), r.map { it.shaded })
-        assertEquals(listOf(false, false), r.map { it.touch })   // the bottom screen is only the inset
+        assertEquals(listOf(false, true), r.map { it.touch })   // the inset bottom screen, with no pad over the game
         assertEquals(listOf(false, true), r.map { it.inset })
         assertEquals(NdsLayout.BOTTOM_SRC, r[1].src)
         assertEquals(FrameRect(0f, 0f, 1f, 0.5f), NdsLayout.TOP_SRC)
@@ -92,15 +93,15 @@ class NdsLayoutTest {
         assertEquals(NdsLayout.BOTTOM_SRC, bottom.src)
     }
 
-    @Test fun landscape_is_side_by_side_whatever_the_portrait_layout() {
+    @Test fun landscape_side_by_side_whatever_the_portrait_layout() {
         for (p in NdsPortraitLayout.entries) {
-            val r = layout(2400f, 1080f, true, NdsSettings(portrait = p))
+            val r = layout(2400f, 1080f, true, NdsSettings(portrait = p, landscape = NdsLandscapeLayout.SIDE_BY_SIDE))
             rect(PxRect(0f, 90f, 1200f, 900f), r[0].dst, "$p left")
             rect(PxRect(1200f, 90f, 1200f, 900f), r[1].dst, "$p right")
             assertEquals(listOf(NdsScreen.TOP, NdsScreen.BOTTOM), r.map { it.screen })
             assertEquals(listOf(false, true), r.map { it.touch })
         }
-        assertEquals(listOf(NdsScreen.BOTTOM, NdsScreen.TOP), layout(2400f, 1080f, true, NdsSettings(big = NdsScreen.BOTTOM)).map { it.screen })
+        assertEquals(listOf(NdsScreen.BOTTOM, NdsScreen.TOP), layout(2400f, 1080f, true, NdsSettings(landscape = NdsLandscapeLayout.SIDE_BY_SIDE, big = NdsScreen.BOTTOM)).map { it.screen })
     }
 
     @Test fun controller_mode_uses_the_controller_portrait_layout() {
@@ -158,9 +159,10 @@ class NdsLayoutTest {
                     assertInside(reg.dst, PxRect(0f, 0f, w, h), what)
                     near(4f / 3f, reg.dst.width / reg.dst.height, "$what aspect")
                     assertEquals(NdsLayout.src(reg.screen), reg.src, what)
-                    // Touch only on a full-size bottom screen; the inset is never touchable nor shaded.
-                    assertEquals(reg.screen == NdsScreen.BOTTOM && !reg.inset, reg.touch, what)
-                    assertEquals(!reg.inset, reg.shaded, what)
+                    // Touch only on the bottom screen: always the full-size (shaded) one, never the inset; neither the inset
+                    // nor large screen's small one takes the shader.
+                    assertEquals(reg.screen == NdsScreen.BOTTOM, reg.touch, what)   // no pad over the game: wherever it is
+                    if (reg.inset) assertFalse(reg.shaded, what)
                 }
                 assertEquals(r.size, r.map { it.screen }.toSet().size, "$what: a screen twice")
                 val full = r.filter { !it.inset }
@@ -234,6 +236,61 @@ class NdsLayoutTest {
         }
     }
 
+    @Test fun with_the_pad_over_the_game_only_the_main_bottom_screen_takes_touches() {
+        for (p in NdsOptions.CONCRETE_PORTRAIT) for (l in NdsLandscapeLayout.entries) for (landscape in listOf(false, true)) {
+            for (big in NdsScreen.entries) {
+                val s = NdsSettings(p, l, big)
+                val r = NdsLayout.regions(1080f, 1500f, landscape, s, margin, padOverGame = landscape, portraitPadOver = !landscape)
+                assertEquals(if (big == NdsScreen.BOTTOM) listOf(NdsScreen.BOTTOM) else emptyList(), r.filter { it.touch }.map { it.screen }, "$s $landscape")
+            }
+        }
+    }
+
+    @Test fun portrait_hidden_band_turns_off_touch_on_the_screen_under_the_clusters() {
+        val bottomLow = NdsLayout.regions(1080f, 2400f, false, NdsSettings(portrait = NdsPortraitLayout.STACKED, big = NdsScreen.TOP), margin, portraitPadOver = true)
+        assertFalse(bottomLow.any { it.touch }, "the touch screen below, under the clusters: no touch")
+        val bottomHigh = NdsLayout.regions(1080f, 2400f, false, NdsSettings(portrait = NdsPortraitLayout.STACKED, big = NdsScreen.BOTTOM), margin, portraitPadOver = true)
+        assertEquals(listOf(NdsScreen.BOTTOM), bottomHigh.filter { it.touch }.map { it.screen }, "swapped up, clear of the clusters: touchable")
+        // Only touch changes; no cover (the band shown) leaves every region as it was.
+        val free = NdsLayout.regions(1080f, 2400f, false, NdsSettings(portrait = NdsPortraitLayout.STACKED, big = NdsScreen.TOP), margin)
+        assertEquals(free.map { it.dst }, bottomLow.map { it.dst })
+        assertTrue(free.any { it.touch })
+    }
+
+    @Test fun large_screen_puts_the_small_one_apart_at_the_corner() {
+        val s = NdsSettings(NdsPortraitLayout.LARGE, NdsLandscapeLayout.LARGE, big = NdsScreen.TOP, corner = PipCorner.TOP_RIGHT, size = PipSize.SMALL)
+        // Landscape: the small screen beside the big one, level with its top, the pair centred.
+        val l = layout(2400f, 1080f, true, s)
+        assertEquals(listOf(NdsScreen.TOP, NdsScreen.BOTTOM), l.map { it.screen })
+        rect(PxRect(300f, 0f, 1440f, 1080f), l[0].dst, "landscape big")
+        rect(PxRect(1740f, 0f, 360f, 270f), l[1].dst, "landscape small")
+        assertEquals(listOf(true, false), l.map { it.shaded })
+        assertEquals(listOf(false, true), l.map { it.touch })   // the small bottom screen, nothing over it
+        assertEquals(listOf(true, false), layout(2400f, 1080f, true, s.copy(big = NdsScreen.BOTTOM)).map { it.touch })
+        // With the pad clusters over the game only the big screen could take touches: R2 swaps the bottom one there.
+        assertEquals(listOf(false, false), NdsLayout.regions(2400f, 1080f, true, s, margin, padOverGame = true).map { it.touch })
+        assertEquals(listOf(false, false), NdsLayout.regions(1080f, 2000f, false, s, margin, portraitPadOver = true).map { it.touch })
+        assertEquals(listOf(true, false), NdsLayout.regions(1080f, 2000f, false, s.copy(big = NdsScreen.BOTTOM), margin, portraitPadOver = true).map { it.touch })
+        assertFalse(l.any { it.inset })
+        // Portrait: the small screen above the big one at its right, the pair top-aligned.
+        val p = layout(1080f, 2000f, false, s)
+        rect(PxRect(811f, 0f, 269f, 202f), p[1].dst, "portrait small")
+        rect(PxRect(0f, 202f, 1080f, 810f), p[0].dst, "portrait big")
+        // Bottom-left: below the big screen, at its left.
+        val bl = layout(1080f, 2000f, false, s.copy(corner = PipCorner.BOTTOM_LEFT))
+        rect(PxRect(0f, 0f, 1080f, 810f), bl[0].dst, "bottom-left big")
+        rect(PxRect(0f, 810f, 269f, 202f), bl[1].dst, "bottom-left small")
+    }
+
+    @Test fun landscape_stacked_gives_the_first_screen_three_quarters_of_the_height() {
+        val r = layout(2400f, 1080f, true, NdsSettings(landscape = NdsLandscapeLayout.STACKED))
+        assertEquals(listOf(NdsScreen.TOP, NdsScreen.BOTTOM), r.map { it.screen })
+        rect(PxRect(660f, 0f, 1080f, 810f), r[0].dst, "top")
+        rect(PxRect(1020f, 810f, 360f, 270f), r[1].dst, "bottom")
+        assertEquals(listOf(true, false), r.map { it.shaded })
+        assertEquals(listOf(false, true), r.map { it.touch })
+    }
+
     @Test fun landscape_single_is_centred() {
         val s = NdsSettings(landscape = NdsLandscapeLayout.SINGLE, big = NdsScreen.TOP)
         val r = NdsLayout.regions(2520f, 1080f, true, s, margin)
@@ -263,16 +320,8 @@ class NdsLayoutTest {
         }
     }
 
-    @Test fun landscape_side_by_side_is_unchanged_default() {
-        assertEquals(NdsLandscapeLayout.SIDE_BY_SIDE, NdsSettings().landscape)
+    @Test fun landscape_stacked_is_the_default() {
+        assertEquals(NdsLandscapeLayout.STACKED, NdsSettings().landscape)
         assertEquals(2, NdsLayout.regions(2520f, 1080f, true, NdsSettings(), margin).size)
-    }
-
-    @Test fun no_landscape_layout_takes_touches_under_the_pad() {
-        for (l in NdsLandscapeLayout.entries) {
-            val s = NdsSettings(landscape = l, big = NdsScreen.BOTTOM)
-            assertTrue(NdsLayout.regions(2520f, 1080f, true, s, margin).any { it.touch }, "$l")
-            assertTrue(NdsLayout.regions(2520f, 1080f, true, s, margin, padOverGame = true).none { it.touch }, "$l pad over game")
-        }
     }
 }

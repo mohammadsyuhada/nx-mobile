@@ -46,7 +46,7 @@ class CoreRegistry3dsTest {
         assertEquals(
             setOf(
                 "citra_graphics_api", "citra_use_libretro_save_path", "citra_enable_mouse_touchscreen", "citra_enable_motion",
-                "citra_motion_sensitivity",
+                "citra_motion_sensitivity", "citra_layout_option",   // the layout comes from the app's per-orientation rows
             ),
             n3ds.lockedOptions,
         )
