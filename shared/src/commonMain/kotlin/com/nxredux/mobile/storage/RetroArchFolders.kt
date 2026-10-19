@@ -13,5 +13,9 @@ object RetroArchFolders {
     /** The folders read under a root. */
     val TOPS = listOf("saves", "states")
 
+    /** With All files access: no RetroArch root holds saves or states. */
     const val NOT_FOUND = "No RetroArch saves found in Android/media/com.retroarch/RetroArch"
+
+    /** Without it: the folder the user picked holds no `saves` or `states` folder, or nothing in them. */
+    const val NOT_IN_PICKED = "No saves or states folder in the picked folder"
 }

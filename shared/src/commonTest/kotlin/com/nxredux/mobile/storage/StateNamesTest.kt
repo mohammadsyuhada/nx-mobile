@@ -23,6 +23,16 @@ class StateNamesTest {
     }
 
     @Test
+    fun a_name_whose_letters_lowercase_longer_keeps_its_stem() {
+        val stem = "İİİİİİ Istanbul"   // 'İ' lowercases to two chars
+        assertEquals(StateName(stem, 3), StateNames.parse("$stem.state3"))
+        assertEquals(StateName(stem, 4), StateNames.parse("$stem.state.4"))
+        assertEquals(StateName(stem, 0), StateNames.parse("$stem.STATE"))
+        assertEquals(auto, StateNames.parse("$stem.state.auto")!!.slot)
+        assertEquals(StateName(stem, 2), StateNames.parse("$stem.gba.st2"))
+    }
+
+    @Test
     fun parses_mixed_case() {
         assertEquals(1, StateNames.parse("X.STATE1")!!.slot)
         assertEquals(auto, StateNames.parse("X.State.Auto")!!.slot)

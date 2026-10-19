@@ -69,20 +69,21 @@ object StateNames {
 
     private val PICTURE = Regex("""(.+)\.([0-9])\.bmp""", RegexOption.IGNORE_CASE)
 
+    // Case-insensitive matches on the name itself: indices into a lowercased copy shift where a character lowercases
+    // to several ('İ').
     private fun split(fileName: String): Parts? {
-        val lower = fileName.lowercase()
-        if (lower.endsWith(".state.auto")) return Parts(fileName.dropLast(".state.auto".length), Scheme.AUTO, NxPaths.AUTO_SLOT)
-        lower.lastIndexOf(".state.").let { i ->
-            val n = if (i > 0) digits(lower.substring(i + ".state.".length)) else null
+        if (fileName.endsWith(".state.auto", ignoreCase = true)) return Parts(fileName.dropLast(".state.auto".length), Scheme.AUTO, NxPaths.AUTO_SLOT)
+        fileName.lastIndexOf(".state.", ignoreCase = true).let { i ->
+            val n = if (i > 0) digits(fileName.substring(i + ".state.".length)) else null
             if (n != null) return Parts(fileName.substring(0, i), Scheme.RETROARCH_ISH, n)
         }
-        if (lower.endsWith(".state")) return Parts(fileName.dropLast(".state".length), Scheme.RETROARCH, 0)
-        lower.lastIndexOf(".state").let { i ->
-            val n = if (i > 0) digits(lower.substring(i + ".state".length)) else null
+        if (fileName.endsWith(".state", ignoreCase = true)) return Parts(fileName.dropLast(".state".length), Scheme.RETROARCH, 0)
+        fileName.lastIndexOf(".state", ignoreCase = true).let { i ->
+            val n = if (i > 0) digits(fileName.substring(i + ".state".length)) else null
             if (n != null) return Parts(fileName.substring(0, i), Scheme.RETROARCH, n)
         }
-        lower.lastIndexOf(".st").let { i ->
-            val n = if (i > 0) digits(lower.substring(i + ".st".length)) else null
+        fileName.lastIndexOf(".st", ignoreCase = true).let { i ->
+            val n = if (i > 0) digits(fileName.substring(i + ".st".length)) else null
             if (n != null) return Parts(fileName.substring(0, i), Scheme.MINUI, n)
         }
         return null

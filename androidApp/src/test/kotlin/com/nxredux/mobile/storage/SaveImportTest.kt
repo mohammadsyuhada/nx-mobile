@@ -491,9 +491,32 @@ class SaveImportTest {
         val gbcCores = CoreRegistry.consoleOf("GBC")!!.tags.map { CoreRegistry.forTag(it)?.id }.distinct()
         assertEquals(listOf("gambatte"), gbcCores)
         bytes(src, "states/Pokemon - Crystal.state1", raw)
-        val summary = SaveImporter(sd, naming = ra, matcher = SaveMatcher(index("GBC" to listOf("Pokemon - Crystal.gbc")))).run(DirImportFiles(src))
+        val summary = SaveImporter(sd, naming = ra, matcher = SaveMatcher(index("GBC" to listOf("Pokemon - Crystal.gbc"))))
+            .run(DirImportFiles(src), retroArch = true)
         assertEquals(ImportSummary(states = 1), summary)
         assertTrue(raw.contentEquals(File(sd, ".userdata/shared/GBC-gambatte/Pokemon - Crystal.state1").readBytes()))
+    }
+
+    @Test fun a_flat_dump_state_of_a_single_core_console_is_skipped() {
+        val src = tmp.newFolder("dump"); val sd = tmp.newFolder("sd")
+        bytes(src, "Pokemon - Crystal.state1", raw)
+        bytes(src, "states/Pokemon - Crystal.state2", raw)
+        val summary = SaveImporter(sd, naming = ra, matcher = SaveMatcher(index("GBC" to listOf("Pokemon - Crystal.gbc")))).run(DirImportFiles(src))
+        assertEquals(
+            listOf(SkippedFile("Pokemon - Crystal.state1", SkipReason.NO_CORE), SkippedFile("Pokemon - Crystal.state2", SkipReason.NO_CORE)),
+            summary.skipped.sortedBy { it.name },
+        )
+        assertEquals(0, summary.states)
+        assertFalse(File(sd, ".userdata/shared").exists())
+    }
+
+    @Test fun a_save_in_a_core_folder_running_another_console_matches_by_name() {
+        val src = tmp.newFolder("ra"); val sd = tmp.newFolder("sd")
+        file(src, "saves/mGBA/Pokemon Red.srm", "sram")
+        val summary = SaveImporter(sd, naming = SaveNaming(SaveFormat.RETROARCH), matcher = SaveMatcher(index("GB" to listOf("Pokemon Red.gb"))))
+            .run(DirImportFiles(src), retroArch = true)
+        assertEquals("sram", File(sd, "Saves/GB/Pokemon Red.srm").readText())
+        assertEquals(1, summary.saves)
     }
 
     @Test fun nextui_state_moves_with_its_picture() {

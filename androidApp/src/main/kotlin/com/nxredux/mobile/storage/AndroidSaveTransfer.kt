@@ -99,23 +99,23 @@ class AndroidSaveTransfer(
                     val roots = retroArchRoots()
                     if (roots.isEmpty()) return@importWork ImportResult.Message(RetroArchFolders.NOT_FOUND)
                     val importer = importer()
-                    retroArchResult(roots.map { importer.run(DirImportFiles(it, RetroArchFolders.TOPS)) }.reduce(ImportSummary::plus))
+                    retroArchResult(roots.map { importer.run(DirImportFiles(it, RetroArchFolders.TOPS), retroArch = true) }.reduce(ImportSummary::plus))
                 }
             } else pickers.openFolder { ref ->
                 ref ?: return@openFolder
                 importWork(progress, done) {
                     val tree = ImportTree.of(resolver, ref)
                     val start = treeStart(ref)
-                    if (RetroArchFolders.TOPS.none { tree.child(start, it)?.isDirectory == true }) return@importWork ImportResult.Message(RetroArchFolders.NOT_FOUND)
-                    retroArchResult(importer().run(TreeImportFiles(tree, start, RetroArchFolders.TOPS)))
+                    if (RetroArchFolders.TOPS.none { tree.child(start, it)?.isDirectory == true }) return@importWork ImportResult.Message(RetroArchFolders.NOT_IN_PICKED)
+                    retroArchResult(importer().run(TreeImportFiles(tree, start, RetroArchFolders.TOPS), retroArch = true), RetroArchFolders.NOT_IN_PICKED)
                 }
             }
         }
     }
 
-    /** RetroArch creates empty `saves`/`states` folders on install: an empty summary says nothing was found there. */
-    private fun retroArchResult(summary: ImportSummary): ImportResult =
-        if (summary.isEmpty) ImportResult.Message(RetroArchFolders.NOT_FOUND) else ImportResult.Done(summary)
+    /** RetroArch creates empty `saves`/`states` folders on install: an empty summary says [notFound] (nothing was found there). */
+    private fun retroArchResult(summary: ImportSummary, notFound: String = RetroArchFolders.NOT_FOUND): ImportResult =
+        if (summary.isEmpty) ImportResult.Message(notFound) else ImportResult.Done(summary)
 
     /** The RetroArch roots on shared storage that hold `saves` or `states`, in [RetroArchFolders.ROOTS] order. */
     @Suppress("DEPRECATION")   // the shared storage root itself, read with All files access

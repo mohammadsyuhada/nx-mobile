@@ -110,17 +110,21 @@ class SaveImporter(
     private val format get() = naming.saveFormat
     private val games by lazy { matcher.gamesByConsole() }
 
-    fun run(source: ImportFiles, onFile: (String) -> Unit = {}): ImportSummary {
+    /**
+     * Imports [source]; [retroArch] marks RetroArch's own folders, where a loose state outside a core folder (flat
+     * `states/`) goes to its console's only core: elsewhere such a state can't tell its core and is skipped.
+     */
+    fun run(source: ImportFiles, retroArch: Boolean = false, onFile: (String) -> Unit = {}): ImportSummary {
         val staging = File(root, STAGING)
         staging.deleteRecursively()   // a run that died before its cleanup
         try {
-            return walk(source, staging, onFile)
+            return walk(source, staging, retroArch, onFile)
         } finally {
             staging.deleteRecursively()
         }
     }
 
-    private fun walk(source: ImportFiles, staging: File, onFile: (String) -> Unit): ImportSummary {
+    private fun walk(source: ImportFiles, staging: File, retroArch: Boolean, onFile: (String) -> Unit): ImportSummary {
         var s = ImportSummary()
         val skipped = mutableListOf<SkippedFile>()
         val pictures = mutableListOf<StagedPicture>()
@@ -153,7 +157,12 @@ class SaveImporter(
                 }
                 area != null -> runCatching { take(path, e) }
                 key != null || state != null -> {
-                    val m = when (val r = matcher.match(key?.game ?: SaveKeys.romKey(state!!.stem), clueOf(path))) {
+                    val game = key?.game ?: SaveKeys.romKey(state!!.stem)
+                    val clue = clueOf(path)
+                    // A save's core folder may run consoles beyond the ones our tags give it (RetroArch's mGBA runs GB
+                    // too): when its clue finds no game the name alone decides. A state's core must be ours for the console.
+                    val first = matcher.match(game, clue)
+                    val m = when (val r = if (first == SaveMatch.NoGame && clue != null && state == null) matcher.match(game, null) else first) {
                         is SaveMatch.Matched -> r
                         SaveMatch.NoGame -> { skipped += SkippedFile(name, SkipReason.NO_GAME); continue }
                         is SaveMatch.Ambiguous -> {
@@ -163,7 +172,7 @@ class SaveImporter(
                     }
                     if (state == null) runCatching { take("Saves/${m.console.defaultTag}/$name", e, m.rom) }
                     else {
-                        val core = RetroArchCores.coreOf(folderOf(path)) ?: onlyCoreOf(m.console)
+                        val core = RetroArchCores.coreOf(folderOf(path)) ?: if (retroArch) onlyCoreOf(m.console) else null
                         val tag = core?.let { c -> RetroArchCores.tagsOf(c).firstOrNull { t -> m.console.tags.any { it.equals(t, ignoreCase = true) } } }
                         if (core == null || tag == null) { skipped += SkippedFile(name, SkipReason.NO_CORE); continue }
                         runCatching { takeLooseState(e, name, state, NxPaths(tag, core.id, m.rom, naming)) }
