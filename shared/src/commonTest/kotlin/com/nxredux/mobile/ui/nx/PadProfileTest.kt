@@ -1,5 +1,6 @@
 package com.nxredux.mobile.ui.nx
 
+import com.nxredux.mobile.runner.PadMap
 import com.nxredux.mobile.runner.SegaPad
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -16,8 +17,14 @@ class PadProfileTest {
     }
 
     @Test fun identity_tags_are_standard() {
-        for (tag in listOf("NDS", "FBN", "SFC", "UNKNOWN", ""))
+        for (tag in listOf("FBN", "SFC", "UNKNOWN", ""))
             assertEquals(PadProfile.STANDARD, PadProfile.forTag(tag), tag)
+    }
+
+    @Test fun the_ds_pad_names_its_two_shoulders_and_the_two_hotkeys() {
+        val ds = PadProfile.forTag("NDS")
+        assertEquals(listOf("L", "R", "Stylus", "Swap"), listOf(NxButton.L1, NxButton.R1, NxButton.L2, NxButton.R2).map(ds::label))
+        for (b in NxButton.entries) assertEquals(b, PadMap.forTag("NDS").sends(b), "$b")   // labels only: routing unchanged
     }
 
     @Test fun table_tags_take_their_labels() {

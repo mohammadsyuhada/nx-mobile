@@ -11,7 +11,7 @@ enum class SegaPad { THREE, SIX }
  * on-screen/physical position sends to the core ([sends]) and what is drawn on it
  * ([label], null = the button's own glyph), which buttons are left off the pad ([isHidden]) or only off its face
  * cluster ([isHiddenInCluster]), and which button the app's menus act on for an on-screen press ([menuButton]).
- * The Genesis family draws the real Sega 6-button pad ([segaCluster]). DC, NDS and N64 are not here
+ * The Genesis family draws the real Sega 6-button pad ([segaCluster]). DC, N64, 3DS, Wii and GameCube are not here
  * ([com.nxredux.mobile.ui.nx.PadProfile]).
  */
 class PadMap private constructor(
@@ -91,6 +91,8 @@ class PadMap private constructor(
             "MGBA", "SGB" -> PadMap(labels = TURBO_AB + mapOf(L2 to "TL", R2 to "TR"))
             "VB" -> PadMap(labels = mapOf(X to "Batt", L2 to "R↑", R2 to "R←"))
             "FC", "FDS" -> PadMap(labels = mapOf(L1 to "Side", R1 to "Insert", R2 to "Coin"))
+            // The DS has only L and R; L2 and R2 are NX Redux's stylus and swap-screens hotkeys (NdsHotkeys).
+            "NDS" -> PadMap(labels = mapOf(L1 to "L", R1 to "R", L2 to "Stylus", R2 to "Swap"))
             else -> IDENTITY
         }
     }
