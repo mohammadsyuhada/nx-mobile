@@ -57,9 +57,7 @@ object NxTextSizes {
     /** A pad label drawn as a badge on a disc [disc] across. */
     fun badge(disc: Dp): TextUnit = (disc.value * BADGE_OF_DISC).sp
     /** A pad button's small label (SELECT, START, the shoulders), the same on every screen, in the menu and in game. */
-    val padLabel: TextUnit = 9.sp
-    /** [padLabel] on the see-through clusters over the game, where the buttons are bigger and the labels sit over the picture. */
-    val padLabelOverGame: TextUnit = 12.sp
+    val padLabel: TextUnit = 12.sp
     /** The game info line (the List's band, the Game Switcher's). */
     val gameInfo: TextUnit = 14.sp
     /** A modal's body text: a text field, a popup list's rows, the Game Settings title. */

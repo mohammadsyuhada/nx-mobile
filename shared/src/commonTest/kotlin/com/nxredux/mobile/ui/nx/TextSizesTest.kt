@@ -57,6 +57,6 @@ class TextSizesTest {
 
     @Test fun noticesAndPadLabelsAreFixed() {
         assertEquals(15f, NxTextSizes.notice.value, 1e-4f)
-        assertEquals(9f, NxTextSizes.padLabel.value, 1e-4f)
+        assertEquals(12f, NxTextSizes.padLabel.value, 1e-4f)
     }
 }

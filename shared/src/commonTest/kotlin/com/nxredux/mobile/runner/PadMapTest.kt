@@ -43,7 +43,7 @@ class PadMapTest {
             val m = PadMap.forTag("MD", sega)
             assertEquals("A", m.label(Y)); assertEquals("B", m.label(X)); assertEquals("C", m.label(A))
             assertEquals("X", m.label(B)); assertEquals("Y", m.label(L1)); assertEquals("Z", m.label(R1))
-            assertEquals("Mode", m.label(SELECT)); assertNull(m.label(L2)); assertNull(m.label(R2))
+            assertEquals("MODE", m.label(SELECT)); assertNull(m.label(L2)); assertNull(m.label(R2))
             for (b in NxButton.entries) assertFalse(m.isHidden(b), "$sega $b")
         }
     }
@@ -60,13 +60,13 @@ class PadMapTest {
     @Test fun label_only_consoles() {
         fun l(tag: String, b: NxButton) = PadMap.forTag(tag).label(b)
         for (t in listOf("SMS", "GG", "SG1000", "A7800")) { assertEquals("1", l(t, B)); assertEquals("2", l(t, A)) }
-        for (t in listOf("NGP", "NGPC")) { assertEquals("A", l(t, B)); assertEquals("B", l(t, A)); assertEquals("Option", l(t, START)) }
-        assertEquals(listOf("I", "II", "III", "IV", "V", "VI", "Mode", "Run"), listOf(A, B, Y, X, L1, R1, L2, START).map { l("PCE", it) })
+        for (t in listOf("NGP", "NGPC")) { assertEquals("A", l(t, B)); assertEquals("B", l(t, A)); assertEquals("OPTION", l(t, START)) }
+        assertEquals(listOf("I", "II", "III", "IV", "V", "VI", "Mode", "RUN"), listOf(A, B, Y, X, L1, R1, L2, START).map { l("PCE", it) })
         for (t in listOf("PS", "PSP")) assertEquals(listOf("○", "×", "△", "□"), listOf(A, B, X, Y).map { l(t, it) }, t)
         assertEquals("O", l("P8", B)); assertEquals("X", l("P8", A))
         assertEquals("Fire", l("A2600", B))
         assertEquals("Opt 1", l("LYNX", L1)); assertEquals("Opt 2", l("LYNX", R1))
-        assertEquals(listOf("C", "Shake", "Power", "TA"), listOf(R1, L1, SELECT, X).map { l("PKM", it) })
+        assertEquals(listOf("C", "Shake", "POWER", "TA"), listOf(R1, L1, SELECT, X).map { l("PKM", it) })
         for (t in listOf("GB", "GBC", "GBA", "MGBA", "SGB")) { assertEquals("TA", l(t, X)); assertEquals("TB", l(t, Y)) }
         for (t in listOf("MGBA", "SGB")) { assertEquals("TL", l(t, L2)); assertEquals("TR", l(t, R2)) }
         assertNull(l("GBA", L2))

@@ -382,7 +382,7 @@ private fun PadButton(
     shape: Shape = PadStyle.faceShape,
     label: String = button.glyph(),
     width: Dp = size,
-    fontSize: TextUnit = LocalPadLabelSize.current,
+    fontSize: TextUnit = NxTextSizes.padLabel,
     face: PadFace? = null,
     labelColor: Color? = null,
     icon: PadIcon? = null,
@@ -429,18 +429,29 @@ private fun PadButton(
                     else faceLabelScale(textWidth, minOf(width, size).toPx())
                 }
             }
+            val drawn = fontSize.pinned() * scale
+            // An all-lowercase label (the Wii Classic Controller's a b x y) has no capital height, so the line box
+            // centres it low: it is lifted by a share of its size to sit in the middle of the button.
+            val lift = if (isLowercaseLabel(label)) with(LocalDensity.current) { drawn.toDp() } * LOWERCASE_LIFT else 0.dp
             Text(
                 label,
+                modifier = Modifier.offset(y = -lift),
                 color = color,
                 fontFamily = font,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = fontSize.pinned() * scale,
+                fontSize = drawn,
                 maxLines = 1,
                 softWrap = false,
             )
         }
     }
 }
+
+/** A label of letters that are all lowercase ([PadButton] lifts it). */
+internal fun isLowercaseLabel(label: String): Boolean = label.any { it.isLetter() } && label.none { it.isUpperCase() }
+
+/** How far an all-lowercase label is lifted, as a share of its font size. */
+private const val LOWERCASE_LIFT = 0.1f
 
 /**
  * The face cluster for [profile]: the X/Y/B/A diamond in a [size]×3 square, the N64's A, B and C diamond in a box
@@ -729,7 +740,7 @@ private fun ToggleButton(label: String, onClick: () -> Unit, height: Dp, width: 
             color = LocalPadColors.current.label,
             fontFamily = LocalNxFont.current,
             fontWeight = FontWeight.SemiBold,
-            fontSize = LocalPadLabelSize.current.pinned(),
+            fontSize = NxTextSizes.padLabel.pinned(),
         )
     }
 }
@@ -769,13 +780,10 @@ private fun MotionButton(motion: PadMotion, height: Dp, width: Dp) {
             color = LocalPadColors.current.label,
             fontFamily = LocalNxFont.current,
             fontWeight = FontWeight.SemiBold,
-            fontSize = LocalPadLabelSize.current.pinned(),
+            fontSize = NxTextSizes.padLabel.pinned(),
         )
     }
 }
-
-/** The pad's small labels' size: [NxTextSizes.padLabel], bigger in the clusters over the game ([NxTextSizes.padLabelOverGame]). */
-val LocalPadLabelSize = staticCompositionLocalOf { NxTextSizes.padLabel }
 
 /**
  * The 3DS pad's own STYLUS and SWAP pills, the on-screen forms of its SELECT + L1 / SELECT + R1 chords: [stylusOn] says
@@ -824,7 +832,7 @@ private fun ToolButton(
             color = LocalPadColors.current.label,
             fontFamily = LocalNxFont.current,
             fontWeight = FontWeight.SemiBold,
-            fontSize = LocalPadLabelSize.current.pinned(),
+            fontSize = NxTextSizes.padLabel.pinned(),
         )
     }
 }
@@ -1302,13 +1310,12 @@ internal fun padShoulders(side: PadSide, profile: PadProfile = PadProfile.STANDA
 @Composable
 private fun ShoulderButtons(
     buttons: List<NxButton>, profile: PadProfile, bumper: Dp, trigger: Dp, emit: (PadEvent) -> Unit, latched: Set<NxButton>,
-    overGame: Boolean = false,
 ) {
     buttons.forEachIndexed { i, button ->
         if (i > 0) Spacer(Modifier.width(8.dp))
         val size = if (button == NxButton.L1 || button == NxButton.R1) bumper else trigger
-        // Over the game the shoulders are big see-through discs: the label follows the disc, not the small pill size.
-        val font = if (overGame) (size.value * SHOULDER_LABEL_OF_DISC).sp else LocalPadLabelSize.current
+        // The shoulders are big discs, on the band as over the game: the label follows the disc, not the small pill size.
+        val font = (size.value * SHOULDER_LABEL_OF_DISC).sp
         PadButton(button, size, emit, shape = PadStyle.pillShape, label = profile.label(button), fontSize = font, lit = button in latched)
     }
 }
@@ -1319,7 +1326,7 @@ private fun ShoulderButtons(
  */
 private const val C_STICK_SHOULDER_DROP = 0.41f
 
-/** An over-the-game shoulder label's size as a share of its disc ([ShoulderButtons]). */
+/** A shoulder label's size as a share of its disc ([ShoulderButtons]). */
 private const val SHOULDER_LABEL_OF_DISC = 0.36f
 
 /**
@@ -1403,10 +1410,7 @@ fun VirtualPadLeft(
     val emit = rememberEmit(onEvent)
     val stick = rememberStickChoice(useJoystick, onUseJoystickChange)
     // Always Charcoal: the clusters sit translucent over the game, whatever the portrait Pad theme.
-    CompositionLocalProvider(
-        LocalPadColors provides CharcoalPadColors,
-        LocalPadLabelSize provides if (overGame) NxTextSizes.padLabelOverGame else NxTextSizes.padLabel,
-    ) {
+    CompositionLocalProvider(LocalPadColors provides CharcoalPadColors) {
         BoxWithConstraints(modifier.fillMaxSize().padding(CLUSTER_PADDING.dp)) {
             val unit = clusterUnit(maxWidth.value, maxHeight.value).dp
             val arrange = rememberPadArrange(layout, with(LocalDensity.current) { unit.toPx() }, onGroupBounds)
@@ -1438,7 +1442,7 @@ fun VirtualPadLeft(
                         }
                         PadRow.SHOULDERS -> PadGroupBox(PadGroup.L_SHOULDERS, Modifier.padding(start = nudge)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                ShoulderButtons(padShoulders(PadSide.LEFT, profile), profile, bumper, trigger, emit, latched, overGame)
+                                ShoulderButtons(padShoulders(PadSide.LEFT, profile), profile, bumper, trigger, emit, latched)
                             }
                         }
                         PadRow.CLUSTER -> PadGroupBox(PadGroup.DPAD, Modifier.padding(start = nudge)) {
@@ -1473,10 +1477,7 @@ fun VirtualPadRight(
 ) {
     val emit = rememberEmit(onEvent)
     // Always Charcoal: the clusters sit translucent over the game, whatever the portrait Pad theme.
-    CompositionLocalProvider(
-        LocalPadColors provides CharcoalPadColors,
-        LocalPadLabelSize provides if (overGame) NxTextSizes.padLabelOverGame else NxTextSizes.padLabel,
-    ) {
+    CompositionLocalProvider(LocalPadColors provides CharcoalPadColors) {
         BoxWithConstraints(modifier.fillMaxSize().padding(CLUSTER_PADDING.dp)) {
             val unit = clusterUnit(maxWidth.value, maxHeight.value).dp
             val arrange = rememberPadArrange(layout, with(LocalDensity.current) { unit.toPx() }, onGroupBounds)
@@ -1512,7 +1513,7 @@ fun VirtualPadRight(
                                 .offset(y = if (profile.cStick && onCStick != null) unit * C_STICK_SHOULDER_DROP else 0.dp),
                         ) {
                             Row(horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                                ShoulderButtons(padShoulders(PadSide.RIGHT, profile), profile, bumper, trigger, emit, latched, overGame)
+                                ShoulderButtons(padShoulders(PadSide.RIGHT, profile), profile, bumper, trigger, emit, latched)
                             }
                         }
                         PadRow.CLUSTER -> PadGroupBox(PadGroup.FACE, Modifier.padding(end = nudge)) {
