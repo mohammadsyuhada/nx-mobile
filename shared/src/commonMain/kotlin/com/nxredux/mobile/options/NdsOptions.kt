@@ -130,7 +130,7 @@ object NdsOptions {
         row(
             LAYOUT_LANDSCAPE, "Layout (landscape)", NdsLandscapeLayout.entries, NdsLandscapeLayout.SIDE_BY_SIDE,
             "How the two screens share a landscape screen.\nSide by side: half the width each.\nSingle screen: the big one, centred.\nPicture in picture: the big one centred, the other small in a corner.\n" +
-                "Large screen: one big, the other small beside it.\nStacked: one above the other.\nSELECT + Left/Right cycles it.\n$SPLIT_NOTE",
+                "Large screen: one big, the other small beside it.\nStacked: one above the other, the first three times the size.\nSELECT + Left/Right cycles it.\n$SPLIT_NOTE",
         ),
         row(
             BIG_SCREEN, "Big Screen", NdsScreen.entries, NdsScreen.TOP,

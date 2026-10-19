@@ -77,7 +77,7 @@ object NdsLayout {
             NdsLandscapeLayout.SINGLE -> listOf(full(settings.big, centreFit(areaWidth, areaHeight)))
             NdsLandscapeLayout.PIP -> pip(centreFit(areaWidth, areaHeight), settings, marginPx)
             NdsLandscapeLayout.LARGE -> large(areaWidth, areaHeight, settings, beside = true)
-            NdsLandscapeLayout.STACKED -> stacked(areaWidth, areaHeight, settings.big)
+            NdsLandscapeLayout.STACKED -> stackedLargeFirst(areaWidth, areaHeight, settings.big)
         } else when (settings.portraitLayout(controllerMode, areaWidth, areaHeight)) {
             NdsPortraitLayout.PIP -> pip(topFit(areaWidth, areaHeight), settings, marginPx)
             NdsPortraitLayout.STACKED -> stacked(areaWidth, areaHeight, settings.big)
@@ -171,6 +171,23 @@ object NdsLayout {
         if (inset.width <= 0f || inset.height <= 0f) return listOf(full(s.big, big))
         val other = s.big.other
         return listOf(full(s.big, big), NdsRegion(other, src(other), inset, shaded = false, touch = false))
+    }
+
+    /**
+     * Landscape stacked: the [first] screen over the other at a third of its size (three quarters of the height and a
+     * quarter), both centred; the second is drawn unshaded like an inset (shaded regions share one size).
+     */
+    private fun stackedLargeFirst(w: Float, h: Float, first: NdsScreen): List<NdsRegion> {
+        val big = ScreenSize(min(w, h * 0.75f * ASPECT))
+        // Unshaded, so exact thirds rather than whole pixels: the 4:3 shape holds even on a tiny screen.
+        val smallW = big.width / 3f
+        val smallH = big.height / 3f
+        val y = wholePx((h - big.height - smallH) / 2f)
+        val second = first.other
+        return listOf(
+            full(first, PxRect(wholePx((w - big.width) / 2f), y, big.width, big.height)),
+            NdsRegion(second, src(second), PxRect((w - smallW) / 2f, y + big.height, smallW, smallH), shaded = false, touch = false),
+        )
     }
 
     private fun stacked(w: Float, h: Float, first: NdsScreen): List<NdsRegion> {

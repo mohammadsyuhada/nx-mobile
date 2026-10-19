@@ -282,11 +282,12 @@ class NdsLayoutTest {
         rect(PxRect(0f, 810f, 269f, 202f), bl[1].dst, "bottom-left small")
     }
 
-    @Test fun landscape_stacked_is_top_over_bottom_centred() {
+    @Test fun landscape_stacked_gives_the_first_screen_three_quarters_of_the_height() {
         val r = layout(2400f, 1080f, true, NdsSettings(landscape = NdsLandscapeLayout.STACKED))
         assertEquals(listOf(NdsScreen.TOP, NdsScreen.BOTTOM), r.map { it.screen })
-        rect(PxRect(840f, 0f, 720f, 540f), r[0].dst, "top")
-        rect(PxRect(840f, 540f, 720f, 540f), r[1].dst, "bottom")
+        rect(PxRect(660f, 0f, 1080f, 810f), r[0].dst, "top")
+        rect(PxRect(1020f, 810f, 360f, 270f), r[1].dst, "bottom")
+        assertEquals(listOf(true, false), r.map { it.shaded })
         assertEquals(listOf(false, true), r.map { it.touch })
     }
 

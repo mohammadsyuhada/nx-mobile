@@ -1,10 +1,10 @@
 # licence: modifies Azahar (https://github.com/azahar-emu/azahar), GPL-2.0 or later (its source files; license.txt is
 # the GPLv2 text; see LICENSES/azahar.txt); this patch is distributed under the same licence.
 diff --git a/src/citra_libretro/core_settings.cpp b/src/citra_libretro/core_settings.cpp
-index 53fb164..60a838a 100644
+index 53fb164..f843075 100644
 --- a/src/citra_libretro/core_settings.cpp
 +++ b/src/citra_libretro/core_settings.cpp
-@@ -1043,6 +1043,10 @@ static void ParseLayoutOptions(void) {
+@@ -1043,6 +1043,15 @@ static void ParseLayoutOptions(void) {
      auto large_screen_proportion =
          LibRetro::FetchVariable(config::layout::large_screen_proportion, "4.00");
      Settings::values.large_screen_proportion = std::stof(large_screen_proportion);
@@ -12,10 +12,15 @@ index 53fb164..60a838a 100644
 +    // nx-mobile 2026-10-20: Large screen's small screen sits top-right. Upstream's default is
 +    // BottomRight, and the libretro core never sets it.
 +    Settings::values.small_screen_position = Settings::SmallScreenPosition::TopRight;
++
++    // nx-mobile 2026-10-20: the app sets this per orientation (landscape: 3, the top screen taking
++    // three quarters of the height); not a declared option, so it is absent from the core's list.
++    Settings::values.stacked_small_proportion =
++        std::max(1.f, std::stof(LibRetro::FetchVariable("citra_stacked_small_proportion", "1")));
  }
  
  static void ParseStorageOptions(void) {
-@@ -1123,7 +1127,9 @@ static void ParseInputOptions(void) {
+@@ -1123,7 +1132,9 @@ static void ParseInputOptions(void) {
              "port:0,sensitivity:" + std::to_string(LibRetro::settings.motion_sensitivity) +
              ",engine:libretro";
      } else {
@@ -76,6 +81,20 @@ index 3168a26..510b7fd 100644
  
      LOG_ERROR(Common_Filesystem, "Stat failed {}: {}", filename, GetLastErrorMsg());
      return 0;
+diff --git a/src/common/settings.h b/src/common/settings.h
+index c83f322..a2b8cfb 100644
+--- a/src/common/settings.h
++++ b/src/common/settings.h
+@@ -575,6 +575,9 @@ struct Values {
+     SwitchableSetting<float, true> large_screen_proportion{4.f, 1.f, 16.f,
+                                                            Keys::large_screen_proportion};
+     SwitchableSetting<int> screen_gap{0, Keys::screen_gap};
++    // nx-mobile: how many times smaller the second screen is in the Default (top over bottom)
++    // layout; 1 upstream. The libretro core reads it from citra_stacked_small_proportion.
++    float stacked_small_proportion = 1.f;
+     SwitchableSetting<SmallScreenPosition> small_screen_position{SmallScreenPosition::BottomRight,
+                                                                  Keys::small_screen_position};
+     Setting<u16> custom_top_x{0, Keys::custom_top_x};
 diff --git a/src/core/file_sys/savedata_archive.cpp b/src/core/file_sys/savedata_archive.cpp
 index 4a6b7e9..d72c12e 100644
 --- a/src/core/file_sys/savedata_archive.cpp
@@ -108,6 +127,59 @@ index bfe8ed9..45ca0a9 100644
  
      std::string GetName() const override {
          return "SaveDataArchive: " + mount_point;
+diff --git a/src/core/frontend/framebuffer_layout.cpp b/src/core/frontend/framebuffer_layout.cpp
+index 3a31142..e65961a 100644
+--- a/src/core/frontend/framebuffer_layout.cpp
++++ b/src/core/frontend/framebuffer_layout.cpp
+@@ -55,7 +55,8 @@ static Common::Rectangle<T> MaxRectangle(Common::Rectangle<T> bounding_window,
+ }
+ 
+ FramebufferLayout DefaultFrameLayout(u32 width, u32 height, bool swapped, bool upright) {
+-    return LargeFrameLayout(width, height, swapped, upright, 1.0f,
++    return LargeFrameLayout(width, height, swapped, upright,
++                            Settings::values.stacked_small_proportion,
+                             Settings::SmallScreenPosition::BelowLarge);
+ }
+ 
+@@ -519,9 +520,16 @@ FramebufferLayout FrameLayoutFromResolutionScale(u32 res_scale, bool is_secondar
+                                         Settings::values.upright_screen.GetValue());
+             break;
+         case Settings::LayoutOption::Default:
+-        default:
+-            width = Core::kScreenTopWidth * res_scale;
+-            height = (Core::kScreenTopHeight + Core::kScreenBottomHeight) * res_scale + gap;
++        default: {
++            // nx-mobile: the second screen stacked_small_proportion times smaller (1 upstream).
++            const bool swapped = Settings::values.swap_screen.GetValue();
++            const float p = Settings::values.stacked_small_proportion;
++            const u32 large_w = swapped ? Core::kScreenBottomWidth : Core::kScreenTopWidth;
++            const u32 small_w = static_cast<u32>(
++                (swapped ? Core::kScreenTopWidth : Core::kScreenBottomWidth) / p);
++            const u32 small_h = static_cast<u32>(Core::kScreenTopHeight / p);
++            width = std::max(large_w, small_w) * res_scale;
++            height = (Core::kScreenTopHeight + small_h) * res_scale + gap;
+ 
+             if (Settings::values.upright_screen.GetValue()) {
+                 std::swap(width, height);
+@@ -530,6 +538,7 @@ FramebufferLayout FrameLayoutFromResolutionScale(u32 res_scale, bool is_secondar
+                                         Settings::values.upright_screen.GetValue());
+             break;
+         }
++        }
+     }
+ 
+     return layout;
+@@ -705,7 +714,9 @@ std::pair<unsigned, unsigned> GetMinimumSizeFromLayout(Settings::LayoutOption la
+     case Settings::LayoutOption::Default:
+     default:
+         min_width = Core::kScreenTopWidth;
+-        min_height = Core::kScreenTopHeight + Core::kScreenBottomHeight;
++        min_height = Core::kScreenTopHeight +
++                     static_cast<u32>(Core::kScreenBottomHeight /
++                                      Settings::values.stacked_small_proportion);
+         break;
+     }
+     if (upright_screen) {
 diff --git a/src/core/hle/service/nim/nim_aoc.cpp b/src/core/hle/service/nim/nim_aoc.cpp
 index 27137a2..dd6e725 100644
 --- a/src/core/hle/service/nim/nim_aoc.cpp

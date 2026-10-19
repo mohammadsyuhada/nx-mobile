@@ -25,6 +25,14 @@ object N3dsOptions {
 
     fun appliesTo(tag: String): Boolean = tag.trim().uppercase() == "3DS"
 
+    /**
+     * How many times smaller Azahar draws the second screen in Top over bottom (nx-mobile's core patch; not a declared
+     * option, so never shown or saved): landscape gives the top screen three quarters of the height, portrait keeps both alike.
+     */
+    const val STACKED_SMALL_PROPORTION = "citra_stacked_small_proportion"
+
+    fun stackedSmallProportion(landscape: Boolean): String = if (landscape) "3" else "1"
+
     /** SELECT + Right walks this order (Left the other way), wrapping. */
     val LAYOUT_CYCLE = listOf("default", "large_screen", "side_by_side", "single_screen")
     private val LABELS = mapOf(

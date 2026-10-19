@@ -1133,7 +1133,9 @@ class GameActivity : ComponentActivity() {
         val netplayPad = if (np != null) NetplayPads.forSession(tag, descriptor?.id) else null
         shaderValues = ShaderOptions.fromConfig(resolved.values)
         presetNames = withContext(Dispatchers.IO) { Shaders.presets(sdRoot) }
-        val options = FrontendOptions.coreValues(resolved.values).map { (k, v) -> Variable(k, v) }
+        val options = FrontendOptions.coreValues(resolved.values).map { (k, v) -> Variable(k, v) } +
+            // 3DS Top over bottom: a bigger top screen in landscape (onConfigurationChanged follows a rotation).
+            if (N3dsOptions.appliesTo(tag)) listOf(Variable(N3dsOptions.STACKED_SMALL_PROPORTION, N3dsOptions.stackedSmallProportion(isLandscape()))) else emptyList()
         // netplay link: gambatte gets its link options; a GBA link engine starts now, before the core loads, so
         // a joiner learns the host's gpsp_serial from its READY and runs with it (the handheld reloads instead).
         val linkKind = np?.let { NetplayCores.link(it.coreId) }
@@ -1739,7 +1741,8 @@ class GameActivity : ComponentActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         ndsTouchMode = false   // a rotation starts with the pad shown
-        applyLayout(newConfig.orientation)   // also re-sizes the menu and the notifications to the game area
+        applyLayout(newConfig.orientation)
+        if (isN3ds) applyOptions(listOf(Variable(N3dsOptions.STACKED_SMALL_PROPORTION, N3dsOptions.stackedSmallProportion(isLandscape(newConfig.orientation)))))   // also re-sizes the menu and the notifications to the game area
         // The motion level is captured in the display's frame: a new rotation takes the phone's attitude as level again.
         if (isWii) displayRotation().let { r -> if (r != lastRotation) { lastRotation = r; motionSensors?.recenter() } }
         if (retroView != null) {
