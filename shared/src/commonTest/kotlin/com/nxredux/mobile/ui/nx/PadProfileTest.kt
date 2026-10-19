@@ -21,9 +21,10 @@ class PadProfileTest {
             assertEquals(PadProfile.STANDARD, PadProfile.forTag(tag), tag)
     }
 
-    @Test fun the_ds_pad_names_its_two_shoulders_and_the_two_hotkeys() {
+    @Test fun the_ds_pad_has_l_and_r_only() {
         val ds = PadProfile.forTag("NDS")
-        assertEquals(listOf("L", "R", "Stylus", "Swap"), listOf(NxButton.L1, NxButton.R1, NxButton.L2, NxButton.R2).map(ds::label))
+        assertEquals(listOf("L", "R"), listOf(NxButton.L1, NxButton.R1).map(ds::label))
+        assertEquals(setOf(NxButton.L2, NxButton.R2), NxButton.entries.filter(ds::isHidden).toSet())   // STYLUS / SWAP pills instead
         for (b in NxButton.entries) assertEquals(b, PadMap.forTag("NDS").sends(b), "$b")   // labels only: routing unchanged
     }
 

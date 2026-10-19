@@ -574,6 +574,7 @@ class GameActivity : ComponentActivity() {
     private var n3dsPadRight = 0f to 0f         // the on-screen C-stick as last moved (New 3DS controls)
     private var n3dsSentRight = 0f to 0f        // the right stick as last sent to the core
     private val n3dsStylusOn = mutableStateOf(false)   // stylus mode, as the pad's STYLUS pill shows it
+    private val ndsStylusOn = mutableStateOf(false)    // the DS's, likewise
     private var n3dsTickJob: Job? = null        // ticks the hotkeys while they ask ([N3dsHotkeys.ticking])
     private val isN3ds: Boolean get() = N3dsOptions.appliesTo(gameTag)
     private val isDc: Boolean get() = DcInput.appliesTo(gameTag)
@@ -2233,9 +2234,18 @@ class GameActivity : ComponentActivity() {
     private fun padMotion(): PadMotion? =
         if (isWii && padProfile().motionButton && motionSensors?.hasSensors == true) PadMotion(wiiMotionOn, ::toggleWiiMotion, ::recenterWiiMotion) else null
 
-    /** The 3DS pad's STYLUS and SWAP pills ([PadTools]); none on other consoles. Read in composition: the stylus pill follows [n3dsStylusOn]. */
-    private fun padTools(): PadTools? =
-        if (N3dsOptions.appliesTo(layoutTag())) PadTools(n3dsStylusOn.value, ::toggleN3dsStylus, ::onN3dsSwap) else null
+    /** The DS / 3DS pad's STYLUS and SWAP pills ([PadTools]); none on other consoles. Read in composition: the stylus pill follows its state. */
+    private fun padTools(): PadTools? = when {
+        N3dsOptions.appliesTo(layoutTag()) -> PadTools(n3dsStylusOn.value, ::toggleN3dsStylus, ::onN3dsSwap)
+        NdsOptions.appliesTo(layoutTag()) -> PadTools(ndsStylusOn.value, ::toggleNdsStylus) { down -> if (down) applyNdsAction(NdsAction.SwapScreens) }
+        else -> null
+    }
+
+    /** The DS STYLUS pill: L2's stylus toggle. */
+    private fun toggleNdsStylus() {
+        applyNdsAction(ndsHotkeys.toggleStylus())
+        syncPen()
+    }
 
     /** The STYLUS pill: SELECT + L1's stylus toggle. */
     private fun toggleN3dsStylus() {
@@ -2617,6 +2627,7 @@ class GameActivity : ComponentActivity() {
                 setNdsKey(key to value, "PiP: " + NdsOptions.valueLabel(key, value))
             }
             is NdsAction.Stylus -> {
+                ndsStylusOn.value = action.on
                 if (action.on) releaseStylusInputs()
                 showNdsLabel(if (action.on) "Stylus on" else "Stylus off")
             }

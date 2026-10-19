@@ -58,6 +58,13 @@ class NdsHotkeys {
     private var stickX = 0f
     private var stickY = 0f
 
+    /** Stylus mode on or off: L2, or the pad's STYLUS pill. Off lifts the pen. */
+    fun toggleStylus(): NdsAction.Stylus {
+        stylus = !stylus
+        resetPen()   // off: lift the pen; on: a stick already held does not move it at once
+        return NdsAction.Stylus(stylus)
+    }
+
     fun onButton(button: NxButton, down: Boolean): NdsDecision {
         if (button == NxButton.SELECT) selectHeld = down   // SELECT itself still reaches the core
         if (!down) {
@@ -71,11 +78,7 @@ class NdsHotkeys {
         }
         val decision = when {
             button == NxButton.R2 -> NdsDecision(false, NdsAction.SwapScreens)
-            button == NxButton.L2 -> {
-                stylus = !stylus
-                resetPen()   // off: lift the pen; on: a stick already held does not move it at once
-                NdsDecision(false, NdsAction.Stylus(stylus))
-            }
+            button == NxButton.L2 -> NdsDecision(false, toggleStylus())
             selectHeld && (button == NxButton.LEFT || button == NxButton.RIGHT) ->
                 NdsDecision(false, NdsAction.CycleLayout(if (button == NxButton.RIGHT) 1 else -1))
             selectHeld && (button == NxButton.UP || button == NxButton.DOWN) ->

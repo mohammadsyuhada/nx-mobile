@@ -15,7 +15,7 @@ class N3dsPadTest {
         assertSame(PadProfile.N3DS_NEW, PadProfile.forTag("3DS", n3dsNew = true))
         val ds = PadProfile.forTag("NDS", n3dsNew = true)   // only the 3DS has them: still the DS pad, no C-stick
         assertFalse(ds.cStick)
-        assertEquals("Swap", ds.label(NxButton.R2))
+        assertTrue(ds.isHidden(NxButton.R2))
         assertEquals(FaceCluster.DIAMOND, PadProfile.N3DS.cluster)
     }
 
