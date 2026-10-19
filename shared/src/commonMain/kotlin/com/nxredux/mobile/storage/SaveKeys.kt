@@ -31,7 +31,7 @@ object SaveKeys {
         return SaveKey(kind, romKey(fileName.substring(0, dot)))
     }
 
-    private val ARCHIVES = setOf("zip", "7z")
+    internal val ARCHIVES = setOf("zip", "7z")
 
     /**
      * The game a ROM entry is named after: its extension dropped only when that extension is a known ROM or archive
