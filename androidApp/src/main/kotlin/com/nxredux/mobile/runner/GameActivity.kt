@@ -2539,6 +2539,9 @@ class GameActivity : ComponentActivity() {
      */
     private fun relayoutFrontend() {
         val view = retroView ?: return
+        // Portrait with the band hidden: no touch reaches the game under the clusters (the 3DS core takes the touches whole;
+        // the DS screen under them is also off in its regions). The game area starts at the cutout.
+        view.touchCutoffY = portraitClusterTop?.let { (it - cutoutTop).toFloat() } ?: Float.POSITIVE_INFINITY
         if (!view.isAttachedToWindow) return   // the GL thread is gone once detached
         val game = findViewById<FrameLayout>(R.id.gameContainer)
         val w = game.width.toFloat()

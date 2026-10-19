@@ -363,10 +363,16 @@ class GLRetroView(
     // The finger that drives the pointer: the first one down; others are ignored until it lifts.
     private var touchPointerId = MotionEvent.INVALID_POINTER_ID
 
+    /**
+     * Touches at or below this y (view px) do not reach the game: the host's controls cover the picture there. A finger
+     * that slides below it lifts the pointer. Main thread.
+     */
+    var touchCutoffY: Float = Float.POSITIVE_INFINITY
+
     override fun onTouchEvent(event: MotionEvent?): Boolean {
         event ?: return true
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
+            MotionEvent.ACTION_DOWN -> if (event.getY(0) < touchCutoffY) {
                 touchPointerId = event.getPointerId(0)
                 touchAt(event.getX(0), event.getY(0))
             }
@@ -382,6 +388,7 @@ class GLRetroView(
     }
 
     private fun touchAt(x: Float, y: Float) {
+        if (y >= touchCutoffY) { liftPointer(); return }
         val regions = screenRegions
         if (regions.isEmpty()) {
             val position = normalizeTouchCoordinates(x, y)
@@ -397,6 +404,10 @@ class GLRetroView(
 
     private fun touchReleased() {
         touchPointerId = MotionEvent.INVALID_POINTER_ID
+        liftPointer()
+    }
+
+    private fun liftPointer() {
         if (screenRegions.isEmpty()) {
             if (stickyPointer) return   // the native pointer would ignore the release anyway
             queueEvent { LibretroDroid.onTouchEvent(TOUCH_EVENT_OUTSIDE.x, TOUCH_EVENT_OUTSIDE.y) }
