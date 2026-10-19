@@ -92,7 +92,13 @@ data class ImportSummary(
             if (replaced > 0) add("$replaced replaced (kept as .bak)")
             if (skipped.isNotEmpty()) add("${skipped.size} skipped")
             if (ignored > 0) add("$ignored other ${plural(ignored, "file")} ignored")
+            if (states > 0) add(STATES_NOTE)
         }
+    }
+
+    companion object {
+        /** Shown when states came in: a state from another emulator, its version or BIOS setting may refuse to load. */
+        const val STATES_NOTE = "A state loads only in the emulator that made it, with the same BIOS setting. If one won't load, use the battery save."
     }
 
     /** Both imports' counts added up, their skipped files one after the other (RetroArch reads several roots). */

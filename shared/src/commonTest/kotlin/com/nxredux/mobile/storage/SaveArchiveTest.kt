@@ -49,7 +49,7 @@ class SaveArchiveTest {
     @Test fun import_summary_lines() {
         val skipped = listOf(SkippedFile("Zelda.srm", SkipReason.NO_GAME), SkippedFile("Old.srm", SkipReason.PHONE_NEWER))
         assertEquals(
-            listOf("Imported 37 saves and 1 state", "12 already here", "2 replaced (kept as .bak)", "2 skipped", "4 other files ignored"),
+            listOf("Imported 37 saves and 1 state", "12 already here", "2 replaced (kept as .bak)", "2 skipped", "4 other files ignored", ImportSummary.STATES_NOTE),
             ImportSummary(saves = 37, states = 1, markers = 9, identical = 12, replaced = 2, ignored = 4, skipped = skipped).lines(),
         )
         assertEquals(listOf("Imported 0 saves and 0 states", "1 other file ignored"), ImportSummary(ignored = 1).lines())
