@@ -1107,7 +1107,10 @@ class GameActivity : ComponentActivity() {
         presetNames = withContext(Dispatchers.IO) { Shaders.presets(sdRoot) }
         val options = FrontendOptions.coreValues(resolved.values).map { (k, v) -> Variable(k, v) } +
             // 3DS Top over bottom: a bigger top screen in landscape (onConfigurationChanged follows a rotation).
-            if (N3dsOptions.appliesTo(tag)) listOf(Variable(N3dsOptions.STACKED_SMALL_PROPORTION, N3dsOptions.stackedSmallProportion(isLandscape()))) else emptyList()
+            if (N3dsOptions.appliesTo(tag)) listOf(
+                Variable(N3dsOptions.STACKED_SMALL_PROPORTION, N3dsOptions.stackedSmallProportion(isLandscape())),
+                Variable(N3dsOptions.TOUCH_MAIN_ONLY, N3dsOptions.touchMainOnly(overlayPadShown.value)),
+            ) else emptyList()
         // netplay link: gambatte gets its link options; a GBA link engine starts now, before the core loads, so
         // a joiner learns the host's gpsp_serial from its READY and runs with it (the handheld reloads instead).
         val linkKind = np?.let { NetplayCores.link(it.coreId) }
@@ -1755,6 +1758,7 @@ class GameActivity : ComponentActivity() {
         val tt = tabletop(names)
         if (tt != null) {
             applyTabletopLayout(root, game, tt, names, portrait, orientation)
+            syncN3dsTouchRule()
             return
         }
         if (portrait) {
@@ -1794,6 +1798,7 @@ class GameActivity : ComponentActivity() {
         }
         game.requestLayout()
         updatePadVisibility()
+        syncN3dsTouchRule()
         menuView?.layoutParams = menuLayoutParams(orientation)
         notificationsView?.layoutParams = menuLayoutParams(orientation)
         // The DS layouts follow the new area (gameContainer's size listener does too, once it is laid out).
@@ -1820,6 +1825,11 @@ class GameActivity : ComponentActivity() {
         addPad(root, left, FrameLayout.LayoutParams(halfW, height, Gravity.START or Gravity.BOTTOM))
         addPad(root, right, FrameLayout.LayoutParams(halfW, height, Gravity.END or Gravity.BOTTOM))
         overlayPadShown.value = true
+    }
+
+    /** 3DS: with the clusters over the game, a finger touches the bottom screen only while it is the main one (the core's rule). */
+    private fun syncN3dsTouchRule() {
+        if (isN3ds) applyOptions(listOf(Variable(N3dsOptions.TOUCH_MAIN_ONLY, N3dsOptions.touchMainOnly(overlayPadShown.value))))
     }
 
     /** The tag the layout goes by: the intent's until startEmulator sets [gameTag] (onCreate lays out before it). */

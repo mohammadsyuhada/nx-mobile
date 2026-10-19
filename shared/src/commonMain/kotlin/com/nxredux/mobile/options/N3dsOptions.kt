@@ -33,6 +33,14 @@ object N3dsOptions {
 
     fun stackedSmallProportion(landscape: Boolean): String = if (landscape) "3" else "1"
 
+    /**
+     * While the on-screen buttons are over the game, a finger touches the bottom screen only when it is the main one
+     * (swapped); the stylus cursor still touches anywhere (nx-mobile's core patch; not declared, never shown or saved).
+     */
+    const val TOUCH_MAIN_ONLY = "citra_touch_main_only"
+
+    fun touchMainOnly(padOverGame: Boolean): String = if (padOverGame) "enabled" else "disabled"
+
     /** SELECT + Right walks this order (Left the other way), wrapping. */
     val LAYOUT_CYCLE = listOf("default", "large_screen", "side_by_side", "single_screen")
     private val LABELS = mapOf(

@@ -93,15 +93,15 @@ class NdsLayoutTest {
         assertEquals(NdsLayout.BOTTOM_SRC, bottom.src)
     }
 
-    @Test fun landscape_is_side_by_side_whatever_the_portrait_layout() {
+    @Test fun landscape_side_by_side_whatever_the_portrait_layout() {
         for (p in NdsPortraitLayout.entries) {
-            val r = layout(2400f, 1080f, true, NdsSettings(portrait = p))
+            val r = layout(2400f, 1080f, true, NdsSettings(portrait = p, landscape = NdsLandscapeLayout.SIDE_BY_SIDE))
             rect(PxRect(0f, 90f, 1200f, 900f), r[0].dst, "$p left")
             rect(PxRect(1200f, 90f, 1200f, 900f), r[1].dst, "$p right")
             assertEquals(listOf(NdsScreen.TOP, NdsScreen.BOTTOM), r.map { it.screen })
             assertEquals(listOf(false, true), r.map { it.touch })
         }
-        assertEquals(listOf(NdsScreen.BOTTOM, NdsScreen.TOP), layout(2400f, 1080f, true, NdsSettings(big = NdsScreen.BOTTOM)).map { it.screen })
+        assertEquals(listOf(NdsScreen.BOTTOM, NdsScreen.TOP), layout(2400f, 1080f, true, NdsSettings(landscape = NdsLandscapeLayout.SIDE_BY_SIDE, big = NdsScreen.BOTTOM)).map { it.screen })
     }
 
     @Test fun controller_mode_uses_the_controller_portrait_layout() {
@@ -320,8 +320,8 @@ class NdsLayoutTest {
         }
     }
 
-    @Test fun landscape_side_by_side_is_unchanged_default() {
-        assertEquals(NdsLandscapeLayout.SIDE_BY_SIDE, NdsSettings().landscape)
+    @Test fun landscape_stacked_is_the_default() {
+        assertEquals(NdsLandscapeLayout.STACKED, NdsSettings().landscape)
         assertEquals(2, NdsLayout.regions(2520f, 1080f, true, NdsSettings(), margin).size)
     }
 }

@@ -18,7 +18,7 @@ class NdsOptionsTest {
             "nx_nds_pip_opacity"),
             NdsOptions.table.map { it.key })
         assertEquals(
-            mapOf(LAYOUT_PORTRAIT to "auto", LAYOUT_PORTRAIT_CONTROLLER to "stacked", LAYOUT_LANDSCAPE to "side-by-side", BIG_SCREEN to "top", PIP_CORNER to "top-right", PIP_SIZE to "medium",
+            mapOf(LAYOUT_PORTRAIT to "auto", LAYOUT_PORTRAIT_CONTROLLER to "stacked", LAYOUT_LANDSCAPE to "stacked", BIG_SCREEN to "top", PIP_CORNER to "top-right", PIP_SIZE to "medium",
                 PIP_OPACITY to "100"),
             NdsOptions.table.associate { it.key to it.default },
         )
@@ -58,7 +58,7 @@ class NdsOptionsTest {
 
     @Test fun stored_values_parse_and_unknown_ones_fall_back() {
         val s = NdsSettings.parse(mapOf(LAYOUT_PORTRAIT to "stacked", BIG_SCREEN to "bottom", PIP_CORNER to "top-left", PIP_SIZE to "large"))
-        assertEquals(NdsSettings(NdsPortraitLayout.STACKED, NdsLandscapeLayout.SIDE_BY_SIDE, NdsScreen.BOTTOM, PipCorner.TOP_LEFT, PipSize.LARGE), s)
+        assertEquals(NdsSettings(NdsPortraitLayout.STACKED, NdsLandscapeLayout.STACKED, NdsScreen.BOTTOM, PipCorner.TOP_LEFT, PipSize.LARGE), s)
         assertEquals(NdsSettings(), NdsSettings.parse(mapOf(LAYOUT_PORTRAIT to "Stacked", PIP_SIZE to "huge", BIG_SCREEN to "")))
         assertEquals(NdsSettings(), NdsSettings.parse(emptyMap()))
         assertEquals(PipOpacity.THREE_QUARTERS, NdsSettings.parse(mapOf(PIP_OPACITY to "75")).opacity)
@@ -137,13 +137,14 @@ class NdsOptionsTest {
     }
 
     @Test fun layout_cycles_in_landscape_and_wraps() {
-        assertEquals(LAYOUT_LANDSCAPE to "single", NdsOptions.cycleLayout(emptyMap(), landscape = true, controllerMode = false, delta = 1, 2520f, 1080f))
-        assertEquals(LAYOUT_LANDSCAPE to "stacked", NdsOptions.cycleLayout(emptyMap(), landscape = true, controllerMode = false, delta = -1, 2520f, 1080f))
+        // Stacked (the default) is last, so the next wraps to side by side.
+        assertEquals(LAYOUT_LANDSCAPE to "side-by-side", NdsOptions.cycleLayout(emptyMap(), landscape = true, controllerMode = false, delta = 1, 2520f, 1080f))
+        assertEquals(LAYOUT_LANDSCAPE to "large", NdsOptions.cycleLayout(emptyMap(), landscape = true, controllerMode = false, delta = -1, 2520f, 1080f))
         assertEquals(LAYOUT_LANDSCAPE to "pip", cycle(mapOf(LAYOUT_LANDSCAPE to "single"), flip, landscape = true))
         assertEquals(LAYOUT_LANDSCAPE to "large", cycle(mapOf(LAYOUT_LANDSCAPE to "pip"), flip, landscape = true))
         assertEquals(LAYOUT_LANDSCAPE to "side-by-side", cycle(mapOf(LAYOUT_LANDSCAPE to "stacked"), flip, landscape = true))
         // The landscape key serves both pad and controller modes; portrait keys are untouched.
-        assertEquals(LAYOUT_LANDSCAPE to "single", cycle(mapOf(LAYOUT_PORTRAIT to "pip"), flip, controllerMode = true, landscape = true))
+        assertEquals(LAYOUT_LANDSCAPE to "side-by-side", cycle(mapOf(LAYOUT_PORTRAIT to "pip"), flip, controllerMode = true, landscape = true))
         assertEquals("Single screen", NdsOptions.valueLabel(LAYOUT_LANDSCAPE, "single"))
         assertEquals("Picture in picture", NdsOptions.valueLabel(LAYOUT_LANDSCAPE, "pip"))
     }

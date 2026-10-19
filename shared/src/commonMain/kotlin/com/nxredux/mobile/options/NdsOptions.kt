@@ -57,7 +57,7 @@ enum class PipOpacity(override val value: String, override val label: String) : 
  */
 data class NdsSettings(
     val portrait: NdsPortraitLayout = NdsPortraitLayout.AUTO,
-    val landscape: NdsLandscapeLayout = NdsLandscapeLayout.SIDE_BY_SIDE,
+    val landscape: NdsLandscapeLayout = NdsLandscapeLayout.STACKED,
     val big: NdsScreen = NdsScreen.TOP,
     val corner: PipCorner = PipCorner.TOP_RIGHT,
     val size: PipSize = PipSize.MEDIUM,
@@ -128,7 +128,7 @@ object NdsOptions {
                 "SELECT + Left/Right cycles it then.\n$SPLIT_NOTE",
         ),
         row(
-            LAYOUT_LANDSCAPE, "Layout (landscape)", NdsLandscapeLayout.entries, NdsLandscapeLayout.SIDE_BY_SIDE,
+            LAYOUT_LANDSCAPE, "Layout (landscape)", NdsLandscapeLayout.entries, NdsLandscapeLayout.STACKED,
             "How the two screens share a landscape screen.\nSide by side: half the width each.\nSingle screen: the big one, centred.\nPicture in picture: the big one centred, the other small in a corner.\n" +
                 "Large screen: one big, the other small beside it.\nStacked: one above the other, the first three times the size.\nSELECT + Left/Right cycles it.\n$SPLIT_NOTE",
         ),
