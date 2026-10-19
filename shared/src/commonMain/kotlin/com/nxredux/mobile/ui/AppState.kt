@@ -706,6 +706,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private var onboardingSync = false   // Device Sync was opened from the sync offer: leaving it returns there
     private var onboardingSigningIn = false   // onboarding's RetroAchievements sign-in is running: its end moves the step on
     private var onboardingSynced: String? = null   // the sync offer's last result ("done", "failed", "stopped"; "" left before one ended)
+    private var onboardingImporting: String? = null   // the save import step's running import: its progress text
+    private var onboardingImported: ImportResult? = null   // the save import step's last result, cleared when the step is left
     private var firstSetup = false   // a first home pick is on its folder steps: the menu's dialog waits (the setup asks as a step)
     private var afterAndroidStep: (() -> Unit)? = null   // what first setup's Android games step goes on to (a load or the extra's scan)
     /** Android apps' icons for the session (Tools tiles, Home pins, the picker); null without a launcher. */
@@ -1740,6 +1742,17 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             ),
             if (onboardingSynced == null) listOf(NxRow("Sync now"), NxRow("Later")) else listOf(NxRow("Sync again"), NxRow("Continue")),
         )
+        // The three imports, then (in place) a running one's progress with the rows waiting, or its summary and skipped files.
+        OnboardingStep.IMPORT_SAVES -> when (val r = onboardingImported) {
+            is ImportResult.Done -> Triple(
+                "Bring your saves", r.summary.lines(), r.summary.skipped.map { NxRow(it.text()) } + NxRow("Continue"),
+            )
+            else -> Triple(
+                "Bring your saves",
+                listOf(onboardingImporting ?: (r as? ImportResult.Message)?.text ?: "Copy battery saves and save states from another app. Nothing is moved or deleted."),
+                listOf("From a folder", "From a zip file", "From RetroArch", "Skip").map { NxRow(it, enabled = onboardingImporting == null) },
+            )
+        }
         OnboardingStep.ARTWORK -> if (artworkScreens?.available == true) Triple(
             "Fetch artwork", listOf("Box art and screenshots for your ${gamesLabel(onboardingGameCount())}, fetched in the background."),
             listOf(NxRow("Fetch now"), NxRow("Skip")),
@@ -1830,6 +1843,12 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 onboardingNext()
             }
             OnboardingStep.SAVE_FORMATS -> if (index < 3) stepOnboardingFormat(index, 1) else onboardingNext()
+            OnboardingStep.IMPORT_SAVES -> when {
+                onboardingImporting != null -> Unit   // the rows wait for the running import
+                onboardingImported is ImportResult.Done -> if (index == s.rows.lastIndex) onboardingNext()   // a skipped file: inert
+                index < 3 -> onboardingImport(listOf(ImportSource.FOLDER, ImportSource.ZIP, ImportSource.RETROARCH)[index])
+                else -> onboardingNext()
+            }
             OnboardingStep.CUSTOMISE -> { onboarding.context = onboarding.context.copy(customise = index == 0); onboardingNext() }
             OnboardingStep.PAD -> if (index < s.rows.lastIndex) flipOnboardingValue(index, 1) else onboardingNext()
             OnboardingStep.TITLE, OnboardingStep.ACCENT -> if (index < s.rows.lastIndex) flipOnboardingValue(index, 1) else onboardingNext()
@@ -1962,6 +1981,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** On to the next step, saved for a resume; past DONE onboarding ends ([finishOnboarding]). */
     private fun onboardingNext() {
         refreshPadContext()
+        onboardingImported = null
         val next = onboarding.next() ?: return finishOnboarding()
         deps.settings.onboardingStep = next.name
         showOnboarding()
@@ -1972,6 +1992,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         // A first run's HANDHELD: back to the ROMs folder step (going on again comes back here, the saved step kept).
         if (onboarding.step == OnboardingStep.HANDHELD) { onboarding.finish(); return showAddFirstExtra() }
         val step = onboarding.back() ?: return
+        onboardingImported = null
         deps.settings.onboardingStep = step.takeIf { it != OnboardingStep.WELCOME && it != OnboardingStep.TEXT_SIZE }?.name
         showOnboarding()
     }
@@ -3263,18 +3284,53 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private var importResult: ImportSummary? = null
 
     /**
-     * Import saves from [source]: its progress notice stays until the result replaces it, a finished import with the
-     * Import results page (on its first row), anything else with a notice.
+     * Import saves from [source]: [progress] and [done] by default are Settings' (a sticky progress notice, then
+     * [settingsImportDone]); onboarding passes its own.
      */
-    private fun importSaves(source: ImportSource) = deps.saveTransfer?.importSaves(source, { showNotice(it, sticky = true) }) { result ->
+    private fun importSaves(
+        source: ImportSource,
+        progress: (String) -> Unit = { showNotice(it, sticky = true) },
+        done: (ImportResult) -> Unit = ::settingsImportDone,
+    ) = deps.saveTransfer?.importSaves(source, progress, done)
+
+    /**
+     * A Settings import's end: finished with Import saves still shown, the Import results page (on its first row);
+     * finished anywhere else, its summary as a notice; anything else, a notice.
+     */
+    private fun settingsImportDone(result: ImportResult) {
         when (result) {
             is ImportResult.Done -> {
                 importResult = result.summary
+                if ((_screen.value as? Screen.Settings)?.section != SettingsSection.IMPORT_SAVES) return showNotice(result.summary.lines().joinToString("; "))
                 dismissNotice()
                 sectionSelections.remove(SettingsSection.IMPORT_RESULT)
                 openSettings(SettingsSection.IMPORT_RESULT)
             }
             is ImportResult.Message -> showNotice(result.text)
+        }
+    }
+
+    /**
+     * Onboarding's import from [source]: its progress and then its result show on the step itself (re-drawn), never a
+     * Settings page or sticky notice. Ended after the step was left, the result is a notice.
+     */
+    private fun onboardingImport(source: ImportSource) {
+        fun onStep() = onboarding.step == OnboardingStep.IMPORT_SAVES && (_screen.value as? Screen.Onboarding)?.step == OnboardingStep.IMPORT_SAVES
+        onboardingImported = null
+        importSaves(source, progress = { text ->
+            onboardingImporting = text
+            if (onStep()) showOnboarding(_selection.value.index)
+        }) { result ->
+            onboardingImporting = null
+            when {
+                onStep() -> {
+                    onboardingImported = result
+                    // A summary lands on Continue; a message keeps the row picked.
+                    showOnboarding(if (result is ImportResult.Done) result.summary.skipped.size else _selection.value.index)
+                }
+                result is ImportResult.Done -> showNotice(result.summary.lines().joinToString("; "))
+                result is ImportResult.Message -> showNotice(result.text)
+            }
         }
     }
 

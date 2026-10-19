@@ -8,7 +8,7 @@ package com.nxredux.mobile.ui
  * ([AppState.menuPadShown] compares by it), and a step off the list is placed by it.
  */
 enum class OnboardingStep {
-    WELCOME, TEXT_SIZE, HANDHELD, SAVE_FORMATS, SYNC_OFFER, ARTWORK, RA_SIGN_IN, RA_DOWNLOAD,
+    WELCOME, TEXT_SIZE, HANDHELD, SAVE_FORMATS, IMPORT_SAVES, SYNC_OFFER, ARTWORK, RA_SIGN_IN, RA_DOWNLOAD,
     CUSTOMISE, PAD, TITLE, TAB_HOME, TAB_CONSOLES, TAB_COLLECTIONS, TAB_TOOLS, GAME_LISTS,
     ACCENT, DONE,
 }
@@ -23,10 +23,15 @@ data class OnboardingContext(
     val customise: Boolean? = null, val padPage: Boolean = false, val buttons: Boolean = false,
 )
 
-/** The steps after the folder phase, in order: the handheld's formats and sync only with one, the download only signed in. */
+/**
+ * The steps after the folder phase, in order: the handheld's formats and sync only with one (the save import between
+ * them, so imported saves sync too; always offered), the download only signed in.
+ */
 fun onboardingSteps(ctx: OnboardingContext): List<OnboardingStep> = buildList {
     add(OnboardingStep.HANDHELD)
-    if (ctx.handheld == true) { add(OnboardingStep.SAVE_FORMATS); add(OnboardingStep.SYNC_OFFER) }
+    if (ctx.handheld == true) add(OnboardingStep.SAVE_FORMATS)
+    add(OnboardingStep.IMPORT_SAVES)
+    if (ctx.handheld == true) add(OnboardingStep.SYNC_OFFER)
     add(OnboardingStep.ARTWORK)
     // RetroAchievements right after artwork: both fetch in the background while the layout, accent and pad are picked.
     add(OnboardingStep.RA_SIGN_IN)
