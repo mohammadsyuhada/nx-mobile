@@ -31,6 +31,34 @@ index 53fb164..f843075 100644
      }
  }
  
+diff --git a/src/citra_libretro/emu_window/libretro_window.cpp b/src/citra_libretro/emu_window/libretro_window.cpp
+index f8cfb2c..3c3f006 100644
+--- a/src/citra_libretro/emu_window/libretro_window.cpp
++++ b/src/citra_libretro/emu_window/libretro_window.cpp
+@@ -281,13 +281,20 @@ LayoutGeometry ComputeLayoutGeometry() {
+         baseY *= scaling;
+         break;
+     case Settings::LayoutOption::Default:
+-    default:
+-        baseX = Core::kScreenTopWidth;
+-        baseY = Core::kScreenTopHeight + Core::kScreenBottomHeight;
++    default: {
++        // nx-mobile: the second screen stacked_small_proportion times smaller (1 upstream), as
++        // DefaultFrameLayout draws it, so the frame has no empty band below it.
++        const float p = Settings::values.stacked_small_proportion;
++        const unsigned large_w = swapped ? Core::kScreenBottomWidth : Core::kScreenTopWidth;
++        const unsigned small_w = static_cast<unsigned>(
++            (swapped ? Core::kScreenTopWidth : Core::kScreenBottomWidth) / p);
++        baseX = std::max(large_w, small_w);
++        baseY = Core::kScreenTopHeight + static_cast<unsigned>(Core::kScreenBottomHeight / p);
+         baseX *= scaling;
+         baseY *= scaling;
+         break;
+     }
++    }
+ 
+     return {baseX, baseY, emulated_pointer};
+ }
 diff --git a/src/common/file_util.cpp b/src/common/file_util.cpp
 index 3168a26..510b7fd 100644
 --- a/src/common/file_util.cpp
