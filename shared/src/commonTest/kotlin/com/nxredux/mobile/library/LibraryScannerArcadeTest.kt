@@ -49,6 +49,19 @@ class LibraryScannerArcadeTest {
         assertEquals(listOf("Tetris"), index.names("GB"))
     }
 
+    // A core's BIOS file left in a ROM folder (any case, any console's) is not a game; a game with a BIOS-like name is.
+    @Test fun bios_files_in_a_rom_folder_are_not_listed() = runTest {
+        val ps = "H/Roms/Sony PlayStation (PS)"
+        val fds = "H/Roms/Famicom Disk System (FDS)"
+        val index = scanHome(mapOf(
+            "H/Roms" to listOf("Sony PlayStation (PS)", "Famicom Disk System (FDS)"),
+            ps to listOf("Tekken 3.PBP", "SCPH1001.BIN", "scph5501.bin", "Bios Fear.cue"),
+            fds to listOf("Zelda.fds", "disksys.rom"),
+        ))
+        assertEquals(listOf("Bios Fear", "Tekken 3"), index.names("PS").sorted())
+        assertEquals(listOf("Zelda"), index.names("FDS"))
+    }
+
     @Test fun table_titles_are_only_for_arcade() = runTest {
         val index = scanHome(mapOf("H/Roms" to listOf("Game Boy (GB)"), gb to listOf("mslug2.gb")), arcadeSets = { table })
         assertEquals(listOf("mslug2"), index.names("GB"))

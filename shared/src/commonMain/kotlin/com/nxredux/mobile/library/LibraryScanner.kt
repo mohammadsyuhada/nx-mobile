@@ -337,6 +337,7 @@ class LibraryScanner(
             val key = discDir ?: base
             val alias = look.names[name] ?: discDir?.let { look.names[it] }
             if (alias != null && alias.startsWith(".")) continue   // the Brick hides a "."-aliased entry (nextui content.c)
+            if (name.lowercase() in CoreRegistry.biosFileNames) continue   // scph1001.bin, disksys.rom ... left in a ROM folder
             if (arcade && sets.isBios(base)) continue               // neogeo.zip, pgm.zip ...: needed beside the games, not listed
             val naomiSet = core == NAOMI_CORE && Names.isArchive(name)   // a DC zip/7z: a NAOMI/Atomiswave set or a zipped disc
             if (naomiSet && naomi.isBios(base)) continue           // naomi.zip, awbios.zip ...: belong in Bios/DC/, not listed
