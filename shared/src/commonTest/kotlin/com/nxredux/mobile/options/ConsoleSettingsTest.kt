@@ -6,7 +6,7 @@ import kotlin.test.assertTrue
 
 class ConsoleSettingsTest {
     @Test fun nds_offers_its_screen_rows_without_the_ds_prefix() {
-        val rows = ConsoleSettings.tableFor("NDS").filter { it != PadOptions.layoutRow }
+        val rows = ConsoleSettings.tableFor("NDS").filter { it !in PadOptions.all }
         assertEquals(
             listOf(
                 NdsOptions.LAYOUT_PORTRAIT, NdsOptions.LAYOUT_PORTRAIT_CONTROLLER, NdsOptions.LAYOUT_LANDSCAPE,

@@ -833,7 +833,7 @@ class InGameMenuModelTest {
         assertEquals(
             listOf(
                 "Layout (portrait)", "Layout (portrait, controller)", "Layout (landscape)", "Big Screen", "Inset Corner", "Inset Size",
-                "Inset Opacity", "Controller Layout",
+                "Inset Opacity", "Portrait Pad", "Controller Layout",
             ),
             m.state.page.rows.map { it.label },
         )
@@ -858,7 +858,7 @@ class InGameMenuModelTest {
     @Test fun a_locked_console_row_is_hidden() {
         val m = model().openConsoleSettings(locked = setOf(NdsOptions.BIG_SCREEN))
         assertTrue(m.state.page.rows.none { it.label == "Big Screen" })
-        assertEquals(7, m.state.page.rows.size)
+        assertEquals(8, m.state.page.rows.size)
     }
 
     @Test fun other_consoles_keep_the_plain_frontend_page() {

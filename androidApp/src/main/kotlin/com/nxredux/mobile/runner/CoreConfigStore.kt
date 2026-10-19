@@ -22,6 +22,18 @@ class CoreConfigStore(private val console: File, private val game: File) {
         game.writeAtomically(text.encodeToByteArray())
         return CoreConfig.parse(text)
     }
+    /**
+     * Sets one key for the console: in the console file, and in the game file too when the game has one (it is read
+     * instead of the console file whole, so it would hide the change). Returns the file now read: the game's, else the console's.
+     */
+    fun saveConsoleKey(key: String, value: String): ConfigFile {
+        val consoleText = CoreConfig.withKey(readFileStrict(console), null, key, value)
+        console.writeAtomically(consoleText.encodeToByteArray())
+        val gameFile = readFileStrict(game) ?: return CoreConfig.parse(consoleText)
+        val gameText = CoreConfig.withKey(null, gameFile, key, value)
+        game.writeAtomically(gameText.encodeToByteArray())
+        return CoreConfig.parse(gameText)
+    }
     fun deleteGame() = delete(game)
     fun deleteConsole() = delete(console)
 
