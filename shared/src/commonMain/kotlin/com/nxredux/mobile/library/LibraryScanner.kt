@@ -428,8 +428,12 @@ class LibraryScanner(
     private suspend fun lookup(reads: ScanReads, f: IndexedFile): FolderLookup {
         if (f.sourceId == Recents.HOME) return readLookup(reads, f)
         val own = try { readLookup(reads, f) } catch (e: CancellationException) { throw e } catch (e: ListingUnavailable) { throw e } catch (e: Throwable) { NO_LOOKUP }
-        val mirror = try { mirrorLookup(reads, f) } catch (e: CancellationException) { throw e } catch (e: ListingUnavailable) { throw e } catch (e: Throwable) { null }
-            ?: return own
+        return withMirror(own, try { mirrorLookup(reads, f.sourceId, f.lookupDir) } catch (e: CancellationException) { throw e } catch (e: ListingUnavailable) { throw e } catch (e: Throwable) { null })
+    }
+
+    /** [own] with an extra folder's home [mirror] art. */
+    private fun withMirror(own: FolderLookup, mirror: FolderLookup?): FolderLookup {
+        mirror ?: return own
         // The extra folder's own `.media` wins per typed folder; the home mirror fills only the names it lacks there.
         return FolderLookup(
             mirror.box3d + own.box3d, mirror.box2d + own.box2d, mirror.screenshot + own.screenshot, mirror.grid + own.grid, mirror.hero + own.hero, own.names,
@@ -459,10 +463,45 @@ class LibraryScanner(
      * Each segment is looked up once per scan ([ScanReads.home]): before any scraping there is no `.sources/<id>`, and
      * that extra's folders then cost no mirror lookups at all.
      */
-    private suspend fun mirrorLookup(reads: ScanReads, f: IndexedFile): FolderLookup? {
-        val segments = listOf("Roms", Sidecars.SOURCES, f.sourceId) + f.lookupDir.split('/').filter { it.isNotEmpty() } + ".media"
+    private suspend fun mirrorLookup(reads: ScanReads, sourceId: String, dir: String): FolderLookup? {
+        val segments = listOf("Roms", Sidecars.SOURCES, sourceId) + dir.split('/').filter { it.isNotEmpty() } + ".media"
         val dir = reads.home?.dir(segments) ?: return null
         return mediaLookup(reads.list(dir), emptyMap())
+    }
+
+    /**
+     * Every indexed game's art read again from its folder's typed `.media` (an extra folder's game: its home mirror too),
+     * as [scan] reads it, the rest of the index untouched: art deleted or added outside the app since the scan. Only the
+     * `.media` folders of the folders holding games are listed (looked up by name, not by listing the game folder), each
+     * once. A folder that won't list (an extra gone offline) keeps its games' art; a hidden listing ([ListingUnavailable])
+     * throws, and the caller keeps its index. Keyed as [artKey].
+     */
+    suspend fun readArt(index: LibraryIndex): Map<ArtKey, ArtRefs> {
+        val home = ContentRef(index.home)
+        val reads = ScanReads(source, sidecars, home)
+        val roots = mapOf(Recents.HOME to reads.home) + index.extras.associate { it.id to DirWalk(source, ContentRef(it.ref)) }
+        val out = HashMap<ArtKey, ArtRefs>()
+        val folders = index.systems.flatMap { it.games }.groupBy { it.source to it.lookupDir }
+        for ((at, games) in folders) {
+            val (sourceId, dir) = at
+            val look = try {
+                val root = roots[sourceId] ?: continue
+                val media = root.dir(dir.split('/').filter { it.isNotEmpty() } + ".media")
+                val own = media?.let { mediaLookup(reads.list(it), emptyMap()) } ?: NO_LOOKUP
+                if (sourceId == Recents.HOME) own else withMirror(own, mirrorLookup(reads, sourceId, dir))
+            } catch (e: CancellationException) { throw e } catch (e: ListingUnavailable) { throw e } catch (e: Throwable) { continue }
+            for (g in games) {
+                val base = Names.stripExtension(g.file)
+                val key = if (g.lookupDir != g.dir) g.dir.substringAfterLast('/') else base   // a disc folder's game: its folder's name
+                out[artKey(g)] = ArtRefs(
+                    boxart = (look.box3d[key] ?: look.box3d[base])?.value, box2d = (look.box2d[key] ?: look.box2d[base])?.value,
+                    screenshot = (look.screenshot[key] ?: look.screenshot[base])?.value,
+                    grid = (look.grid[key] ?: look.grid[base])?.value, hero = (look.hero[key] ?: look.hero[base])?.value,
+                    wheel = (look.wheel[key] ?: look.wheel[base])?.value, mix = (look.mix[key] ?: look.mix[base])?.value,
+                )
+            }
+        }
+        return out
     }
 
     companion object {

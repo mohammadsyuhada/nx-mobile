@@ -123,6 +123,9 @@ internal class ArtworkScreenController(
         selection.value = (if (at >= 0) ListSelection(at, p.rows.size) else selection.value).clampedTo(p.rows.size)
     }
 
+    /** The library's art changed outside a fetch ([AppState]'s art check): the open page's counts follow. */
+    fun libraryChanged() = onState(controller.state.value)
+
     /**
      * The job moved on: the page, Fetch by console's counts, Progress or Settings follows. A starting Progress waits for
      * its job ([startFetch]); the cancel dialog closes once the job is no longer running or paused.

@@ -3751,6 +3751,26 @@ class AppStateTest {
         assertEquals(1, settings.extraFolders.size)
     }
 
+    // Art deleted outside the app (a file manager) while away: coming back reads each game's art again, so the index and
+    // the lists lose it without a rescan, and it stays in the stored index.
+    @Test fun art_deleted_while_away_is_dropped_on_coming_back() = runTest {
+        val gb = "Home/Roms/Game Boy (GB)/.media"
+        val src = FakeRomsSource(dirs = mapOf(
+            "Home" to listOf("Roms"),
+            "Home/Roms" to listOf("Game Boy (GB)"),
+            "Home/Roms/Game Boy (GB)" to listOf("Tetris.gb", ".media"),
+            gb to listOf("boxart"),
+            "$gb/boxart" to listOf("Tetris.png"),
+        ))
+        val st = state(MemorySettings(ContentRef("Home")), src)
+        st.load(); advanceUntilIdle()
+        fun tetris() = assertIs<Screen.Systems>(st.screen.value).systems.first { it.tag == "GB" }.games.single()
+        assertEquals(ContentRef("$gb/boxart/Tetris.png"), tetris().boxartRef)
+        src.delete("$gb/boxart/Tetris.png")
+        st.onForeground(); advanceUntilIdle()
+        assertNull(tetris().boxartRef)
+    }
+
     @Test fun a_throwing_sidecar_write_reports_and_closes_the_menu_without_moving_the_game() = runTest {
         var failing = false
         val throwing = object : RomsSource by source {

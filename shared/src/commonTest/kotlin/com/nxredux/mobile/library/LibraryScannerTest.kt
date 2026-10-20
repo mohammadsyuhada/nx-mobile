@@ -143,6 +143,37 @@ class LibraryScannerTest {
         assertEquals("$gb/wheel/Tetris.png", tetris.wheelRef?.value)
     }
 
+    // Art deleted or added outside the app after the scan: readArt reads each game's art again from its folder, and the
+    // index takes it (withArt); an extra folder's game too. Nothing changed: the same index back.
+    @Test fun read_art_follows_files_deleted_and_added_since_the_scan() = runTest {
+        val gb = "H/Roms/Game Boy (GB)/.media"
+        val src = FakeRomsSource(dirs = mapOf(
+            "H" to listOf("Roms"),
+            "H/Roms" to listOf("Game Boy (GB)"),
+            "H/Roms/Game Boy (GB)" to listOf("Tetris.gb", "Zelda.gb", ".media"),
+            gb to listOf("boxart", "screenshot"),
+            "$gb/boxart" to listOf("Tetris.png"),
+            "$gb/screenshot" to listOf("Tetris.png"),
+            "sd/Loose" to listOf("Kirby.gb", ".media"),
+            "sd/Loose/.media" to listOf("boxart"),
+            "sd/Loose/.media/boxart" to listOf("Kirby.png"),
+        ))
+        val scanner = LibraryScanner(src, Sidecars(src, MemorySidecarStore()) { ContentRef("H") })
+        val index = scanner.scan(ContentRef("H"), listOf(ExtraFolder("e1", ContentRef("sd/Loose"))), emptyMap())
+        assertTrue(index.withArt(scanner.readArt(index)) === index)   // nothing changed on disk
+
+        src.delete("$gb/boxart/Tetris.png")
+        src.delete("$gb/screenshot/Tetris.png")
+        src.delete("sd/Loose/.media/boxart/Kirby.png")
+        assertTrue(src.writeText(ContentRef("$gb/boxart"), "Zelda.png", ""))   // added by a computer meanwhile
+        val fresh = index.withArt(scanner.readArt(index))
+        val games = fresh.systems.single().games.associateBy { it.file }
+        assertEquals(null to null, games.getValue("Tetris.gb").let { it.boxart to it.screenshot })
+        assertEquals("$gb/boxart/Zelda.png", games.getValue("Zelda.gb").boxart)
+        assertNull(games.getValue("Kirby.gb").boxart)
+        assertEquals(index.systems.single().games.map { it.file }, fresh.systems.single().games.map { it.file })   // order kept
+    }
+
     @Test fun readsEveryTypedFolder() = runTest {
         val gb = "H/Roms/Game Boy (GB)/.media"
         val index = scanHome(mapOf(

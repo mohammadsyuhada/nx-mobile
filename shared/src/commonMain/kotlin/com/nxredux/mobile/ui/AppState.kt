@@ -59,6 +59,7 @@ import com.nxredux.mobile.library.matches
 import com.nxredux.mobile.library.move
 import com.nxredux.mobile.library.path
 import com.nxredux.mobile.library.setArt
+import com.nxredux.mobile.library.withArt
 import com.nxredux.mobile.library.rename
 import com.nxredux.mobile.library.playableSystems
 import com.nxredux.mobile.library.toSystems
@@ -4413,6 +4414,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * rebuild uses app-private reads only (recents, pins, resume markers, tool pins, the in-memory index), never the tree.
      */
     fun onForeground() {
+        checkArt()   // art deleted or added while away
         if (!minimalPending) _minimalOpening.value?.let { minimalJob?.cancel(); _minimalOpening.value = null }   // back from a game a Minimal band opened
         onLauncherChanged()   // back from Android's home settings or the role dialog: the Launcher page re-reads its state
         refreshInstalled()    // apps may have been installed or removed meanwhile
@@ -4559,7 +4561,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         when (row.kind) {
             ToolKind.RETRO_ACHIEVEMENTS -> if (deps.achievements != null) showRetroAchievements()
             ToolKind.GAME_TIME -> gameTimeScreen?.open(onCancel = ::showTools)
-            ToolKind.ARTWORK -> artworkScreens?.open()
+            ToolKind.ARTWORK -> { artworkScreens?.open(); checkArt() }
             ToolKind.CHEAT_DB -> {
                 val c = deps.cheatDb ?: return   // no controller on this platform: nothing to open
                 _screen.value = Screen.CheatDb()
@@ -5402,6 +5404,34 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         override suspend fun readPrivate(name: String): String? = deps.privateFiles.read(name)
         override suspend fun writePrivate(name: String, text: String) = deps.privateFiles.write(name, text)
         override suspend fun appendPrivate(name: String, text: String): Boolean { deps.privateFiles.append(name, text); return true }
+    }
+
+    private var artCheck: Job? = null
+
+    /**
+     * Each game's art read again from its folder in the background ([LibraryScanner.readArt]): art deleted or added
+     * outside the app (a file manager, a computer) since the scan shows, counts in Artwork and offers Fetch art without
+     * a rescan. On coming back to the app and on opening Artwork; one at a time, never during a fetch, and only onto the
+     * index it was read from (a scan or a fetch's art meanwhile wins).
+     */
+    private fun checkArt() {
+        if (artCheck?.isActive == true) return
+        val phase = artworkScreens?.job?.value?.phase
+        if (phase == com.nxredux.mobile.scraper.JobPhase.RUNNING) return
+        val from = library ?: return
+        artCheck = scope.launch {
+            val art = try { scanner.readArt(from) } catch (e: CancellationException) { throw e } catch (e: Throwable) { return@launch }
+            val updated = indexLock.withLock {
+                val current = library?.takeIf { it === from } ?: return@withLock null
+                current.withArt(art).takeIf { it !== current }?.also { library = it; persist(it) }
+            } ?: return@launch
+            withContext(uiContext) {
+                systemsCache = updated.playableSystems(hiddenPaths.toSet())
+                rebuildMainRows()
+                refreshOpenList(select = (_screen.value as? Screen.Games)?.entries?.getOrNull(_selection.value.index)?.game?.path)
+                artworkScreens?.libraryChanged()
+            }
+        }
     }
 
     /** Null without a controller (no Tools row, no Fetch art). */
