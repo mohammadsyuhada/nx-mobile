@@ -55,7 +55,8 @@ import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 
 internal const val NX_TILE_CORNER = 14f      // a menu tile's corner radius, dp
-internal const val NX_TILE_RING = 3f         // a selected game's accent ring around its tile, dp
+internal const val NX_TILE_RING = 3f         // the room kept around a tile for a selected game's ring, dp
+internal const val NX_TILE_RING_W = 2f       // the ring drawn in it: a selected game's accent ring (Home, Grid, Carousel), dp
 internal const val NX_TILE_OUTLINE = 2f      // the Grid's lit logo, tool or collection: its outline around the tile, dp (the full accent)
 private const val UNLIT_LOGO_ALPHA = 0.82f   // an unlit console logo's (and so its count's) opacity
 private const val LINE_HEIGHT = 1.15f        // a tile text's line height, times its size
@@ -98,7 +99,7 @@ private fun Modifier.gameFade(ground: Color, tileH: Float, solid: Float): Modifi
 /**
  * One main menu tile (the Grid's, the Carousel's and Home's), clipped to its rounded shape; [lit] is the selection.
  * A lit logo, tool or collection paints its own accent fill (or, with [outlineLit], the Logo look), and a lit game draws
- * its own [NX_TILE_RING] accent ring outside its bounds (the tile's parent must not clip it).
+ * its own [NX_TILE_RING_W] accent ring outside its bounds (the tile's parent must not clip it).
  * [caption]: whether a lit game shows its name and [info] inside the tile (the Grid, Home's pins); false when a caption
  * sits outside. With it, a game with no real art ([GridTile.Game.artLess]: its abstract picture or a title tile) shows
  * its caption lit or not, the same caption in the same place, so its name always reads. [info] is read only where a
@@ -135,12 +136,13 @@ internal fun NxMenuTile(
     statsOnly: Boolean = false,
     statsSize: TextUnit = GAME_STATS_SP,   // the stat lines' size ([gameFade], [statsOnly])
     captionAlways: Boolean = false,        // the caption shows lit or not (Home's pinned games), as with a [subtitle]
+    ring: Float = NX_TILE_RING_W,          // a lit game's ring, dp
 ) {
     val highlight = nxHighlight()
     val logoLook = outlineLit && lit && tile !is GridTile.Game
     // The ring sits behind the clipped tile, drawn on the unclipped outer box inflated by the ring's width.
-    val ring = if (lit && tile is GridTile.Game) Modifier.drawBehind {
-        val o = NX_TILE_RING.dp.toPx()
+    val ringMod = if (lit && tile is GridTile.Game) Modifier.drawBehind {
+        val o = ring.dp.toPx()
         drawRoundRect(
             highlight, topLeft = Offset(-o, -o), size = Size(size.width + 2 * o, size.height + 2 * o),
             cornerRadius = CornerRadius(NX_TILE_CORNER.dp.toPx() + o),
@@ -153,7 +155,7 @@ internal fun NxMenuTile(
             size = Size(size.width + 2 * o, size.height + 2 * o), cornerRadius = CornerRadius(NX_TILE_CORNER.dp.toPx() + o),
         )
     } else Modifier
-    Box(modifier.then(ring)) {
+    Box(modifier.then(ringMod)) {
         Box(Modifier.fillMaxSize().clip(RoundedCornerShape(NX_TILE_CORNER.dp))) {
             TileContent(tile, lit, logoLook, outlineLit, caption, info, logoInset, portrait, toolSize, titleSize, titleLines, homeCaption, gameFade, subtitle, statsOnly, statsSize, captionAlways)
         }

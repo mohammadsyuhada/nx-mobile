@@ -383,9 +383,9 @@ private fun RowScope.StripMost(m: HomeStripMost) {
     m.time?.let { StripText(it, colors.hint) }
 }
 
-/** A selected card's [NX_TILE_RING] ring in [color] round its rounded card, outside its bounds (the parent must not clip it). */
+/** A selected card's [NX_TILE_RING_W] ring (a game tile's) in [color] round its rounded card, outside its bounds (the parent must not clip it). */
 private fun Modifier.homeRing(lit: Boolean, color: Color): Modifier = if (!lit) this else drawBehind {
-    val o = NX_TILE_RING.dp.toPx()
+    val o = NX_TILE_RING_W.dp.toPx()
     drawRoundRect(color, topLeft = Offset(-o, -o), size = Size(size.width + 2 * o, size.height + 2 * o), cornerRadius = CornerRadius(NX_TILE_CORNER.dp.toPx() + o))
 }
 
