@@ -197,6 +197,32 @@ fun LibraryIndex.setArt(game: IndexedGame, art: ArtRefs): LibraryIndex {
     return if (changed) copy(systems = next) else this
 }
 
+/** A game's place in the index: its source, dir and file ([LibraryScanner.readArt]'s keys). */
+typealias ArtKey = Triple<String, String, String>
+
+fun artKey(game: IndexedGame): ArtKey = Triple(game.source, game.dir, game.file)
+
+/** [IndexedGame]'s art refs as [ArtRefs]. */
+val IndexedGame.artRefs: ArtRefs get() = ArtRefs(boxart, box2d, screenshot, grid, hero, wheel, mix)
+
+/**
+ * Each game in [art] with its art refs replaced by its entry there (a game not in [art] keeps its own); other fields and
+ * order kept. Unchanged (the same instance) when no game's art differs.
+ */
+fun LibraryIndex.withArt(art: Map<ArtKey, ArtRefs>): LibraryIndex {
+    var changed = false
+    val next = systems.map { s ->
+        var mine = false
+        val games = s.games.map { g ->
+            val a = art[artKey(g)]
+            if (a == null || a == g.artRefs) g
+            else { mine = true; g.copy(boxart = a.boxart, box2d = a.box2d, screenshot = a.screenshot, grid = a.grid, hero = a.hero, wheel = a.wheel, mix = a.mix) }
+        }
+        if (mine) { changed = true; s.copy(games = games) } else s
+    }
+    return if (changed) copy(systems = next) else this
+}
+
 /**
  * [game] moved from [from] to tag [to] after its sidecar was written, with no scan: removed from [from] (which is
  * dropped when it is now empty and has no home folder, as Unassigned has none), added to the system with tag [to]
