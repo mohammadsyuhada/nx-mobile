@@ -66,6 +66,12 @@ import com.nxredux.mobile.shared.res.onboarding_games_carousel_vertical_left
 import com.nxredux.mobile.shared.res.onboarding_games_carousel_vertical_right
 import com.nxredux.mobile.shared.res.onboarding_games_grid
 import com.nxredux.mobile.shared.res.onboarding_games_list
+import com.nxredux.mobile.shared.res.onboarding_games_minimal
+import com.nxredux.mobile.shared.res.onboarding_tab_collections_minimal
+import com.nxredux.mobile.shared.res.onboarding_tab_consoles_minimal
+import com.nxredux.mobile.shared.res.onboarding_tab_home_minimal
+import com.nxredux.mobile.shared.res.onboarding_tab_home_minimal_nostats
+import com.nxredux.mobile.shared.res.onboarding_tab_tools_minimal
 import com.nxredux.mobile.shared.res.onboarding_tab_consoles_carousel
 import com.nxredux.mobile.shared.res.onboarding_tab_consoles_carousel_background
 import com.nxredux.mobile.shared.res.onboarding_tab_consoles_carousel_none
@@ -130,14 +136,15 @@ private val PICTURE_MAT = 8.dp
 private val PICTURE_INNER_CORNER = 6.dp
 
 /**
- * How tab [category] looks in [style] (List, Grid or Carousel; the tabs have no Backdrop); Home with its stats strip or not
+ * How tab [category] looks in [style] (List, Grid, Carousel or Minimal; the tabs have no Backdrop); Home with its stats strip or not
  * ([stats]); a Carousel stood on end ([vertical]; Home's Carousel has no orientation). A List or Carousel Consoles tab
  * as Layouts → Consoles background ([art]) draws it: its controllers, a console's bg.png, or neither.
  */
 internal fun tabPicture(
     category: MenuCategory, style: MenuStyle, stats: Boolean = true, vertical: Boolean = false, art: ConsoleArt = ConsoleArt.CONTROLLER,
 ): DrawableResource =
-    if (!vertical || style != MenuStyle.CAROUSEL) horizontalTabPicture(category, style, stats, art) else when (category) {
+    if (style == MenuStyle.MINIMAL) minimalTabPicture(category, stats)
+    else if (!vertical || style != MenuStyle.CAROUSEL) horizontalTabPicture(category, style, stats, art) else when (category) {
         MenuCategory.CONSOLES -> byArt(
             art, Res.drawable.onboarding_tab_consoles_carousel_vertical, Res.drawable.onboarding_tab_consoles_carousel_vertical_background,
             Res.drawable.onboarding_tab_consoles_carousel_vertical_none,
@@ -146,6 +153,14 @@ internal fun tabPicture(
         MenuCategory.TOOLS -> Res.drawable.onboarding_tab_tools_carousel_vertical
         MenuCategory.HOME -> horizontalTabPicture(category, style, stats, art)
     }
+
+/** A Minimal tab: its names alone (no art, so no orientation or Consoles background); Home with its stats strip or not. */
+private fun minimalTabPicture(category: MenuCategory, stats: Boolean): DrawableResource = when (category) {
+    MenuCategory.HOME -> if (stats) Res.drawable.onboarding_tab_home_minimal else Res.drawable.onboarding_tab_home_minimal_nostats
+    MenuCategory.CONSOLES -> Res.drawable.onboarding_tab_consoles_minimal
+    MenuCategory.COLLECTIONS -> Res.drawable.onboarding_tab_collections_minimal
+    MenuCategory.TOOLS -> Res.drawable.onboarding_tab_tools_minimal
+}
 
 private fun horizontalTabPicture(category: MenuCategory, style: MenuStyle, stats: Boolean, art: ConsoleArt): DrawableResource = when (category) {
     MenuCategory.HOME -> if (stats) pick(style, Res.drawable.onboarding_tab_home_list, Res.drawable.onboarding_tab_home_grid, Res.drawable.onboarding_tab_home_carousel)
@@ -175,7 +190,8 @@ private fun pick(style: MenuStyle, list: DrawableResource, grid: DrawableResourc
 
 /** How a game list looks in [style]; a Carousel or Backdrop stood on end ([vertical]), on the left or the [right]. */
 internal fun gamesPicture(style: MenuStyle, vertical: Boolean = false, right: Boolean = false): DrawableResource = when (style) {
-    MenuStyle.LIST, MenuStyle.MINIMAL -> Res.drawable.onboarding_games_list   // Minimal shows none ([layoutShotPicture])
+    MenuStyle.LIST -> Res.drawable.onboarding_games_list
+    MenuStyle.MINIMAL -> Res.drawable.onboarding_games_minimal
     MenuStyle.GRID -> Res.drawable.onboarding_games_grid
     MenuStyle.CAROUSEL -> when {
         !vertical -> Res.drawable.onboarding_games_carousel
@@ -300,12 +316,11 @@ sealed interface LayoutShot {
 }
 
 /**
- * [shot]'s picture: the tab, game list or Game Switcher capture of its layout, or the title and hints one. Minimal has no
- * capture yet: none, rather than another layout's.
+ * [shot]'s picture: the tab, game list or Game Switcher capture of its layout, or the title and hints one.
  */
 internal fun layoutShotPicture(shot: LayoutShot): DrawableResource? = when (shot) {
-    is LayoutShot.Tab -> if (shot.style == MenuStyle.MINIMAL) null else tabPicture(shot.category, shot.style, shot.stats, shot.vertical, shot.art)
-    is LayoutShot.Games -> if (shot.style == MenuStyle.MINIMAL) null else gamesPicture(shot.style, shot.vertical, shot.right)
+    is LayoutShot.Tab -> tabPicture(shot.category, shot.style, shot.stats, shot.vertical, shot.art)
+    is LayoutShot.Games -> gamesPicture(shot.style, shot.vertical, shot.right)
     is LayoutShot.Chrome -> chromePicture(shot.title, shot.hints)
     is LayoutShot.Switcher -> when (shot.layout) {
         SwitcherLayout.FULL -> Res.drawable.onboarding_switcher_full
