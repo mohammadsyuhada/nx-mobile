@@ -175,7 +175,7 @@ private fun pick(style: MenuStyle, list: DrawableResource, grid: DrawableResourc
 
 /** How a game list looks in [style]; a Carousel or Backdrop stood on end ([vertical]), on the left or the [right]. */
 internal fun gamesPicture(style: MenuStyle, vertical: Boolean = false, right: Boolean = false): DrawableResource = when (style) {
-    MenuStyle.LIST -> Res.drawable.onboarding_games_list
+    MenuStyle.LIST, MenuStyle.MINIMAL -> Res.drawable.onboarding_games_list   // Minimal shows none ([layoutShotPicture])
     MenuStyle.GRID -> Res.drawable.onboarding_games_grid
     MenuStyle.CAROUSEL -> when {
         !vertical -> Res.drawable.onboarding_games_carousel
@@ -299,10 +299,13 @@ sealed interface LayoutShot {
     data class Switcher(val layout: SwitcherLayout) : LayoutShot
 }
 
-/** [shot]'s picture: the tab, game list or Game Switcher capture of its layout, or the title and hints one. */
-internal fun layoutShotPicture(shot: LayoutShot): DrawableResource = when (shot) {
-    is LayoutShot.Tab -> tabPicture(shot.category, shot.style, shot.stats, shot.vertical, shot.art)
-    is LayoutShot.Games -> gamesPicture(shot.style, shot.vertical, shot.right)
+/**
+ * [shot]'s picture: the tab, game list or Game Switcher capture of its layout, or the title and hints one. Minimal has no
+ * capture yet: none, rather than another layout's.
+ */
+internal fun layoutShotPicture(shot: LayoutShot): DrawableResource? = when (shot) {
+    is LayoutShot.Tab -> if (shot.style == MenuStyle.MINIMAL) null else tabPicture(shot.category, shot.style, shot.stats, shot.vertical, shot.art)
+    is LayoutShot.Games -> if (shot.style == MenuStyle.MINIMAL) null else gamesPicture(shot.style, shot.vertical, shot.right)
     is LayoutShot.Chrome -> chromePicture(shot.title, shot.hints)
     is LayoutShot.Switcher -> when (shot.layout) {
         SwitcherLayout.FULL -> Res.drawable.onboarding_switcher_full

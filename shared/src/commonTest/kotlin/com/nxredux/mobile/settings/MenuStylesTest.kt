@@ -18,10 +18,23 @@ class MenuStylesTest {
         assertEquals(MenuStyle.GRID, MenuStyles.styleOf(MenuStyles.decode("HOME=BACKDROP"), MenuCategory.HOME))
     }
 
-    @Test fun mainMenuStylesCycleListGridCarousel() {
-        assertEquals(MenuStyle.LIST, MenuStyles.cycleMainMenu(MenuStyle.CAROUSEL, 1))
-        assertEquals(MenuStyle.CAROUSEL, MenuStyles.cycleMainMenu(MenuStyle.LIST, -1))
+    @Test fun mainMenuStylesCycleListGridCarouselMinimal() {
+        assertEquals(MenuStyle.MINIMAL, MenuStyles.cycleMainMenu(MenuStyle.CAROUSEL, 1))
+        assertEquals(MenuStyle.LIST, MenuStyles.cycleMainMenu(MenuStyle.MINIMAL, 1))
+        assertEquals(MenuStyle.MINIMAL, MenuStyles.cycleMainMenu(MenuStyle.LIST, -1))
         assertEquals(MenuStyle.CAROUSEL, MenuStyles.cycleMainMenu(MenuStyle.GRID, 1))
+    }
+
+    // Minimal on every tab, stored by name, and on the game lists (last); Backdrop stays the game lists' only.
+    @Test fun minimal_on_every_tab_and_the_game_lists() {
+        assertEquals(
+            MenuCategory.entries.associateWith { MenuStyle.MINIMAL },
+            MenuStyles.decode("HOME=MINIMAL\nCONSOLES=MINIMAL\nCOLLECTIONS=MINIMAL\nTOOLS=MINIMAL"),
+        )
+        assertEquals(emptyMap(), MenuStyles.decode("CONSOLES=BACKDROP"))
+        assertEquals(MenuStyle.MINIMAL, MenuStyles.GAME_LIST_STYLES.last())
+        // Appended, never renumbered: the earlier styles keep their places.
+        assertEquals(listOf("LIST", "GRID", "CAROUSEL", "BACKDROP", "MINIMAL"), MenuStyle.entries.map { it.name })
     }
 
     @Test fun encodeWritesOneLinePerCategoryInCategoryOrder() {
@@ -63,7 +76,7 @@ class MenuStylesTest {
         assertEquals(MenuOrientation.VERTICAL, MenuStyles.effectiveOrientation(MenuStyle.BACKDROP, MenuOrientation.VERTICAL))
         assertEquals(MenuOrientation.HORIZONTAL, MenuStyles.effectiveOrientation(MenuStyle.GRID, MenuOrientation.VERTICAL))
         assertEquals(MenuOrientation.HORIZONTAL, MenuStyles.effectiveOrientation(MenuStyle.LIST, MenuOrientation.VERTICAL))
-        assertEquals(listOf(false, false, true, true), MenuStyle.entries.map(MenuStyles::hasOrientation))
+        assertEquals(listOf(false, false, true, true, false), MenuStyle.entries.map(MenuStyles::hasOrientation))
     }
 
     @Test fun orientationsRoundTripAndIgnoreJunk() {
@@ -82,10 +95,12 @@ class MenuStylesTest {
         assertEquals(MenuOrientation.HORIZONTAL, MenuStyles.flip(MenuOrientation.VERTICAL))
     }
 
-    @Test fun home_defaults_to_grid_and_cycles_list_grid_carousel() {
+    @Test fun home_defaults_to_grid_and_cycles_list_grid_carousel_minimal() {
         assertEquals(MenuStyle.GRID, MenuStyles.styleOf(emptyMap(), MenuCategory.HOME))
         assertEquals(MenuStyle.CAROUSEL, MenuStyles.cycleMainMenu(MenuStyle.GRID, 1))
         assertEquals(MenuStyle.LIST, MenuStyles.cycleMainMenu(MenuStyle.GRID, -1))
+        assertEquals(MenuStyle.MINIMAL, MenuStyles.cycleMainMenu(MenuStyle.CAROUSEL, 1))
+        assertEquals(MenuStyle.LIST, MenuStyles.cycleMainMenu(MenuStyle.MINIMAL, 1))
         assertEquals(mapOf(MenuCategory.HOME to MenuStyle.LIST), MenuStyles.decode(MenuStyles.encode(mapOf(MenuCategory.HOME to MenuStyle.LIST))))
     }
 }

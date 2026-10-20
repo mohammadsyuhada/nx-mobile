@@ -36,7 +36,7 @@ fun OnboardingScreen(
         LayoutPreviewPage(screen.title, screen.details, screen.rows, chromePicture(title, buttonHints), CHROME_PICTURE_AR, selected, hints, onSelect, onRow, onHint, modifier)
         return
     }
-    // A layout page: the layout row above one picture of it.
+    // A layout page: the layout row above one picture of it (none for Minimal).
     screen.shot?.let { shot ->
         LayoutPreviewPage(screen.title, screen.details, screen.rows, layoutShotPicture(shot), LAYOUT_PICTURE_AR, selected, hints, onSelect, onRow, onHint, modifier)
         return

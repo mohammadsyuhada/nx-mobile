@@ -53,8 +53,12 @@ enum class GameRumble(val label: String) {
 /** A main menu tab, in the tab row's fixed order. Layouts can hide any; an empty Consoles or Collections tab is left out, and with none left Home shows. */
 enum class MenuCategory { HOME, CONSOLES, COLLECTIONS, TOOLS }
 
-/** How a main menu tab, or a game list, lays out its items (Appearance -> Layouts). */
-enum class MenuStyle { LIST, GRID, CAROUSEL, BACKDROP }
+/**
+ * How a main menu tab, or a game list, lays out its items (Appearance -> Layouts). BACKDROP is the game lists' only
+ * ([MenuStyles.MAIN_MENU_STYLES], [MenuStyles.GAME_LIST_STYLES]); MINIMAL is big names only, the selected one solid and
+ * the rest outlined. Stored by name: append, never rename.
+ */
+enum class MenuStyle { LIST, GRID, CAROUSEL, BACKDROP, MINIMAL }
 
 /**
  * Which way a Carousel or a Backdrop runs (Appearance -> Layouts, the Orientation row under one): HORIZONTAL, the row, or

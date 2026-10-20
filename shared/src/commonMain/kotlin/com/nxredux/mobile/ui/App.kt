@@ -3,6 +3,9 @@ package com.nxredux.mobile.ui
 import coil3.ImageLoader
 import coil3.compose.AsyncImagePainter
 import coil3.compose.setSingletonImageLoaderFactory
+import com.nxredux.mobile.ui.nx.LocalMinimalPage
+import com.nxredux.mobile.ui.nx.MinimalMorph
+import com.nxredux.mobile.ui.nx.MinimalPage
 import com.nxredux.mobile.ui.nx.abstractArtFetcher
 import com.nxredux.mobile.ui.nx.fileRefMapper
 import com.nxredux.mobile.ui.nx.nxColorsFor
@@ -197,6 +200,7 @@ fun App(state: AppState, onPadEvent: (PadEvent) -> Unit = {}) {
                             LaunchedEffect(split) { state.onSettingsSplit(split) }
                             // Only a [NavStep] changes the key: every other screen change (a refresh, Settings, a menu) swaps the page in place.
                             val shown = remember { HashMap<Int, Screen>() }   // each page's screen as last shown, so the one sliding out keeps its own
+                            val minimalMorph = remember { MinimalMorph() }   // where a Minimal morph to the next page starts
                             AnimatedContent(
                                 targetState = nav.seq, transitionSpec = { pageTransition(nav.motion) },
                                 modifier = Modifier.fillMaxSize().clipToBounds(), label = "page",
@@ -207,7 +211,11 @@ fun App(state: AppState, onPadEvent: (PadEvent) -> Unit = {}) {
                                 val isLive = rememberUpdatedState(live)
                                 val pageSelection = remember { liveOrLast(isLive, selection) }
                                 val pageResume = remember { liveOrLast(isLive, resumeInfo) }
-                                page?.let { PageContent(state, it, pageSelection, pageResume, gameInfo, isLive) }   // the info is the current map for both pages
+                                // How this page came in, for a Minimal morph ([NavMotion.MINIMAL_FORWARD], [NavMotion.MINIMAL_BACK]).
+                                val minimalPage = remember { MinimalPage(minimalMorph, isLive, nav.motion) }
+                                CompositionLocalProvider(LocalMinimalPage provides minimalPage) {
+                                    page?.let { PageContent(state, it, pageSelection, pageResume, gameInfo, isLive) }   // the info is the current map for both pages
+                                }
                                 // The page sliding out takes no taps: they would act on the page sliding in.
                                 if (!live) Box(Modifier.fillMaxSize().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } })
                             }
@@ -280,7 +288,8 @@ private fun pageTransition(motion: NavMotion): ContentTransform {
         NavMotion.BACK -> slideInHorizontally(spec) { -it } togetherWith slideOutHorizontally(spec) { it }
         NavMotion.SWITCHER_OPEN -> slideInVertically(spec) { it } togetherWith slideOutVertically(spec) { -it }
         NavMotion.SWITCHER_CLOSE -> slideInVertically(spec) { -it } togetherWith slideOutVertically(spec) { it }
-        NavMotion.NONE -> EnterTransition.None togetherWith ExitTransition.None
+        // A Minimal morph: the pages swap at once, the new one drawing the name's flight ([MinimalFlight]).
+        NavMotion.NONE, NavMotion.MINIMAL_FORWARD, NavMotion.MINIMAL_BACK -> EnterTransition.None togetherWith ExitTransition.None
     }
 }
 
@@ -314,6 +323,7 @@ private fun PageContent(state: AppState, page: Screen, pageSelection: State<List
         val index = { selection.value.index }
         val gridPresses = state.gridPresses.collectAsState()   // read only inside the Grid, so a press recomposes only it
         val tabFocus = state.tabFocus.collectAsState()   // the main menu's tab row has the d-pad
+        val minimalOpening = state.minimalOpening.collectAsState()   // a Minimal page's row being opened (its page draws the band)
         // Full-height background behind everything (list, scroll arrows, hint bar).
         PageBackground(state, s, style, selection, live)
         CompositionLocalProvider(LocalGridPresses provides gridPresses) { when (s) {
@@ -348,6 +358,7 @@ private fun PageContent(state: AppState, page: Screen, pageSelection: State<List
                     continueInfo = { gameInfoFor(gameInfo, now, (s.rows.firstOrNull() as? MainRow.Continue)?.entry?.game, full = true) },
                     raSignedIn = state.settings.raToken != null,
                     controllerArt = state.settings.consoleArt == ConsoleArt.CONTROLLER,
+                    minimalOpening = minimalOpening.value?.takeIf { s.category != null && it.page == s.category },
                     // The page sliding out shows none; nor does a hidden tab row (AppState gives the d-pad back to the content).
                     tabFocus = tabFocus.value && s.menu == null && s.search == null && state.screen.value === s && LocalLauncherChrome.current.tabRow,
                     bandShade = listBand.shade,
@@ -383,6 +394,7 @@ private fun PageContent(state: AppState, page: Screen, pageSelection: State<List
                     onLayout = state::toggleLayoutMenu.takeIf { state.settings.gameListLayoutOptions }, layoutOpen = s.layoutMenu != null,
                     // Layouts → Achievements panel Hide: no icon or hint (X and the game's menu still open it).
                     onAchievements = state::toggleRaPanel.takeIf { state.hasAchievements && state.settings.gameListAchievementsPanel }, achievementsOpen = raPanel != null,
+                    minimalOpening = minimalOpening.value?.takeIf { it.page == s.source },
                 )
                 RaPanelOverlay(raPanel.takeIf { state.screen.value === s }, onRow = state::openRaPanelRow, onButton = state::onButton)
                 s.layoutMenu?.let { at ->
@@ -479,8 +491,8 @@ private fun PageBackground(state: AppState, s: Screen, style: MenuStyle, selecti
             MainMenuBackground(bg)
         }
         is Screen.Games -> {
-            // Grid and Carousel: plain black, as their tabs (the tiles carry the art).
-            if (style == MenuStyle.GRID || style == MenuStyle.CAROUSEL) {
+            // Grid and Carousel: plain black, as their tabs (the tiles carry the art). Minimal: the names alone, no art.
+            if (style == MenuStyle.GRID || style == MenuStyle.CAROUSEL || style == MenuStyle.MINIMAL) {
                 Box(Modifier.fillMaxSize().background(LocalNxColors.current.background))
                 return
             }

@@ -232,8 +232,8 @@ internal fun mainMenuSideAlpha(distance: Float): Float {
 /** Whether a main-menu row of [slot] fades its sides with [mainMenuSideAlpha]: Consoles (logo) and Collections. */
 internal fun fadesFurther(slot: BackdropSlot): Boolean = slot == BackdropSlot.LOGO || slot == BackdropSlot.COLLECTION
 
-private const val MENU_FIRST_ALPHA = 0.35f
-private const val MENU_FAR_ALPHA = 0.2f
+internal const val MENU_FIRST_ALPHA = 0.35f
+internal const val MENU_FAR_ALPHA = 0.2f
 
 /**
  * The indices a row composes around the animated position [pos]: those less than four steps away (the only ones
