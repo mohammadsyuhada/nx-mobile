@@ -872,7 +872,7 @@ class AppStateTest {
         assertEquals(MenuStyle.CAROUSEL, settings.menuStyles[MenuCategory.HOME])
         assertEquals(LayoutShot.Tab(MenuCategory.HOME, MenuStyle.CAROUSEL), assertIs<Screen.Onboarding>(state.screen.value).shot)
         state.onButton(NxButton.A)                                          // A on the row: the next one, the page stays
-        assertEquals(MenuStyle.LIST, settings.menuStyles[MenuCategory.HOME])
+        assertEquals(MenuStyle.MINIMAL, settings.menuStyles[MenuCategory.HOME])
         assertEquals(OnboardingStep.TAB_HOME, step(state))
         state.onButton(NxButton.LEFT)                                       // back to Carousel
         assertEquals(MenuStyle.CAROUSEL, settings.menuStyles[MenuCategory.HOME])
@@ -912,15 +912,15 @@ class AppStateTest {
         assertEquals(LayoutShot.Games(MenuStyle.BACKDROP, vertical = true, right = true), assertIs<Screen.Onboarding>(state.screen.value).shot)
     }
 
-    @Test fun the_game_lists_page_steps_through_four_layouts() = runTest {
+    @Test fun the_game_lists_page_steps_through_five_layouts() = runTest {
         val (state, settings) = atCustomise(controller = true)
         while (step(state) != OnboardingStep.GAME_LISTS) { state.select(state.selection.value.count - 1); state.onButton(NxButton.A) }
         val page = assertIs<Screen.Onboarding>(state.screen.value)
         assertEquals("Game lists layout", page.rows[0].label)
         val seen = mutableSetOf<MenuStyle>()
         state.select(0)
-        repeat(4) { state.onButton(NxButton.RIGHT); seen += settings.gameListStyle }
-        assertEquals(MenuStyle.entries.toSet(), seen)
+        repeat(MenuStyles.GAME_LIST_STYLES.size) { state.onButton(NxButton.RIGHT); seen += settings.gameListStyle }
+        assertEquals(MenuStyles.GAME_LIST_STYLES.toSet(), seen)
         assertEquals(LayoutShot.Games(settings.gameListStyle), assertIs<Screen.Onboarding>(state.screen.value).shot)
     }
 
@@ -3854,6 +3854,130 @@ class AppStateTest {
         assertEquals(state.toolPins.size, rows.takeLastWhile { it is MainRow.PinnedTool }.size)
     }
 
+    // Minimal Home: the List's rows; UP / DOWN wrap at the ends on a fresh press, a held key's repeat stops there.
+    @Test fun minimal_home_wraps_on_a_fresh_press_and_a_held_key_stops_at_the_ends() = runTest {
+        val state = homeFixture(MemorySettings(ContentRef("Home")).apply { menuStyles = LIST_TABS + (MenuCategory.HOME to MenuStyle.MINIMAL) })
+        val rows = assertIs<Screen.Systems>(state.screen.value).rows
+        assertIs<MainRow.Continue>(rows[0])
+        assertTrue(rows.none { it is MainRow.MoreTools })   // every tool a row, as List
+        state.select(rows.size - 1)
+        state.onButton(NxButton.DOWN, repeat = true)
+        assertEquals(rows.size - 1, state.selection.value.index)   // held: stops on the last
+        state.onButton(NxButton.DOWN)
+        assertEquals(0, state.selection.value.index)               // fresh: the last to the first
+        state.onButton(NxButton.UP, repeat = true)
+        assertEquals(0, state.selection.value.index)               // held: stops on the first
+        state.onButton(NxButton.UP)
+        assertEquals(rows.size - 1, state.selection.value.index)   // fresh: the first to the last
+        assertFalse(state.tabFocus.value)
+        state.onButton(NxButton.UP)
+        assertEquals(rows.size - 2, state.selection.value.index)
+    }
+
+    /** Every tab and the game lists in Minimal, on the library of [with_a_tree_systems_load_then_games_then_launch]. */
+    private fun TestScope.minimalEverywhere(runner: RecordingRunner, consoles: MenuStyle = MenuStyle.MINIMAL): AppState {
+        val settings = MemorySettings(ContentRef("Home")).apply {
+            menuStyles = MenuCategory.entries.associateWith { MenuStyle.MINIMAL } + (MenuCategory.CONSOLES to consoles)
+            gameListStyle = MenuStyle.MINIMAL
+        }
+        return AppState(AppDeps(settings, source, runner, NoopPicker(), compute = UnconfinedTestDispatcher(testScheduler)), CoroutineScope(UnconfinedTestDispatcher(testScheduler)))
+            .also { it.load(); advanceUntilIdle() }
+    }
+
+    // A Minimal Consoles tab: A fades the other names on the console (its page the tab's, no band: its list is Minimal too)
+    // and opens its list by the morph once they have; the Minimal list's A grows the band on its game, and launches it as
+    // the band fills. B morphs back to the tab.
+    @Test fun minimal_tab_and_game_list_open_after_their_band() = runTest {
+        val runner = RecordingRunner()
+        val state = minimalEverywhere(runner)
+        val tabs = assertIs<Screen.Systems>(state.screen.value).tabs
+        state.selectTab(tabs.indexOfFirst { it.category == MenuCategory.CONSOLES })
+        val consoles = assertIs<Screen.Systems>(state.screen.value)
+        assertEquals(MenuCategory.CONSOLES, consoles.category)
+        val nds = consoles.rows.indexOfFirst { (it as? MainRow.System)?.system?.tag == "NDS" }
+        state.select(nds)
+        state.onButton(NxButton.A)
+        assertEquals(MinimalOpening(MenuCategory.CONSOLES, nds, band = false), state.minimalOpening.value)
+        assertIs<Screen.Systems>(state.screen.value)   // not yet
+        advanceTimeBy(MINIMAL_LEAVE_MS + 1)
+        val games = assertIs<Screen.Games>(state.screen.value)
+        assertEquals(NavMotion.MINIMAL_FORWARD, state.nav.value.motion)
+        assertEquals(null, state.minimalOpening.value)   // the faded tab is gone
+        assertEquals(listOf("Mario Kart DS"), games.games.map { it.shownName })
+        state.onButton(NxButton.A)   // the game's band
+        assertEquals(MinimalOpening(games.source, 0), state.minimalOpening.value)
+        assertTrue(runner.launched.isEmpty())
+        advanceTimeBy(MINIMAL_OPEN_MS + 1)
+        assertEquals(1, runner.launched.size)
+        assertEquals("Mario Kart DS.nds", runner.launched[0].fileName)
+        advanceUntilIdle()
+        assertEquals(null, state.minimalOpening.value)
+    }
+
+    // B on a Minimal list morphs back only to a Minimal tab; a List tab slides, and so does A from it into a Minimal list.
+    @Test fun minimal_morphs_need_minimal_on_both_sides() = runTest {
+        val state = minimalEverywhere(RecordingRunner())
+        val tabs = assertIs<Screen.Systems>(state.screen.value).tabs
+        state.selectTab(tabs.indexOfFirst { it.category == MenuCategory.CONSOLES })
+        val nds = assertIs<Screen.Systems>(state.screen.value).rows.indexOfFirst { (it as? MainRow.System)?.system?.tag == "NDS" }
+        state.select(nds)
+        state.onButton(NxButton.A)
+        advanceTimeBy(MINIMAL_LEAVE_MS + 1)
+        assertIs<Screen.Games>(state.screen.value)
+        state.onButton(NxButton.B)
+        advanceUntilIdle()
+        assertIs<Screen.Systems>(state.screen.value)
+        assertEquals(NavMotion.MINIMAL_BACK, state.nav.value.motion)
+        assertEquals(nds, state.selection.value.index)
+
+        val list = minimalEverywhere(RecordingRunner(), consoles = MenuStyle.LIST)
+        list.selectTab(assertIs<Screen.Systems>(list.screen.value).tabs.indexOfFirst { it.category == MenuCategory.CONSOLES })
+        list.select(assertIs<Screen.Systems>(list.screen.value).rows.indexOfFirst { (it as? MainRow.System)?.system?.tag == "NDS" })
+        list.onButton(NxButton.A)
+        advanceUntilIdle()
+        assertIs<Screen.Games>(list.screen.value)
+        assertEquals(NavMotion.FORWARD, list.nav.value.motion)
+        list.onButton(NxButton.B)
+        advanceUntilIdle()
+        assertIs<Screen.Systems>(list.screen.value)
+        assertEquals(NavMotion.BACK, list.nav.value.motion)
+    }
+
+    // A Minimal tab steps as a List: UP / DOWN wrap on a fresh press, a held key stops at the ends; LEFT / RIGHT switch tab.
+    @Test fun a_minimal_tab_wraps_as_a_list() = runTest {
+        val state = minimalEverywhere(RecordingRunner())
+        val tabs = assertIs<Screen.Systems>(state.screen.value).tabs
+        state.selectTab(tabs.indexOfFirst { it.category == MenuCategory.CONSOLES })
+        val count = assertIs<Screen.Systems>(state.screen.value).rows.size
+        assertTrue(count > 1)
+        state.select(count - 1)
+        state.onButton(NxButton.DOWN, repeat = true)
+        assertEquals(count - 1, state.selection.value.index)
+        state.onButton(NxButton.DOWN)
+        assertEquals(0, state.selection.value.index)
+        state.onButton(NxButton.UP)
+        assertEquals(count - 1, state.selection.value.index)
+        state.onButton(NxButton.RIGHT)
+        assertTrue(assertIs<Screen.Systems>(state.screen.value).category != MenuCategory.CONSOLES)
+    }
+
+    // Minimal Home's open: A starts the band (homeOpening) and the row opens a moment later; input waits meanwhile.
+    @Test fun minimal_home_opens_the_row_after_its_band() = runTest {
+        val state = homeFixture(MemorySettings(ContentRef("Home")).apply { menuStyles = LIST_TABS + (MenuCategory.HOME to MenuStyle.MINIMAL) })
+        val rows = assertIs<Screen.Systems>(state.screen.value).rows
+        val tool = rows.indexOfFirst { it is MainRow.PinnedTool }
+        state.select(tool)
+        state.onButton(NxButton.A)
+        assertEquals(tool, state.minimalOpening.value?.index)
+        assertIs<Screen.Systems>(state.screen.value)   // not yet
+        state.onButton(NxButton.UP)
+        assertEquals(tool, state.selection.value.index)   // input waits
+        advanceTimeBy(MINIMAL_OPEN_MS + 1)
+        assertTrue(state.screen.value !is Screen.Systems)   // the tool opened
+        advanceUntilIdle()
+        assertEquals(null, state.minimalOpening.value?.index)
+    }
+
     @Test fun switching_home_layout_keeps_the_focused_game() = runTest {
         // A pinned game, and a pinned tool: a top square on Grid, a row after the games and shelves on List, so its
         // index differs between the two and only finding it by row (homeFind) keeps it.
@@ -5195,7 +5319,7 @@ class AppStateTest {
                 if (shown) {
                     add("${c.label} layout")
                     if (style == MenuStyle.CAROUSEL) add("${c.label} orientation")
-                    if (c == MenuCategory.CONSOLES && style != MenuStyle.GRID) add("Consoles background")   // List and Carousel Consoles
+                    if (c == MenuCategory.CONSOLES && style != MenuStyle.GRID && style != MenuStyle.MINIMAL) add("Consoles background")   // List and Carousel Consoles
                 }
             }
             assertEquals(expected, state.layoutsRows().filter { it.category == c }.map { it.label }, "$c shown=$shown $style")
@@ -5277,6 +5401,9 @@ class AppStateTest {
         assertEquals("Grid", page.rows[1].secondary)
         state.select(1); state.onButton(NxButton.RIGHT)
         assertEquals(MenuStyle.CAROUSEL, MenuStyles.styleOf(settings.menuStyles, MenuCategory.HOME))
+        state.onButton(NxButton.RIGHT)
+        assertEquals(MenuStyle.MINIMAL, MenuStyles.styleOf(settings.menuStyles, MenuCategory.HOME))
+        assertEquals("Minimal", assertIs<Screen.Settings>(state.screen.value).rows[1].secondary)
         state.onButton(NxButton.RIGHT)
         assertEquals(MenuStyle.LIST, MenuStyles.styleOf(settings.menuStyles, MenuCategory.HOME))
         assertEquals("List", assertIs<Screen.Settings>(state.screen.value).rows[1].secondary)
@@ -8960,7 +9087,7 @@ class AppStateTest {
         assertEquals(listOf("Show", "Grid", "Show", "Show", "Show", "Show", "Grid", "Show", "Carousel", "Horizontal", "Show", "Grid", "List", "Screenshot", "Show", "Show", "Show", "Show", "Show", "Full screen"), rows.map { it.secondary })
     }
 
-    @Test fun layouts_page_defaults_to_carousel_tools_grid_and_cycles_three_main_menu_styles() = runTest {
+    @Test fun layouts_page_defaults_to_carousel_tools_grid_and_cycles_four_main_menu_styles() = runTest {
         val settings = MemorySettings(ContentRef("Home")).apply { menuStyles = emptyMap() }
         val state = state(settings)
         state.load()
@@ -8972,13 +9099,16 @@ class AppStateTest {
         assertEquals(listOf("Game lists layout", "List art", "Layout options"), state.openLayoutsPage(SettingsSection.LAYOUT_GAME_LISTS).map { it.label })
         // Layouts' group rows carry each layout: Tools' own default is Grid; the fixture's game list is List.
         assertEquals(listOf("Grid", "Carousel", "Carousel", "Grid", "List"), state.openLayoutsPage(SettingsSection.MAIN_MENU).take(5).map { it.secondary })
-        state.selectLayoutsRow(SettingsKind.MENU_STYLE, MenuCategory.CONSOLES); state.onButton(NxButton.RIGHT)   // Consoles: Carousel wraps to List, no Backdrop
+        state.selectLayoutsRow(SettingsKind.MENU_STYLE, MenuCategory.CONSOLES); state.onButton(NxButton.RIGHT)   // Consoles: Carousel to Minimal, no Backdrop
+        assertEquals(MenuStyle.MINIMAL, settings.menuStyles[MenuCategory.CONSOLES])
+        state.onButton(NxButton.RIGHT)                                    // and Minimal wraps to List
         assertEquals(MenuStyle.LIST, settings.menuStyles[MenuCategory.CONSOLES])
         state.onButton(NxButton.LEFT)
+        state.onButton(NxButton.LEFT)
         assertEquals(MenuStyle.CAROUSEL, settings.menuStyles[MenuCategory.CONSOLES])
-        state.selectLayoutsRow(SettingsKind.GAME_LIST_STYLE)             // Game lists: all four
-        val seen = List(4) { state.onButton(NxButton.RIGHT); rows().first { it.kind == SettingsKind.GAME_LIST_STYLE }.secondary }
-        assertEquals(listOf("Grid", "Carousel", "Backdrop", "List"), seen)
+        state.selectLayoutsRow(SettingsKind.GAME_LIST_STYLE)             // Game lists: all five
+        val seen = List(5) { state.onButton(NxButton.RIGHT); rows().first { it.kind == SettingsKind.GAME_LIST_STYLE }.secondary }
+        assertEquals(listOf("Grid", "Carousel", "Backdrop", "Minimal", "List"), seen)
     }
 
     @Test fun layouts_page_shows_an_orientation_row_under_carousel_and_backdrop_only() = runTest {
@@ -9039,7 +9169,7 @@ class AppStateTest {
             settings.menuStyles = LIST_TABS + (MenuCategory.CONSOLES to style)
             settings.setTabShown(MenuCategory.CONSOLES, shown)
             state.openSettings(SettingsSection.LAYOUT_CONSOLES)
-            assertEquals(shown && style != MenuStyle.GRID, state.layoutsRows().any { it.kind == SettingsKind.CONTROLLER_ART }, "$style shown=$shown")
+            assertEquals(shown && style != MenuStyle.GRID && style != MenuStyle.MINIMAL, state.layoutsRows().any { it.kind == SettingsKind.CONTROLLER_ART }, "$style shown=$shown")
         }
     }
 
@@ -9737,7 +9867,7 @@ class AppStateTest {
         state.onFooterMode(FooterMode.BUTTONS)
         state.openSettings(SettingsSection.LAYOUT_GAME_LISTS)
         state.select(0); state.openSelected()
-        assertEquals(listOf("List", "Grid", "Carousel", "Backdrop"), state.chooser.value!!.labels)
+        assertEquals(listOf("List", "Grid", "Carousel", "Backdrop", "Minimal"), state.chooser.value!!.labels)
         state.chooseValue(3)
         assertEquals(MenuStyle.BACKDROP, settings.gameListStyle)
         state.openSettings(SettingsSection.DEFAULT_EMULATORS)
@@ -10051,7 +10181,7 @@ class AppStateTest {
         assertEquals(MenuOrientation.HORIZONTAL, settings.menuOrientations[MenuCategory.CONSOLES])
         state.onButton(NxButton.LEFT)
         assertEquals(MenuOrientation.VERTICAL, settings.menuOrientations[MenuCategory.CONSOLES])
-        state.select(consoles); state.onButton(NxButton.RIGHT)           // Carousel wraps to List: the row goes
+        state.select(consoles); state.onButton(NxButton.RIGHT); state.onButton(NxButton.RIGHT)   // Carousel to Minimal, wrapping to List: the row goes
         assertEquals(3, rows().size)
         assertTrue(rows().none { it.kind == SettingsKind.MENU_ORIENTATION })
         assertEquals(consoles, state.selection.value.index)
@@ -10065,7 +10195,9 @@ class AppStateTest {
         state.select(last + 1); state.onButton(NxButton.A)
         assertEquals(MenuOrientation.VERTICAL, settings.gameListOrientation)
         assertEquals("Vertical", rows()[last + 1].secondary)
-        state.select(last); state.onButton(NxButton.RIGHT); state.onButton(NxButton.RIGHT)   // Backdrop, then List: the rows go
+        state.select(last); state.onButton(NxButton.RIGHT); state.onButton(NxButton.RIGHT)   // Backdrop, then Minimal: the rows go
+        assertEquals(last + 2, rows().size)                              // Layout options alone: Minimal has no art row
+        state.onButton(NxButton.RIGHT)                                   // List
         assertEquals(last + 3, rows().size)                              // List art, Layout options
         assertEquals(last, state.selection.value.index)
         assertEquals(MenuOrientation.VERTICAL, settings.gameListOrientation)

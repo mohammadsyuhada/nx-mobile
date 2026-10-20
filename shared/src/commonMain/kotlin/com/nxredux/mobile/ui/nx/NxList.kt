@@ -246,7 +246,7 @@ private fun NxRowIcon(icon: DrawableResource, lit: Boolean, style: NxListRowStyl
 }
 
 /** A [NxRowTag]'s fill alpha, lit or not. */
-private const val NX_TAG_FILL_ALPHA = 0.14f
+internal const val NX_TAG_FILL_ALPHA = 0.14f
 
 /** A [NxListRow]'s label and muted secondary, scrolling (marquee) while [selected]. */
 @OptIn(ExperimentalFoundationApi::class)

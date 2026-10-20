@@ -4,6 +4,11 @@ import com.nxredux.mobile.ui.nx.touchOnly
 import com.nxredux.mobile.runner.CoreRegistry
 import com.nxredux.mobile.ui.nx.touchIcons
 import com.nxredux.mobile.settings.BackdropArt
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Column
@@ -69,6 +74,19 @@ import com.nxredux.mobile.ui.nx.NxTextSizes
 import com.nxredux.mobile.ui.nx.NxTileGrid
 import com.nxredux.mobile.ui.nx.nxListInset
 import com.nxredux.mobile.ui.nx.nxTopBandFade
+import com.nxredux.mobile.ui.nx.LocalMinimalPage
+import com.nxredux.mobile.ui.nx.MINIMAL_MORPH_MS
+import com.nxredux.mobile.ui.nx.MinimalFlight
+import com.nxredux.mobile.ui.nx.MinimalMorphEasing
+import com.nxredux.mobile.ui.nx.MinimalOpenOverlay
+import com.nxredux.mobile.ui.nx.MorphText
+import com.nxredux.mobile.ui.nx.menuTitleStyle
+import com.nxredux.mobile.ui.nx.morphPlace
+import com.nxredux.mobile.ui.nx.MinimalScreen
+import com.nxredux.mobile.ui.nx.MinimalSelected
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.zIndex
 
 /**
  * A mixed list's second line: the tag as the handheld names it (GPGX_SMS shows as GPGX, CoreRegistry.handheldTag), then an
@@ -106,6 +124,7 @@ fun GameListScreen(
     layoutOpen: Boolean = false,          // the dropdown is open: its icon lit
     onAchievements: (() -> Unit)? = null, // the trophy icon (touchscreens) and X's hint: the achievements panel
     achievementsOpen: Boolean = false,    // the panel is open: its icon lit
+    minimalOpening: MinimalOpening? = null,   // Minimal: the selected game being opened (this list's), its band growing over the screen
 ) {
     val index = rememberUpdatedState(selectedIndex)
     val resume = rememberUpdatedState(canResume)
@@ -133,12 +152,13 @@ fun GameListScreen(
             title, style, hints, { index.value() }, dataKey = listOf(entries, showTag, backdropArt), orientation = orientation, alignment = alignment,
             gridTiles = { gameGridTiles(entries) }, backdropGames = { backdropGames(entries, backdropArt) },
             listRows = { entries.map { NxRow(it.shown, secondary = if (showTag) tagLine(it) else it.game.subtitle) } },
+            minimalRows = { entries.map { NxRow(it.shown) } },
             captionTitle = { entries.getOrNull(index.value())?.shown },
             onSelect = onSelect, onOpen = onOpen, modifier = modifier, onHint = onHint, onLongPress = onLongPress,
             info = info, onGridLayout = onGridLayout, tileInfo = tileInfo, layoutKey = layoutKey,
             emptyText = emptyText.takeIf { entries.isEmpty() }, artBox = artBox,
             onSearch = onSearch, onLayout = onLayout, layoutOpen = layoutOpen,
-            onAchievements = onAchievements, achievementsOpen = achievementsOpen,
+            onAchievements = onAchievements, achievementsOpen = achievementsOpen, minimalOpening = minimalOpening,
         )
     }
 }
@@ -156,14 +176,14 @@ internal val NoGameInfo: () -> List<InfoLine> = { emptyList() }
 /**
  * A game list's page under its grey [title] (where the main menu has its tab row), in its [style]: the body of
  * [GameListScreen]. The style's items are built only for the style shown,
- * once per [dataKey]: [gridTiles] (Grid, Carousel), [backdropGames] (Backdrop's games row) and [listRows] (List; App draws the selected
- * game's screenshot behind it).
+ * once per [dataKey]: [gridTiles] (Grid, Carousel), [backdropGames] (Backdrop's games row), [listRows] (List; App draws the selected
+ * game's screenshot behind it) and [minimalRows] (Minimal: the names alone, on plain black).
  */
 @Composable
 internal fun GameListFrame(
     title: String, style: MenuStyle, hints: State<List<Hint>>, selectedIndex: () -> Int, dataKey: Any?,
     gridTiles: () -> List<GridTile>, backdropGames: () -> List<BackdropGame>,
-    listRows: () -> List<NxRow>, captionTitle: () -> String?,
+    listRows: () -> List<NxRow>, captionTitle: () -> String?, minimalRows: () -> List<NxRow> = listRows,
     onSelect: (Int) -> Unit, onOpen: (Int) -> Unit, modifier: Modifier = Modifier,
     onHint: ((NxButton) -> Unit)? = null, onLongPress: ((Int) -> Unit)? = null,
     info: () -> List<InfoLine> = { emptyList() }, onGridLayout: (Int, Int) -> Unit = { _, _ -> },
@@ -175,6 +195,7 @@ internal fun GameListFrame(
     recentIcon: Boolean = true,   // false inside Recent itself: no Recent icon on touch
     onSearch: (() -> Unit)? = null, onLayout: (() -> Unit)? = null, layoutOpen: Boolean = false,   // a game list's Search and Layout icons
     onAchievements: (() -> Unit)? = null, achievementsOpen: Boolean = false,   // and its trophy icon
+    minimalOpening: MinimalOpening? = null,   // Minimal: the selected game being opened: the others fade, its band grows ([MinimalOpenOverlay])
 ) {
     // Layouts → Page title and Button hints, in effect ([LocalLauncherChrome]): hidden, the hint bar keeps its room; the
     // title's goes to the body (a List gets more rows, the other styles centre in it).
@@ -185,21 +206,41 @@ internal fun GameListFrame(
     // The selected game's name and info open the achievements panel too, as the trophy does (Carousel, Backdrop, List's info).
     val iconsUp = !chrome.listTitle && titleIcons.isNotEmpty()   // the icons at the page's top right
     val topCut = rememberNxListTopCut()
+    // Minimal: the selected name as last laid out, and this page's box: where the open band starts.
+    val minimalSelected = remember { MinimalSelected() }
+    val pageBox = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    // A Minimal list come in by a folder's morph: the last page's selected name flies into this title as the names rise in.
+    val minimalPage = LocalMinimalPage.current
+    val flight = remember { minimalPage?.morph?.name.takeIf { style == MenuStyle.MINIMAL && minimalPage?.arriving(NavMotion.MINIMAL_FORWARD, "flight") == true } }
+    val flown = remember { Animatable(if (flight != null) 0f else 1f) }
+    LaunchedEffect(flown) { if (flown.value < 1f) flown.animateTo(1f, tween(MINIMAL_MORPH_MS, easing = MinimalMorphEasing)) }
+    val titleText = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    // No title shown (Page title Off): B has none to drop back, not an older list's.
+    if (!LocalLauncherChrome.current.listTitle) SideEffect { if (minimalPage?.live?.value == true) minimalPage.morph.title = null }
     CompositionLocalProvider(LocalCaptionTap provides onAchievements) {
-        Box(modifier.fillMaxSize()) {
+        Box(modifier.fillMaxSize().onGloballyPositioned { pageBox[0] = it }) {
             // The main menu's top band behind the title, so the rows line up with the tabs' and the grey name reads over art.
-            // Not over a Backdrop picture: its shade does this job, and the two would stack. No title, no band, unless a
-            // List runs up under the page's icons: they keep the band, as the main menu's List does.
-            if (style != MenuStyle.BACKDROP && chrome.listTitle || style == MenuStyle.LIST && iconsUp) Box(Modifier.fillMaxWidth().height(MENU_TAB_ROW_HEIGHT + NX_TOP_BAND_REACH).nxTopBandFade(LocalNxColors.current.background))
+            // Not over a Backdrop picture: its shade does this job, and the two would stack; nor over Minimal's names, which
+            // run on under the title, faded there. No title, no band, unless a List runs up under the page's icons: they
+            // keep the band, as the main menu's List does.
+            if (style != MenuStyle.BACKDROP && style != MenuStyle.MINIMAL && chrome.listTitle || style == MenuStyle.LIST && iconsUp) Box(Modifier.fillMaxWidth().height(MENU_TAB_ROW_HEIGHT + NX_TOP_BAND_REACH).nxTopBandFade(LocalNxColors.current.background))
             Column(Modifier.fillMaxSize()) {
                 // The name starts where the body's text does: the list labels' inset in List style, the gutter the Grid's tiles
                 // and the Carousel's and Backdrop's captions start on otherwise. Backdrop: over the selected game's screenshot.
                 val textStart = if (style == MenuStyle.LIST) nxListInset() else if (LocalPortrait.current) 16.dp else 24.dp
                 // The page's icons at the title's right ([gameListTitleIcons]).
-                if (chrome.listTitle) MenuTitleRow(
-                    title, overArt = style == MenuStyle.BACKDROP, textStart = textStart,
-                    trailing = { NxTopIcons(titleIcons) },
-                )
+                if (chrome.listTitle) {
+                    val titleStyle = menuTitleStyle()
+                    MenuTitleRow(
+                        title, overArt = style == MenuStyle.BACKDROP, textStart = textStart,
+                        // Where a B morph back to a Minimal tab starts (while this page shows); hidden while the name flies in.
+                        textModifier = Modifier.onGloballyPositioned {
+                            titleText[0] = it
+                            if (minimalPage?.live?.value == true) morphPlace(it).let { (at, s) -> minimalPage.morph.title = MorphText(title, at, it.size.width.toFloat(), s, titleStyle) }
+                        }.graphicsLayer { alpha = if (flown.value < 1f) 0f else 1f },
+                        trailing = { NxTopIcons(titleIcons) },
+                    )
+                }
                 // Hidden: a List runs up into its room; a Grid, Carousel or Backdrop (row or stack) takes it into its box,
                 // sized as with the title, centred in the taller box. A Backdrop's picture stays put. With the page's icons
                 // up there (Button hints hidden too, or touch), every layout keeps the row's room clear instead ([topIconsRoom]).
@@ -258,6 +299,14 @@ internal fun GameListFrame(
                             )
                         }
                     }
+                    // Minimal: the names alone (no art, tags or info), running on under the title.
+                    MenuStyle.MINIMAL -> {
+                        val names = remember(dataKey) { minimalRows() }
+                        MinimalScreen(
+                            names, selectedIndex, hints.value, onSelect, onOpen, onLongPress, onHint, { 1f }, minimalSelected,
+                            Modifier.weight(1f).zIndex(-1f), hideHints = chrome.emptyBarRoom, layoutKey = layoutKey, leaving = minimalOpening != null,
+                        )
+                    }
                     // List: the info band on the hint bar, holding the scroll arrows.
                     MenuStyle.LIST -> {
                         val rows = remember(dataKey) { listRows() }
@@ -286,6 +335,12 @@ internal fun GameListFrame(
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(it, color = LocalNxColors.current.listText, fontFamily = LocalNxFont.current, fontSize = NxTextSizes.modalText)
                 }
+            }
+            // Minimal's open: the selected game's band grows over the whole page, then it goes dark.
+            if (style == MenuStyle.MINIMAL && minimalOpening?.band == true) MinimalOpenOverlay(minimalSelected, pageBox[0])
+            // The folder's name landing in the title (none with Page title Off: it fades where it was).
+            if (flight != null && flown.value < 1f) {
+                MinimalFlight(flight, title, menuTitleStyle(), { titleText[0]?.takeIf { it.isAttached && chrome.listTitle }?.let(::morphPlace) }, { flown.value }, { pageBox[0] })
             }
         }
     }

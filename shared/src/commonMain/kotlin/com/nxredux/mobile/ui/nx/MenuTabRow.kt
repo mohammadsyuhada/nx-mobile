@@ -48,6 +48,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -177,16 +178,13 @@ fun MenuTabRow(
 @Composable
 fun MenuTitleRow(
     title: String, modifier: Modifier = Modifier, overArt: Boolean = false, textStart: Dp = nxListInset(), suffix: String? = null,
+    textModifier: Modifier = Modifier,   // on the title's text (a Minimal morph finds it, and hides it while it lands)
     trailing: (@Composable () -> Unit)? = null,
 ) {
-    val shadow = if (overArt) overArtShadow(LocalNxColors.current.background) else null
-    val style = LocalTextStyle.current.let { if (shadow == null) it else it.copy(shadow = shadow) }.copy(
-        color = LocalNxColors.current.hint, fontFamily = LocalNxFont.current, fontWeight = FontWeight.SemiBold,
-        fontSize = NxTextSizes.pageTitle.pinned() * nxTextScale(),   // Appearance → Text size
-    )
+    val style = menuTitleStyle(overArt)
     val (lead, body) = splitTitleLead(title)
     BoxWithConstraints(modifier.fillMaxWidth().height(MENU_TAB_ROW_HEIGHT), contentAlignment = Alignment.CenterStart) {
-        Row(Modifier.padding(start = textStart).widthIn(max = maxWidth * NX_TITLE_MAX_SHARE)) {
+        Row(Modifier.padding(start = textStart).widthIn(max = maxWidth * NX_TITLE_MAX_SHARE).then(textModifier)) {
             if (lead.isNotEmpty()) Text(lead, style = style, maxLines = 1, softWrap = false)
             if (body.isNotEmpty()) Text(body, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             if (!suffix.isNullOrEmpty()) Text(" $suffix", style = style, maxLines = 1, softWrap = false)
@@ -196,6 +194,16 @@ fun MenuTitleRow(
             Box(Modifier.align(Alignment.CenterEnd).padding(end = gutter - TOP_ICON_INSET)) { trailing() }
         }
     }
+}
+
+/** A page title's text style ([MenuTitleRow]), shadowed over art. */
+@Composable
+internal fun menuTitleStyle(overArt: Boolean = false): TextStyle {
+    val shadow = if (overArt) overArtShadow(LocalNxColors.current.background) else null
+    return LocalTextStyle.current.let { if (shadow == null) it else it.copy(shadow = shadow) }.copy(
+        color = LocalNxColors.current.hint, fontFamily = LocalNxFont.current, fontWeight = FontWeight.SemiBold,
+        fontSize = NxTextSizes.pageTitle.pinned() * nxTextScale(),   // Appearance → Text size
+    )
 }
 
 /** The most of the title row's width a page title takes, measured from its first letter. */

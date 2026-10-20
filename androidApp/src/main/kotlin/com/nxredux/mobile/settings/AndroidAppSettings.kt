@@ -38,7 +38,7 @@ class AndroidAppSettings(context: Context) : AppSettings {
         set(value) = prefs.edit { putString(KEY_MENU_STYLES, MenuStyles.encode(value)) }
 
     override var gameListStyle: MenuStyle
-        get() = prefs.getString(KEY_GAME_LIST_STYLE, null)?.let { runCatching { MenuStyle.valueOf(it) }.getOrNull() } ?: MenuStyles.DEFAULT_GAME_LIST_STYLE
+        get() = prefs.getString(KEY_GAME_LIST_STYLE, null)?.let { runCatching { MenuStyle.valueOf(it) }.getOrNull() }?.takeIf { it in MenuStyles.GAME_LIST_STYLES } ?: MenuStyles.DEFAULT_GAME_LIST_STYLE
         set(value) = prefs.edit { putString(KEY_GAME_LIST_STYLE, value.name) }
 
     override var menuOrientations: Map<MenuCategory, MenuOrientation>

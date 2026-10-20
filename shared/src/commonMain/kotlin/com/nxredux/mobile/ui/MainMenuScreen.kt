@@ -38,6 +38,13 @@ import com.nxredux.mobile.ui.nx.HomeFrame
 import com.nxredux.mobile.ui.nx.HomeCarouselScreen
 import com.nxredux.mobile.ui.nx.HomeListScreen
 import com.nxredux.mobile.ui.nx.HomeScreen
+import com.nxredux.mobile.ui.nx.HomeMinimalScreen
+import com.nxredux.mobile.ui.nx.MinimalOpenOverlay
+import com.nxredux.mobile.ui.nx.MinimalScreen
+import com.nxredux.mobile.ui.nx.MinimalSelected
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.zIndex
 import com.nxredux.mobile.ui.nx.Hint
 import com.nxredux.mobile.ui.nx.LocalNxColors
 import com.nxredux.mobile.ui.nx.LocalNxTapOpens
@@ -87,9 +94,10 @@ fun MainMenuScreen(
     canSearch: Boolean = false,           // the library has games: START Search in the hints
     onTabMenu: (() -> Unit)? = null,      // a long press on the tab row or the single-tab title: the hidden-tab menu
     tabMenu: Boolean = false,             // a hidden tab can be opened from MENU: every row's hints offer Options, every Home row takes a long press
+    minimalOpening: MinimalOpening? = null,   // Minimal: this tab's selected row being opened: the others fade, a launch's band grows over the screen ([MinimalOpenOverlay])
 ) {
     val rows = screen.rows
-    val home = screen.category == MenuCategory.HOME   // the Home tab: [HomeListScreen], [HomeScreen] (Grid) or [HomeCarouselScreen] by its own style
+    val home = screen.category == MenuCategory.HOME   // the Home tab: [HomeListScreen], [HomeScreen] (Grid), [HomeCarouselScreen] or [HomeMinimalScreen] by its own style
     val shared = remember(rows) { rows.mapNotNull { (it as? MainRow.System)?.system }.groupingBy { it.displayName }.eachCount().filterValues { it > 1 }.keys }   // rows merge by name (GBA and MGBA are one row): a tag badge only if two rows still share one
     val index = rememberUpdatedState(selectedIndex)
     val selection = remember { { index.value() } }   // the row reads it where it shows (its slide, its items), not here
@@ -116,11 +124,14 @@ fun MainMenuScreen(
     val chrome = LocalLauncherChrome.current
     // Consoles with their controllers (a List or Carousel by Layouts → Consoles background): every pad
     // decoded ahead, off the main thread, nearest the selection first, so stepping through the consoles never decodes one inside a frame.
-    if (!home && style != MenuStyle.GRID && controllerArt) {
+    if (!home && style != MenuStyle.GRID && style != MenuStyle.MINIMAL && controllerArt) {
         val pads = remember(rows) { rows.map { r -> (r as? MainRow.System)?.systems?.firstNotNullOfOrNull { consolePad(it.tag) }?.res } }
         PrefetchPads(pads, selection)
     }
-    Box(modifier.fillMaxSize()) {
+    // A Minimal tab's selected name as last laid out, and this screen's box: where the open band starts.
+    val minimalSelected = remember { MinimalSelected() }
+    val screenBox = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    Box(modifier.fillMaxSize().onGloballyPositioned { screenBox[0] = it }) {
         // Behind the tab row, over the backdrop App draws: the switcher title's eased top band, so the dim labels read over
         // bright art. It reaches [NX_TOP_BAND_REACH] past the row, over the list's top (the rows draw on top of it).
         // List Home draws the selected game's picture behind the page (App's MenuBackground.Picture), as a game list does,
@@ -195,6 +206,11 @@ fun MainMenuScreen(
                                 bodyAlpha = bodyAlpha, hideHints = chrome.emptyBarRoom || chrome.noBar,
                             )
                         }
+                        MenuStyle.MINIMAL -> HomeMinimalScreen(
+                            rows, selection, homeView.strip, hints.value, onSelect, onOpen, onLongPress, onHint, bodyAlpha,
+                            minimalSelected, modifier = Modifier.weight(1f).zIndex(-1f),   // its names run on under the tab row
+                            leaving = minimalOpening != null,
+                        )
                         MenuStyle.GRID -> slot { m ->
                             HomeScreen(
                                 rows, index.value(), onSelect = onSelect, onOpen = onOpen, onLongPress = onLongPress, onLayout = onHomeLayout, view = homeView,
@@ -234,6 +250,14 @@ fun MainMenuScreen(
                                 captionTitle = NoCaptionTitle, captionInfo = NoCaptionInfo, modifier = m, layoutKey = layoutKey, titleRoom = titleRoom,
                             )
                         }
+                    }
+                    // Minimal: the names alone, as Minimal Home's without its strip and tags, running on under the tab row.
+                    MenuStyle.MINIMAL -> {
+                        val names = remember(rows) { minimalTabRows(rows) }
+                        MinimalScreen(
+                            names, selection, hints.value, onSelect, onOpen, onLongPress, onHint, bodyAlpha, minimalSelected,
+                            Modifier.weight(1f).zIndex(-1f), hideHints = chrome.emptyBarRoom, layoutKey = layoutKey, leaving = minimalOpening != null,
+                        )
                     }
                     // List: the info band on the hint bar, holding the scroll arrows.
                     MenuStyle.LIST -> {
@@ -286,6 +310,8 @@ fun MainMenuScreen(
                     .nxListTopCut(topCut),
             )
         }
+        // A Minimal tab's open: the selected row's band grows over the whole screen, then it goes dark.
+        if (style == MenuStyle.MINIMAL && minimalOpening?.band == true) MinimalOpenOverlay(minimalSelected, screenBox[0])
     }
 }
 
@@ -326,9 +352,26 @@ internal fun mainMenuTitle(screen: Screen.Systems): String? = when {
 /**
  * Whether the main menu draws the eased top band behind its tab row ([tabRow] shown): on every tab but Home, and on Home
  * in the List style ([style] Home's), whose page is drawn over the selected game's picture. Grid Home draws its own while
- * its page is scrolled; Carousel Home has no picture behind it.
+ * its page is scrolled; Carousel Home has no picture behind it. Minimal, on any tab, has none: its names run on under the
+ * tab row, faded there.
  */
-internal fun mainMenuTopBand(home: Boolean, style: MenuStyle, tabRow: Boolean): Boolean = tabRow && (!home || style == MenuStyle.LIST)
+internal fun mainMenuTopBand(home: Boolean, style: MenuStyle, tabRow: Boolean): Boolean =
+    tabRow && (style == MenuStyle.LIST || !home && style != MenuStyle.MINIMAL)
+
+/** A Minimal tab's names: each row's name alone (a console's, a collection's, a tool's), no tag, count or art. */
+internal fun minimalTabRows(rows: List<MainRow>): List<NxRow> = rows.map { r ->
+    NxRow(
+        when (r) {
+            is MainRow.Pin -> r.entry.game.shownName
+            is MainRow.Shelf -> r.entry.game.shownName
+            is MainRow.System -> r.system.displayName
+            is MainRow.Collection -> r.name
+            is MainRow.Tool -> r.row.label
+            is MainRow.PinnedTool -> r.row.label
+            is MainRow.Continue, is MainRow.MoreTools, MainRow.PickAGame -> homeOnly(r)
+        },
+    )
+}
 
 /** Whether [row] launches a game (Home's Continue, a pinned game, an Android game's pin too, a shelf game). */
 internal fun mainRowLaunchesGame(row: MainRow?): Boolean = row is MainRow.Continue || row is MainRow.Pin || row is MainRow.Shelf

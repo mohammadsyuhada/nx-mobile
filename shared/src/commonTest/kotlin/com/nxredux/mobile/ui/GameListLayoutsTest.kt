@@ -10,9 +10,9 @@ class GameListLayoutsTest {
     private val L = VerticalListAlignment.LEFT
     private val R = VerticalListAlignment.RIGHT
 
-    @Test fun eightChoicesEachVerticalOncePerAlignment() {
+    @Test fun nineChoicesEachVerticalOncePerAlignmentMinimalLast() {
         assertEquals(
-            listOf("List", "Grid", "Carousel", "Carousel, vertical left", "Carousel, vertical right", "Backdrop", "Backdrop, vertical left", "Backdrop, vertical right"),
+            listOf("List", "Grid", "Carousel", "Carousel, vertical left", "Carousel, vertical right", "Backdrop", "Backdrop, vertical left", "Backdrop, vertical right", "Minimal"),
             GameListLayouts.all.map { it.label },
         )
     }
@@ -25,5 +25,6 @@ class GameListLayoutsTest {
         assertEquals(4, GameListLayouts.indexOf(MenuStyle.CAROUSEL, MenuOrientation.VERTICAL, R))
         assertEquals(5, GameListLayouts.indexOf(MenuStyle.BACKDROP, MenuOrientation.HORIZONTAL, L))
         assertEquals(7, GameListLayouts.indexOf(MenuStyle.BACKDROP, MenuOrientation.VERTICAL, R))
+        assertEquals(8, GameListLayouts.indexOf(MenuStyle.MINIMAL, MenuOrientation.VERTICAL, L))
     }
 }

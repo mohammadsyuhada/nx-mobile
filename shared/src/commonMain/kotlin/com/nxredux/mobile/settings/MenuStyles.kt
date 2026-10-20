@@ -5,8 +5,10 @@ package com.nxredux.mobile.settings
  * unknown lines ignored.
  */
 object MenuStyles {
-    /** The styles a main menu tab offers (Settings → Layouts cycles these); game lists also offer [MenuStyle.BACKDROP]. */
-    val MAIN_MENU_STYLES = listOf(MenuStyle.LIST, MenuStyle.GRID, MenuStyle.CAROUSEL)
+    /** The styles every main menu tab offers, Home's too (Settings → Layouts cycles these, in this order). */
+    val MAIN_MENU_STYLES = listOf(MenuStyle.LIST, MenuStyle.GRID, MenuStyle.CAROUSEL, MenuStyle.MINIMAL)
+    /** The game lists' styles: the tabs' and Backdrop, Minimal last as on the tabs. */
+    val GAME_LIST_STYLES = listOf(MenuStyle.LIST, MenuStyle.GRID, MenuStyle.CAROUSEL, MenuStyle.BACKDROP, MenuStyle.MINIMAL)
 
     // Layouts' defaults, NX Redux's (menustyle_model.h, config.h CFG_DEFAULT_MENUSTYLE*): a fresh install's, and what
     // Reset to defaults puts back. Every orientation is Horizontal, the vertical alignment [VerticalListAlignment.DEFAULT].

@@ -26,9 +26,10 @@ object GameListLayouts {
         GameListLayout(MenuStyle.BACKDROP, MenuOrientation.HORIZONTAL, "Backdrop"),
         GameListLayout(MenuStyle.BACKDROP, MenuOrientation.VERTICAL, "Backdrop, vertical left", VerticalListAlignment.LEFT),
         GameListLayout(MenuStyle.BACKDROP, MenuOrientation.VERTICAL, "Backdrop, vertical right", VerticalListAlignment.RIGHT),
+        GameListLayout(MenuStyle.MINIMAL, MenuOrientation.HORIZONTAL, "Minimal"),
     )
 
-    /** The choice [style], its stored [orientation] and [alignment] are drawn as (List and Grid ignore both, a horizontal row the alignment). */
+    /** The choice [style], its stored [orientation] and [alignment] are drawn as (List, Grid and Minimal ignore both, a horizontal row the alignment). */
     fun indexOf(style: MenuStyle, orientation: MenuOrientation, alignment: VerticalListAlignment): Int {
         val o = MenuStyles.effectiveOrientation(style, orientation)
         return all.indexOfFirst { it.style == style && it.orientation == o && (it.alignment == null || it.alignment == alignment) }.coerceAtLeast(0)
