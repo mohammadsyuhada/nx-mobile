@@ -126,7 +126,7 @@ private fun rememberEasedOf(reset: Any, ms: Int, target: () -> Float): Animatabl
  * The Grid style: [tiles] in two rows on a phone (three in the tall portrait, the Flip, of two or three columns whose
  * selection centres once it scrolls; 3–4 on a tablet-class window, [LocalWindowSize]; [gridFor]), still when they fit those rows, else in
  * columns sliding sideways to keep the selection anchored. The selected tile lights up in place ([GRID_LIT_MS]: the
- * "Logo" look for a logo, tool or collection, a [NX_TILE_RING] dp ring for a game; the old one fades back); columns cut
+ * "Logo" look for a logo, tool or collection, a [NX_TILE_RING_W] dp ring for a game; the old one fades back); columns cut
  * off at an edge are shaded and an edge with more to scroll fades to black. Reports its column and row counts through
  * [onColumns] once laid out (the d-pad steps by tiles from then on).
  * A tap selects a tile, a tap on the selected one opens it, a long press calls [onLongPress]. A sliding grid also follows
