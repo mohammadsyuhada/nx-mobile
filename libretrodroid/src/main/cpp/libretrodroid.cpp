@@ -571,6 +571,7 @@ void LibretroDroid::releaseCore() {
     memoryCheats.clear();
     memoryCheatList.clear();
     cheatMemReady = false;
+    cheatMemLogged = false;
     // After retro_unload_game: the core may point into these until then (also a load that failed).
     gamePath.clear();
     gameFileData.reset();
@@ -942,10 +943,13 @@ void LibretroDroid::applyMemoryCheats() {
         if (!cheatMem.count && core->retro_get_memory_data && core->retro_get_memory_size)
             CheatMem_addRegion(&cheatMem, core->retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM),
                                core->retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM));
-        if (!cheatMem.count) LOGW("cheats: the core exposes no system RAM, RAM cheats can't apply");
-        else LOGI("cheats: RAM cheats apply to %d region(s), %zu bytes (%s)", cheatMem.count, cheatMem.total,
-                  fromMap ? "memory map" : "RETRO_MEMORY_SYSTEM_RAM");
-        cheatMemReady = true;
+        if (!cheatMemLogged) {
+            if (!cheatMem.count) LOGW("cheats: the core exposes no system RAM, RAM cheats can't apply");
+            else LOGI("cheats: RAM cheats apply to %d region(s), %zu bytes (%s)", cheatMem.count, cheatMem.total,
+                      fromMap ? "memory map" : "RETRO_MEMORY_SYSTEM_RAM");
+            cheatMemLogged = true;
+        }
+        cheatMemReady = fromMap;   // nx-redux #262: only a memory map's regions stay put
         cheatMemMapVersion = achievements.memoryMapVersion();
     }
     CheatMem_apply(&cheatMem, memoryCheatList.data(), (int) memoryCheatList.size());

@@ -280,11 +280,13 @@ private:
 
     std::mutex coreLock;
 
-    // Under coreLock. The RAM is found on first use, again when the core's memory map changes.
+    // Under coreLock. A memory map's RAM is found on first use and again when the map changes; without one,
+    // RETRO_MEMORY_SYSTEM_RAM is asked for every frame, in case the core moves it.
     std::vector<CheatMemPatch> memoryCheats;
     std::vector<const CheatMemPatch*> memoryCheatList;
     CheatMem cheatMem {};
     bool cheatMemReady = false;
+    bool cheatMemLogged = false;
     unsigned cheatMemMapVersion = 0;
     void applyMemoryCheats();
 

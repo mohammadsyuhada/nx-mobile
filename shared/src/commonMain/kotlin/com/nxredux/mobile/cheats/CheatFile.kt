@@ -42,8 +42,9 @@ object CheatFile {
     )
 
     /**
-     * Null when the count line is missing, unparsable or zero. Otherwise the cheats that have a desc and either a code
-     * or `handler = 1`, in index order; an empty list means the file parsed but holds nothing usable.
+     * Null when the count line is missing, unparsable or zero. Otherwise the cheats that have a code or `handler = 1`,
+     * in index order, one without a desc named `Cheat <n>` from 1 as the handheld names it; an empty list means the
+     * file parsed but holds nothing usable.
      */
     fun parse(text: String): List<Cheat>? {
         val lines = TextLines.split(text)
@@ -86,7 +87,7 @@ object CheatFile {
             }
         }
         return (0 until n).mapNotNull { i ->
-            val desc = descs[i]?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            val desc = descs[i]?.takeIf { it.isNotEmpty() } ?: "Cheat ${i + 1}"
             if (handler[i]) return@mapNotNull Cheat(desc, "", enabled[i], mems[i])
             val code = codes[i]?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
             Cheat(desc, code, enabled[i])
@@ -120,7 +121,12 @@ object CheatFile {
         return s.startsWith("true", ignoreCase = true) || s.startsWith("1")
     }
 
-    /** The content of a `"…"` value: `\x` → `x`, `&quot;` → `"`. Null when not quoted or unterminated. */
+    /** The HTML entities the libretro database uses in descriptions (`P1 &amp; P2`), as minarch decodes them. */
+    private val ENTITIES = listOf(
+        "&quot;" to "\"", "&amp;" to "&", "&apos;" to "'", "&lt;" to "<", "&gt;" to ">", "&nbsp;" to " ", "&eacute;" to "é",
+    )
+
+    /** The content of a `"…"` value: `\x` → `x`, [ENTITIES] decoded. Null when not quoted or unterminated. */
     private fun quoted(value: String): String? {
         if (!value.startsWith('"')) return null
         val out = StringBuilder()
@@ -130,7 +136,11 @@ object CheatFile {
             when {
                 c == '"' -> return out.toString()
                 c == '\\' && i + 1 < value.length -> { out.append(value[i + 1]); i += 2 }
-                c == '&' && value.startsWith("&quot;", i) -> { out.append('"'); i += 6 }
+                c == '&' && ENTITIES.any { value.startsWith(it.first, i) } -> {
+                    val (entity, text) = ENTITIES.first { value.startsWith(it.first, i) }
+                    out.append(text)
+                    i += entity.length
+                }
                 else -> { out.append(c); i++ }
             }
         }

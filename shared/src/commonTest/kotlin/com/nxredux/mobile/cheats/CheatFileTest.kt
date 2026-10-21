@@ -83,16 +83,29 @@ class CheatFileTest {
     @Test fun a_cheat_without_a_code_is_dropped() {
         val text = "cheats = 3\ncheat0_desc = \"a\"\ncheat0_code = \"1\"\ncheat1_desc = \"no code\"\ncheat2_desc = \"c\"\ncheat2_code = \"3\"\n"
         assertEquals(listOf(Cheat("a", "1"), Cheat("c", "3")), CheatFile.parse(text))
-        // Empty desc or code counts as missing.
-        assertEquals(emptyList(), CheatFile.parse("cheats = 1\ncheat0_desc = \"\"\ncheat0_code = \"1\"\n"))
+        // An empty code counts as missing.
         assertEquals(emptyList(), CheatFile.parse("cheats = 1\ncheat0_desc = \"a\"\ncheat0_code = \"\"\n"))
     }
 
+    @Test fun a_cheat_without_a_desc_is_named_by_its_number() {
+        // 135 database files have one (Sonic 3 & Knuckles' cheat 59); the handheld names them too (nx-redux #262).
+        val text = "cheats = 3\ncheat0_desc = \"\"\ncheat0_code = \"1\"\ncheat1_desc = \"b\"\ncheat1_code = \"2\"\ncheat2_code = \"3\"\n"
+        assertEquals(listOf(Cheat("Cheat 1", "1"), Cheat("b", "2"), Cheat("Cheat 3", "3")), CheatFile.parse(text))
+        val ram = "cheats = 1\ncheat0_handler = 1\ncheat0_value = 2\n"
+        assertEquals(listOf(Cheat("Cheat 1", "", mem = MemoryPatch(value = 2))), CheatFile.parse(ram))
+    }
+
+    @Test fun database_html_entities_are_decoded() {
+        val text = "cheats = 1\ncheat0_desc = \"P1 &amp; P2 &lt;3&gt; &apos;x&apos;&nbsp;Pok&eacute;mon &amp;amp; &bogus;\"\ncheat0_code = \"1\"\n"
+        assertEquals("P1 & P2 <3> 'x' Pokémon &amp; &bogus;", CheatFile.parse(text)!![0].desc)
+    }
+
     @Test fun a_bad_line_is_skipped_not_fatal() {
+        // The bad desc line is skipped; the cheat keeps its code under its number.
         val text = "cheats = 2\ncheat0_desc = \"unterminated\ncheat0_code = \"1\"\ncheat1_desc = \"ok\"\ncheat1_code = \"2\"\n"
-        assertEquals(listOf(Cheat("ok", "2")), CheatFile.parse(text))
+        assertEquals(listOf(Cheat("Cheat 1", "1"), Cheat("ok", "2")), CheatFile.parse(text))
         // A value without quotes is a bad line too.
-        assertEquals(listOf(Cheat("ok", "2")), CheatFile.parse("cheats = 2\ncheat0_desc = bare\ncheat0_code = \"1\"\ncheat1_desc = \"ok\"\ncheat1_code = \"2\"\n"))
+        assertEquals(listOf(Cheat("Cheat 1", "1"), Cheat("ok", "2")), CheatFile.parse("cheats = 2\ncheat0_desc = bare\ncheat0_code = \"1\"\ncheat1_desc = \"ok\"\ncheat1_code = \"2\"\n"))
     }
 
     @Test fun a_long_code_line_is_read_whole() {
