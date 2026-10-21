@@ -14,9 +14,7 @@ import android.view.SurfaceView
 import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
@@ -52,11 +50,6 @@ class SecondScreenPresentation(private val activity: ComponentActivity, display:
     /** Wraps the panel and the pill in the app's theme (colours, font); identity until set. */
     var theme: @Composable (@Composable () -> Unit) -> Unit = { it() }
 
-    lateinit var surfaceView: SurfaceView
-        private set
-    lateinit var composeView: ComposeView
-        private set
-
     private var panel by mutableStateOf<(@Composable () -> Unit)?>(null)
     private var panelPill by mutableStateOf(false)
 
@@ -70,20 +63,16 @@ class SecondScreenPresentation(private val activity: ComponentActivity, display:
         setCancelable(false)
         // Edge to edge with the bars hidden: a desktop mode's taskbar (Samsung DeX) must not cover the picture.
         window?.let { w ->
-            WindowCompat.setDecorFitsSystemWindows(w, false)
+            w.goImmersive()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) w.attributes = w.attributes.apply {
                 layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            }
-            WindowInsetsControllerCompat(w, w.decorView).apply {
-                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                hide(WindowInsetsCompat.Type.systemBars())
             }
         }
         window?.decorView?.let {
             it.setViewTreeLifecycleOwner(activity)
             it.setViewTreeSavedStateRegistryOwner(activity)
         }
-        surfaceView = SurfaceView(context).apply {
+        val surfaceView = SurfaceView(context).apply {
             holder.addCallback(object : SurfaceHolder.Callback {
                 override fun surfaceCreated(holder: SurfaceHolder) = Unit
                 override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) =
@@ -93,7 +82,7 @@ class SecondScreenPresentation(private val activity: ComponentActivity, display:
             // Under the panel the game gets no touches (taps on the panel's empty parts fall through to here).
             setOnTouchListener { v, e -> if (panel == null) touch(v.width, v.height, e); true }
         }
-        composeView = ComposeView(context).apply {
+        val composeView = ComposeView(context).apply {
             setContent {
                 theme {
                     Box(Modifier.fillMaxSize()) {

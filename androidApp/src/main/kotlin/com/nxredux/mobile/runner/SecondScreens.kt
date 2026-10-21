@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Display
 import com.nxredux.mobile.BuildConfig
+import com.nxredux.mobile.settings.AndroidAppSettings
 import com.swordfish.libretrodroid.NxLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,14 +39,10 @@ object SecondScreenRule {
      * A qualifying display that is part of the device (a dual-screen handheld's second panel): only [DisplayFacts.INTERNAL].
      * [debugInternal] (a debug build's switch) also counts the simulated (overlay) and virtual displays, for an emulator.
      */
-    fun builtIn(f: DisplayFacts, debugInternal: Boolean): Boolean {
-        if (!qualifies(f, debug = debugInternal)) return false
-        return when (f.type) {
-            DisplayFacts.INTERNAL -> true
-            DisplayFacts.OVERLAY, DisplayFacts.VIRTUAL -> debugInternal
-            else -> false
-        }
-    }
+    fun builtIn(f: DisplayFacts, debugInternal: Boolean): Boolean =
+        qualifies(f, debug = debugInternal) && f.type in BUILT_IN_TYPES   // overlay and virtual qualify only with the switch
+
+    private val BUILT_IN_TYPES = setOf(DisplayFacts.INTERNAL, DisplayFacts.OVERLAY, DisplayFacts.VIRTUAL)
 }
 
 /**
@@ -90,7 +87,7 @@ class SecondScreens(context: Context, private val debug: Boolean = BuildConfig.D
      * [DEBUG_INTERNAL_KEY] = true (set with run-as).
      */
     fun builtInNow(): Display? {
-        val debugInternal = debug && app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(DEBUG_INTERNAL_KEY, false)
+        val debugInternal = debug && app.getSharedPreferences(AndroidAppSettings.PREFS_NAME, Context.MODE_PRIVATE).getBoolean(DEBUG_INTERNAL_KEY, false)
         return manager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
             .firstOrNull { it.displayId != Display.DEFAULT_DISPLAY && SecondScreenRule.builtIn(facts(it), debugInternal) }
     }
@@ -107,8 +104,6 @@ class SecondScreens(context: Context, private val debug: Boolean = BuildConfig.D
 
     private companion object {
         const val TAG = "SecondScreens"
-        /** [com.nxredux.mobile.settings.AndroidAppSettings]' prefs file, where the debug switch lives. */
-        const val PREFS = "nx-mobile"
         const val DEBUG_INTERNAL_KEY = "debug_second_screen_internal"
 
         /** `Display.getType()` is hidden; any failure reads as unknown. */

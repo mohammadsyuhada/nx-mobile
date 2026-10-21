@@ -51,17 +51,16 @@ class SaveStates(private val root: File, private val paths: NxPaths) {
     fun stateFile(slot: Int) = File(root, paths.state(slot - 1))   // where a save writes
     fun thumbFile(slot: Int) = File(root, paths.thumb(slot - 1))
 
-    fun slots(): List<Slot> = (1..SLOT_COUNT).map { i ->
-        val s = existing(i - 1)
-        val t = thumbFile(i)
-        Slot(i, s != null, s?.lastModified() ?: 0L, t.takeIf { it.exists() })
-    }
+    fun slots(): List<Slot> = (1..SLOT_COUNT).map { i -> slot(i, i - 1) }
 
     /** The auto-resume state (disk [NxPaths.AUTO_SLOT]) as a slot with index 0, for lists that show it before slot 1. */
-    fun autoSlot(): Slot {
-        val s = existing(NxPaths.AUTO_SLOT)
-        val t = File(root, paths.thumb(NxPaths.AUTO_SLOT))
-        return Slot(0, s != null, s?.lastModified() ?: 0L, t.takeIf { it.exists() })
+    fun autoSlot(): Slot = slot(0, NxPaths.AUTO_SLOT)
+
+    /** Disk [diskSlot]'s state and thumbnail as the slot numbered [index]. */
+    private fun slot(index: Int, diskSlot: Int): Slot {
+        val s = existing(diskSlot)
+        val t = File(root, paths.thumb(diskSlot))
+        return Slot(index, s != null, s?.lastModified() ?: 0L, t.takeIf { it.exists() })
     }
 
     /** Writes the state and remembers [slot] as the last used one (minarch's `<rom.ext>.txt`). */
