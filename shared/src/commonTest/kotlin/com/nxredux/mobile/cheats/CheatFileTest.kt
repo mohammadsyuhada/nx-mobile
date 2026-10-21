@@ -92,11 +92,11 @@ class CheatFileTest {
         assertEquals(listOf(Cheat("ok", "2")), CheatFile.parse("cheats = 2\ncheat0_desc = bare\ncheat0_code = \"1\"\ncheat1_desc = \"ok\"\ncheat1_code = \"2\"\n"))
     }
 
-    @Test fun a_line_over_510_bytes_is_skipped() {
-        val long = "cheat0_code = \"" + "A".repeat(600) + "\""
-        assertEquals(emptyList(), CheatFile.parse("cheats = 1\ncheat0_desc = \"d\"\n$long\n"))
-        val fits = "cheat0_code = \"" + "A".repeat(490) + "\""
-        assertEquals(490, CheatFile.parse("cheats = 1\ncheat0_desc = \"d\"\n$fits\n")!![0].code.length)
+    @Test fun a_long_code_line_is_read_whole() {
+        // Database codes run to 15,000 chars (PSP); minarch's old 512-byte line buffer dropped them (nx-redux #260).
+        val code = "_L 0x20000000 0x00000000 ".repeat(600).trim()
+        val text = "cheats = 1\ncheat0_desc = \"d\"\ncheat0_code = \"$code\"\n"
+        assertEquals(listOf(Cheat("d", code)), CheatFile.parse(text))
     }
 
     @Test fun duplicate_keys_last_wins_and_code_is_verbatim() {

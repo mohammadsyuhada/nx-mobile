@@ -13,8 +13,6 @@ data class Cheat(val desc: String, val code: String, val enabled: Boolean = fals
 object CheatFile {
     /** Sanity cap on `cheats = N` (the array is allocated up front). */
     const val MAX_CHEATS = 4096
-    /** minarch reads lines with a 512-byte buffer; a longer line does not fit and is skipped. */
-    const val MAX_LINE_BYTES = 510
 
     // The count may be quoted (`cheats = "213"`: every PSP file in libretro's collection, and a few hundred others).
     // RetroArch reads either; minarch's fscanf("%lu") stops at the quote and loses those files.
@@ -35,7 +33,6 @@ object CheatFile {
         val codes = arrayOfNulls<String>(n)
         val enabled = BooleanArray(n)
         for (line in lines) {
-            if (line.encodeToByteArray().size > MAX_LINE_BYTES) continue
             val m = KEY.find(line) ?: continue
             val index = m.groupValues[1].toIntOrNull() ?: continue
             if (index !in 0 until n) continue
