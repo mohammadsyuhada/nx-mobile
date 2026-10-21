@@ -972,6 +972,13 @@ JNIEXPORT jboolean JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_takeSh
     return Environment::getInstance().takeShutdownRequest();
 }
 
+JNIEXPORT jboolean JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_takeGameGeometryChanged(
+    JNIEnv* env,
+    jclass obj
+) {
+    return LibretroDroid::getInstance().takeGameGeometryChanged();
+}
+
 JNIEXPORT void JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_setPreferVulkan(
     JNIEnv* env,
     jclass obj,

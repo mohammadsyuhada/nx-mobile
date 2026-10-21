@@ -118,6 +118,8 @@ public class LibretroDroid {
     public static native void setRumbleEnabled(boolean enabled);
     /** The core asked to end (RETRO_ENVIRONMENT_SHUTDOWN) since the last call; cleared by this call. */
     public static native boolean takeShutdownRequest();
+    /** getGameGeometry() changed (the core's SET_GEOMETRY size, SET_ROTATION) since the last call; cleared by this call. */
+    public static native boolean takeGameGeometryChanged();
     /** Offer the next core Vulkan (bridged into the GLES presentation through AHardwareBuffers). Set before create(). */
     public static native void setPreferVulkan(boolean enabled);
     /** The next core renders into a swapchain on the bridge's surface (Dolphin): its frames are bounded by that surface. Set before create(). */

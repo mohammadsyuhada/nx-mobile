@@ -595,6 +595,7 @@ class GameActivity : ComponentActivity() {
 
     // ---- Second display (DualScreen): the DS/3DS bottom screen on it ----
     private val secondScreens by lazy { SecondScreens(this) }
+    private val appSettings by lazy { AndroidAppSettings(this) }   // reads the prefs live: the dual paths' settings
     private var presentation: SecondScreenPresentation? = null
     private var secondSurface: Surface? = null   // the presentation's surface, and its size in px
     private var secondW = 0
@@ -608,6 +609,7 @@ class GameActivity : ComponentActivity() {
     private val panelTab = mutableStateOf(PanelTab.STATES)
     private val panelSlots = mutableStateOf<List<SlotUi>>(emptyList())
     private val panelAchievements = mutableStateOf<PanelAchievements?>(null)
+    private var panelWasShown = false            // at the last syncPanel: it re-reads the slots and achievements as the panel comes up
     // The panel (or the Panel pill) in the game's own window, while the picture is on the second display.
     private var mainPanelHost: FrameLayout? = null
     private val mainPanel = mutableStateOf<(@Composable () -> Unit)?>(null)
@@ -1544,23 +1546,20 @@ class GameActivity : ComponentActivity() {
             }
             // A presentation shown before the view ran.
             secondSurface?.takeIf { secondDraws() }?.let { view.setSecondarySurface(it, secondW, secondH) }
-            relayoutFrontend()   // the core's geometry (a DS game's 256x384) is only known now
             // A core may change its geometry later (SET_GEOMETRY), as Azahar does a frame or so after the dual modes switch
             // its layout: both displays are laid out again from the new size and aspect, or the second one keeps fitting
             // the new frame at the old aspect. A core turning its picture (a WonderSwan game held upright) moves the
-            // picture screen too.
+            // picture screen too. Collected before the first layout below, so no change falls between the two.
             lifecycleScope.launch {
-                var last = GameGeometry.of(view.getGameGeometry())
-                view.getGLRetroEvents().filter { it is GLRetroView.GLRetroEvents.FrameRendered }.collect {
-                    // Single display: no geometry read at all (turning dual on lays out from the geometry then).
-                    if (dualMode == DualMode.OFF) { last = GameGeometry.NONE; return@collect }
-                    val now = GameGeometry.of(view.getGameGeometry())
-                    val change = last.changeTo(now)
-                    last = now
-                    if (change.rotation) recheckPictureOn()
-                    if (change.relayout || change.rotation) relayoutFrontend()
+                view.getGameGeometryChanges().collect {
+                    // Single display: nothing to do (turning dual on lays out from the geometry then).
+                    if (dualMode == DualMode.OFF) return@collect
+                    val g = view.getGameGeometry()
+                    recheckPictureOn(g)
+                    relayoutFrontend(g)
                 }
             }
+            relayoutFrontend()   // the core's geometry (a DS game's 256x384) is only known now
             // melonDS DS falls back to software when its GL renderer can't start: say so once (nothing is saved, the
             // next launch tries the GPU again). ~30 frames lets the core's first hardware frames arrive.
             if (NdsOptions.appliesTo(gameTag) && ndsRenderMode == NdsRenderer.OPENGL) {
@@ -2637,9 +2636,9 @@ class GameActivity : ComponentActivity() {
      * ([NdsLayout]), with the viewport the whole area and no offsets or overlay: the fork ignores the screen offset and
      * the scaling mode for regions, so the Screen Offset and Scaling settings have no effect while the screens are split.
      * Other games: the overlay box (or the whole area) becomes the GL viewport and the overlay view's bounds; the offsets
-     * (scaled to the box) go to the view. No-op until laid out.
+     * (scaled to the box) go to the view. No-op until laid out. [geometry]: the view's, when the caller has just read it.
      */
-    private fun relayoutFrontend() {
+    private fun relayoutFrontend(geometry: FloatArray? = null) {
         val view = retroView ?: return
         // Portrait with the band hidden: no touch reaches the game under the clusters (the 3DS core takes the touches whole;
         // the DS screen under them is also off in its regions). The game area starts at the cutout.
@@ -2649,7 +2648,7 @@ class GameActivity : ComponentActivity() {
         val w = game.width.toFloat()
         val h = game.height.toFloat()
         if (w <= 0f || h <= 0f) return
-        val g = view.getGameGeometry()
+        val g = geometry ?: view.getGameGeometry()
         val nds = ndsLayout(w, h, g) ?: n3dsSplitLayout(w, h)
         // An area too small for one DS screen pixel (NdsLayout returns no regions) is only ever a transient mid-resize
         // size. Keep whatever is drawn now rather than letting an empty list flip a split game to the whole 256x384
@@ -2660,7 +2659,7 @@ class GameActivity : ComponentActivity() {
         ndsRegions = nds ?: emptyList()
         positionPen()   // split with the bottom screen on the second display: no pen dot (nothing to point at here)
         setNdsSplit(nds != null)
-        view.secondaryRegions = secondRegions()
+        view.secondaryRegions = secondRegions(g)
         if (nds != null) {
             val whole = RectF(0f, 0f, 1f, 1f)
             if (lastViewport != whole) {
@@ -2741,13 +2740,12 @@ class GameActivity : ComponentActivity() {
     /**
      * What the second display draws (dst 0..1 of its surface): split, the DS/3DS screen not on main; with the picture
      * there, both DS screens side by side (panel up) or the whole frame fitted (3DS panel up, a regular game). Empty when
-     * it draws nothing or has no surface.
+     * it draws nothing or has no surface. [g]: the game geometry.
      */
-    private fun secondRegions(): List<ScreenRegion> {
+    private fun secondRegions(g: FloatArray): List<ScreenRegion> {
         val sw = secondW.toFloat()
         val sh = secondH.toFloat()
         if (!secondDraws() || secondSurface == null || sw <= 0f || sh <= 0f) return emptyList()
-        val g = retroView?.getGameGeometry() ?: return emptyList()
         val dsFrame = isNds && NdsLayout.isDsFrame(g[0].roundToInt(), g[1].roundToInt())
         val regions = when {
             // Not the plain DS stack (no frame yet, or another layout): main draws it whole, so nothing is cut for here.
@@ -2785,14 +2783,14 @@ class GameActivity : ComponentActivity() {
     private fun dualModeNow(): DualMode {
         val tag = layoutTag()
         return DualScreen.mode(
-            secondScreens.current.value != null, AndroidAppSettings(this).secondScreen,
+            secondScreens.current.value != null, appSettings.secondScreen,
             NdsOptions.appliesTo(tag) || N3dsOptions.appliesTo(tag), panelUp,
         )
     }
 
     /** Shows the in-game menu's Second screen row while a second display is attached, with the setting's value. */
     private fun publishSecondScreen(model: InGameMenuModel) {
-        model.setSecondScreen(secondScreens.current.value != null, AndroidAppSettings(this).secondScreen)
+        model.setSecondScreen(secondScreens.current.value != null, appSettings.secondScreen)
         menuState.value = model.state
     }
 
@@ -2802,6 +2800,7 @@ class GameActivity : ComponentActivity() {
      */
     private fun syncDual() {
         val wanted = if (isFinishing || isDestroyed) DualMode.OFF else dualModeNow()
+        val geometry = retroView?.getGameGeometry()   // read once for the picture screen and the layout
         val display = secondScreens.current.value.takeIf { wanted != DualMode.OFF }
         // A different display, or the same one at a new size or density: a new window.
         if (presentation?.display?.displayId != display?.displayId || (display != null && shapeOf(display) != presentationShape)) {
@@ -2810,7 +2809,7 @@ class GameActivity : ComponentActivity() {
         }
         // No window on the second display (it went before it showed): nothing is moved onto it, both screens stay here.
         val mode = if (display != null && presentation == null) DualMode.OFF else wanted
-        val picture = if (display == null || presentation == null) PictureOn.MAIN else pictureOnNow(display)
+        val picture = if (display == null || presentation == null) PictureOn.MAIN else pictureOnNow(display, geometry)
         val old = dualMode
         val oldPicture = pictureOn
         val changed = mode != old
@@ -2835,32 +2834,33 @@ class GameActivity : ComponentActivity() {
             syncN3dsCore()
             if (wasSplit && !split) restoreN3dsScreen()
         }
-        relayoutFrontend()
+        relayoutFrontend(geometry)
     }
 
     /**
      * Which display is the picture screen for [display]: the game's window as landscape (it is locked so while dual)
      * against the display's real size as it is turned now, unless a bottom screen is chosen (the console's Bottom screen,
-     * else Settings → Emulators').
+     * else Settings → Emulators'). [geometry]: the view's game geometry (null before the view).
      */
-    private fun pictureOnNow(display: Display): PictureOn {
+    private fun pictureOnNow(display: Display, geometry: FloatArray?): PictureOn {
         val root = findViewById<View>(R.id.root)
         val dm = resources.displayMetrics
         val w = if (root.width > 0) root.width else dm.widthPixels
         val h = if (root.height > 0) root.height else dm.heightPixels
         val real = android.graphics.Point().also { @Suppress("DEPRECATION") display.getRealSize(it) }
-        val bottom = BottomScreenOptions.resolve(frontendValues, AndroidAppSettings(this).bottomScreen)
-        return DualScreen.pictureOn(maxOf(w, h), minOf(w, h), real.x, real.y, coreRotated(), bottom)
+        val bottom = BottomScreenOptions.resolve(frontendValues, appSettings.bottomScreen)
+        // A core that turns its picture (SET_ROTATION): the second display's regions draw it unturned, so it stays on main.
+        return DualScreen.pictureOn(maxOf(w, h), minOf(w, h), real.x, real.y, GameGeometry.of(geometry).rotated, bottom)
     }
 
-    /** The core turns its picture (SET_ROTATION): the second display's regions draw it unturned, so it stays on main. */
-    private fun coreRotated(): Boolean = GameGeometry.of(retroView?.getGameGeometry()).rotated
-
-    /** Either display's size changed: a new picture screen lays both out again ([syncDual]). */
-    private fun recheckPictureOn() {
+    /**
+     * Either display's size or the core's geometry changed: a new picture screen lays both out again ([syncDual]).
+     * [geometry]: the view's, when the caller has just read it.
+     */
+    private fun recheckPictureOn(geometry: FloatArray? = null) {
         if (dualMode == DualMode.OFF) return
         val display = presentation?.display ?: return
-        if (pictureOnNow(display) != pictureOn) syncDual()
+        if (pictureOnNow(display, geometry ?: retroView?.getGameGeometry()) != pictureOn) syncDual()
     }
 
     /** While the second screen is in use the main display stays landscape, either way up; then the previous orientation is back. */
@@ -2933,9 +2933,8 @@ class GameActivity : ComponentActivity() {
 
     /** The app's theme (accent, option text size) for the panel, on either display. */
     private fun panelTheme(): @Composable (@Composable () -> Unit) -> Unit {
-        val settings = AndroidAppSettings(this)
-        val colors = nxColorsFor(settings.accent, settings.secondaryAccent)
-        val optionText = settings.optionTextSize.ofListLabel
+        val colors = nxColorsFor(appSettings.accent, appSettings.secondaryAccent)
+        val optionText = appSettings.optionTextSize.ofListLabel
         return { content -> NxTheme(colors) { CompositionLocalProvider(LocalNxOptionText provides optionText) { content() } } }
     }
 
@@ -2945,7 +2944,7 @@ class GameActivity : ComponentActivity() {
      */
     private fun syncPanel() {
         val p = presentation
-        val shown = p != null && (dualMode == DualMode.PANEL || dualMode == DualMode.PANEL_UP)
+        val shown = panelShown()
         val onMain = pictureOn == PictureOn.SECOND
         val content = if (shown) panelContent(gamePill = dualMode == DualMode.PANEL_UP) else null
         p?.showPanelPill(dualMode == DualMode.SPLIT && !onMain)
@@ -2956,11 +2955,16 @@ class GameActivity : ComponentActivity() {
             updatePadVisibility()
             if (mainPanelShown()) releaseAllGameInput()   // the pad went from under the fingers: nothing it held may stick
         }
-        if (shown) {
+        // Re-read as it comes up; while up, each save, load and RA event refreshes it.
+        if (shown && !panelWasShown) {
             refreshSlots()
             refreshPanelAchievements()
         }
+        panelWasShown = shown
     }
+
+    /** The panel is up, on either display (PANEL, PANEL_UP). */
+    private fun panelShown(): Boolean = presentation != null && (dualMode == DualMode.PANEL || dualMode == DualMode.PANEL_UP)
 
     /**
      * The panel ([content]) over the whole game window on main, opaque and taking every touch there; or only the Panel
@@ -3671,7 +3675,7 @@ class GameActivity : ComponentActivity() {
                 }
             }
             is MenuEffect.SetSecondScreen -> {
-                AndroidAppSettings(this).secondScreen = effect.on
+                appSettings.secondScreen = effect.on
                 syncDual()
             }
             MenuEffect.SaveForConsole -> saveOptions(game = false)
@@ -4207,12 +4211,16 @@ class GameActivity : ComponentActivity() {
         refreshPanelAchievements()
     }
 
-    /** The panel's Achievements tab: the set and its summary while there is a session with a set, else none (no tab). */
+    /**
+     * The panel's Achievements tab: the set and its summary while there is a session with a set, else none (no tab). Only
+     * while the panel is up ([syncPanel] reads it as it comes up).
+     */
     private fun refreshPanelAchievements() {
+        if (!panelShown()) return
         val b = achievements?.takeIf { it.available }
         val summary = b?.summary()
         panelAchievements.value = if (b != null && summary != null) {
-            PanelAchievements(b.list().sortedBy(AndroidAppSettings(this).raSortOrder), summary, b.badges)   // the menu's order
+            PanelAchievements(b.list().sortedBy(appSettings.raSortOrder), summary, b.badges)   // the menu's order
         } else null
     }
 

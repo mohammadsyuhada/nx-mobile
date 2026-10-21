@@ -199,6 +199,10 @@ public:
     // before it loads. Any thread.
     std::array<float, 4> getGameGeometry() const;
 
+    // True when getGameGeometry() changed (SET_GEOMETRY's size, SET_ROTATION) since the last call; cleared by this call.
+    // Read after step(), whose own aspect refresh has run by then. Any thread.
+    bool takeGameGeometryChanged() { return geometryChanged.exchange(false); }
+
     // True once the running core delivered a frame as RETRO_HW_FRAME_BUFFER_VALID (its own GL framebuffer); false
     // before any frame and while frames are software. Any thread.
     bool isHardwareRendered() const;
@@ -257,6 +261,7 @@ private:
     std::atomic<float> geometryHeight { 0.0F };
     std::atomic<float> geometryAspect { 0.0F };
     std::atomic<float> geometryRotation { 0.0F };
+    std::atomic<bool> geometryChanged { false };
     std::atomic<bool> hardwareFrame { false };
     // Set on the GL thread by handleVideoRefresh, rethrown by step() after retro_run returns.
     std::exception_ptr videoCallbackError = nullptr;

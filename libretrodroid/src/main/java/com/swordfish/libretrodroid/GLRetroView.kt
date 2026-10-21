@@ -123,10 +123,6 @@ class GLRetroView(
      * release the Surface right after; drawing to a surface that went bad stops until a new one is set.
      */
     fun setSecondarySurface(surface: Surface?, width: Int, height: Int) {
-        if (Thread.currentThread().name.startsWith("GLThread")) {
-            secondaryOutput.setSurface(surface, width, height)
-            return
-        }
         // Setting a surface needn't wait; nor does a null on a detached view (its exited GL thread took the EGL surface).
         if (surface != null || emulationThreadGone) {
             queueEvent { secondaryOutput.setSurface(surface, width, height) }
@@ -215,6 +211,9 @@ class GLRetroView(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     private val retroGLIssuesErrors = MutableSharedFlow<Int>(1)
+    // Its own flow, not retroGLEventsSubject: there a main thread busy for a few frames would drop it under FrameRendered.
+    // One buffered change is enough, as the collector reads the geometry afresh.
+    private val gameGeometryChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
     private val rumbleEventsSubject = MutableSharedFlow<RumbleEvent>()
     private val shutdownRequests = MutableSharedFlow<Unit>(replay = 1)
@@ -514,6 +513,12 @@ class GLRetroView(
         return retroGLEventsSubject
     }
 
+    /**
+     * Emits after a frame that changed [getGameGeometry] (the core's SET_GEOMETRY size and aspect, or its SET_ROTATION):
+     * nothing per frame otherwise. Changes before a collector starts are not replayed.
+     */
+    fun getGameGeometryChanges(): Flow<Unit> = gameGeometryChanges
+
     fun getGLRetroErrors(): Flow<Int> {
         return retroGLIssuesErrors
     }
@@ -668,6 +673,7 @@ class GLRetroView(
                 LibretroDroid.step(this@GLRetroView)
                 retroGLEventsSubject.tryEmit(GLRetroEvents.FrameRendered)
                 if (LibretroDroid.takeShutdownRequest()) shutdownRequests.tryEmit(Unit)
+                if (LibretroDroid.takeGameGeometryChanged()) gameGeometryChanges.tryEmit(Unit)
                 if (!shaderErrorPolled) {
                     shaderErrorPolled = true
                     reportShaderError()

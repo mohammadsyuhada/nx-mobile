@@ -417,6 +417,7 @@ void LibretroDroid::create(
     geometryHeight = 0.0F;
     geometryAspect = 0.0F;
     geometryRotation = 0.0F;
+    geometryChanged = false;
     hardwareFrame.store(false);
 
     gbalink::forgetCore();   // nx-mobile: the new core registers its netpacket interface itself (retro_init or load)
@@ -706,6 +707,7 @@ void LibretroDroid::step() {
         );
         geometryWidth = (float) Environment::getInstance().getGameGeometryWidth();
         geometryHeight = (float) Environment::getInstance().getGameGeometryHeight();
+        geometryChanged = true;
 
         dirtyVideo = true;
     }
@@ -714,6 +716,7 @@ void LibretroDroid::step() {
         Environment::getInstance().clearScreenRotationUpdated();
 
         geometryRotation = Environment::getInstance().getScreenRotation();
+        geometryChanged = true;
         video->updateRotation(geometryRotation);
     }
 

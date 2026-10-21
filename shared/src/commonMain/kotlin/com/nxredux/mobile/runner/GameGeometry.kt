@@ -11,15 +11,6 @@ data class GameGeometry(val width: Float, val height: Float, val aspect: Float, 
     /** The core turns its picture (SET_ROTATION, radians). */
     val rotated: Boolean get() = abs(rotation) > ROTATED
 
-    /** What a change from this geometry to [next] needs: the layouts made from the old size and aspect are stale. */
-    fun changeTo(next: GameGeometry): Change = Change(
-        relayout = width != next.width || height != next.height || aspect != next.aspect,
-        rotation = rotated != next.rotated,
-    )
-
-    /** [relayout]: a new frame size or aspect (the frontend lays out again); [rotation]: the core turned its picture or back. */
-    data class Change(val relayout: Boolean, val rotation: Boolean)
-
     companion object {
         private const val ROTATED = 0.01f
 
