@@ -102,6 +102,8 @@ fceumm_BUILD_PATH = .
 # jni/Android.mk defines LOCAL_MODULE := retro -> libs/arm64-v8a/libretro.so
 fceumm_ARTIFACT = libs/$(ABI)/libretro.so
 
+# patches/snes9x/0001 (nx-redux's): retro_cheat_set copies the code to the heap; database codes overflowed its 256-byte
+# stack buffer.
 snes9x_REPO = https://github.com/libretro/snes9x
 snes9x_HASH = fae2fea08f74180759ef540ee94259213f503480
 snes9x_LICENSE = LICENSE
@@ -136,6 +138,8 @@ mgba_FLAGS = -DBUILD_LIBRETRO=ON -DUSE_SQLITE3=OFF -DNX_SIOLS_DIR=$(CURDIR)/sio_
 mgba_LICENSE_EXTRA = sio_lockstep/NOTICE.txt
 mgba_ARTIFACT = mgba_libretro.so
 
+# patches/mupen64plus_next/0012 (nx-redux's): retro_cheat_set sizes its code arrays to the code; database codes with
+# more than 256 parts overflowed them.
 mupen64plus_next_REPO = https://github.com/libretro/mupen64plus-libretro-nx
 mupen64plus_next_HASH = 6752836de8b224febfd5708444755b77712ac939
 mupen64plus_next_LICENSE = LICENSE GLideN64/LICENSE mupen64plus-core/LICENSES mupen64plus-rsp-hle/LICENSES mupen64plus-rsp-cxd4/COPYING \
@@ -364,6 +368,8 @@ swanstation_ARTIFACT = swanstation_libretro_android.so
 # 32X only (GPGX runs MD/SMS/GG/SG/SEGACD). jni/Android.mk at the repo root, LOCAL_MODULE := retro. The default
 # recursive submodule init pulls libpicofe, cyclone, emu2413, libchdr and dr_libs, all compiled.
 # patches/picodrive.patch turns the SH2 dynarec on for arm64 (upstream enables it for 32-bit arm only).
+# patches/picodrive/0001 (nx-redux's), after it: retro_cheat_set copies the code to the heap and each part into its
+# 12-byte field with a bound; long database codes and parts overflowed both.
 picodrive_REPO = https://github.com/irixxxx/picodrive
 picodrive_HASH = b0be121b7d58d6ee1ee2809974e62893c80a8264
 picodrive_LICENSE = COPYING
