@@ -2750,7 +2750,8 @@ class GameActivity : ComponentActivity() {
         val g = retroView?.getGameGeometry() ?: return emptyList()
         val dsFrame = isNds && NdsLayout.isDsFrame(g[0].roundToInt(), g[1].roundToInt())
         val regions = when {
-            dualMode == DualMode.SPLIT && isNds -> DualScreen.ndsSecond(sw, sh, DualScreen.splitMain(NdsSettings.parse(frontendValues).big, pictureOn))
+            // Not the plain DS stack (no frame yet, or another layout): main draws it whole, so nothing is cut for here.
+            dualMode == DualMode.SPLIT && isNds -> if (!dsFrame) return emptyList() else DualScreen.ndsSecond(sw, sh, DualScreen.splitMain(NdsSettings.parse(frontendValues).big, pictureOn))
             dualMode == DualMode.SPLIT && isN3ds -> DualScreen.n3dsSecond(sw, sh, DualScreen.splitMain(n3dsPicture, pictureOn))
             dualMode == DualMode.PANEL_UP && dsFrame -> DualScreen.ndsPanelUp(sw, sh, NdsSettings.parse(frontendValues))
             else -> return listOfNotNull(wholeFrameRegion(sw, sh, g))
@@ -2800,13 +2801,15 @@ class GameActivity : ComponentActivity() {
      * screen options for the new mode, and lays both displays out again.
      */
     private fun syncDual() {
-        val mode = if (isFinishing || isDestroyed) DualMode.OFF else dualModeNow()
-        val display = secondScreens.current.value.takeIf { mode != DualMode.OFF }
+        val wanted = if (isFinishing || isDestroyed) DualMode.OFF else dualModeNow()
+        val display = secondScreens.current.value.takeIf { wanted != DualMode.OFF }
         // A different display, or the same one at a new size or density: a new window.
         if (presentation?.display?.displayId != display?.displayId || (display != null && shapeOf(display) != presentationShape)) {
             hidePresentation()
             display?.let(::showPresentation)
         }
+        // No window on the second display (it went before it showed): nothing is moved onto it, both screens stay here.
+        val mode = if (display != null && presentation == null) DualMode.OFF else wanted
         val picture = if (display == null || presentation == null) PictureOn.MAIN else pictureOnNow(display)
         val old = dualMode
         val oldPicture = pictureOn
@@ -2819,7 +2822,10 @@ class GameActivity : ComponentActivity() {
         // Under a panel on the second display nothing is drawn there; with the picture there, the panel is on main.
         if (secondDraws(old, oldPicture) != secondDraws(mode, picture)) {
             val surface = secondSurface.takeIf { secondDraws(mode, picture) }
-            retroView?.takeIf { surface == null || it.isAttachedToWindow }?.setSecondarySurface(surface, secondW, secondH)
+            // Starting to draw before the surface exists: onSurface hands it over, and there is nothing to drop (no wait).
+            if (surface != null || !secondDraws(mode, picture)) {
+                retroView?.takeIf { surface == null || it.isAttachedToWindow }?.setSecondarySurface(surface, secondW, secondH)
+            }
         }
         syncPanel()
         if ((changed || moved) && isN3ds) {
@@ -2893,6 +2899,7 @@ class GameActivity : ComponentActivity() {
             if (presentation !== p) return@setOnDismissListener   // hidePresentation's own dismiss
             presentation = null
             presentationShape = null
+            p.releaseTouch()   // a finger held on it lifts in the core: its own up never comes once dismissed
             dropSecondSurface()
             findViewById<View>(R.id.root).post { syncDual() }
         }
@@ -2915,7 +2922,8 @@ class GameActivity : ComponentActivity() {
     /** The GL thread stops drawing on the second surface (waiting for it), and nothing is cut for it. */
     private fun dropSecondSurface() {
         retroView?.let {
-            it.setSecondarySurface(null, 0, 0)
+            // No surface held (never created, or surfaceDestroyed already dropped it): nothing for the GL thread to drop.
+            if (secondSurface != null) it.setSecondarySurface(null, 0, 0)
             it.secondaryRegions = emptyList()
         }
         secondSurface = null

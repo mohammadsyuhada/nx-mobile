@@ -403,6 +403,12 @@ class MainActivity : ComponentActivity(), FolderPicker {
         val colors = nxColorsFor(settings.accent, settings.secondaryAccent)
         prompt.theme = { content -> NxTheme(colors) { content() } }
         prompt.showPanel { BottomScreenButton { state.onboardingBottomScreenOnSecond() } }
+        // The system dismisses it itself when the display's metrics change: forget it, and show it again if still wanted.
+        prompt.setOnDismissListener {
+            if (bottomScreenPrompt !== prompt) return@setOnDismissListener   // syncBottomScreenPrompt's own dismiss
+            bottomScreenPrompt = null
+            window.decorView.post { syncBottomScreenPrompt() }
+        }
         // The display may have gone meanwhile: the step still works from the main screen.
         runCatching { prompt.show() }.onSuccess { bottomScreenPrompt = prompt }
             .onFailure { NxLog.w("NXAPP", "bottom screen prompt: ${it.message}") }

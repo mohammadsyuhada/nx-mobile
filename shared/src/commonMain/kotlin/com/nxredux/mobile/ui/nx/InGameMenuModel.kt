@@ -947,7 +947,7 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         const val CONSOLE_SETTINGS_LABEL = "Console Settings"
         const val DISC_KEY = "nx:disc"
         const val DISC_LABEL = "Disc"
-        const val SECOND_SCREEN_KEY = "nx_second_screen"
+        const val SECOND_SCREEN_KEY = "nx:second_screen"   // a menu row, not a frontend (nx_) option
         const val SECOND_SCREEN_LABEL = "Second screen"
         const val DISC_INFO = "Left and right change the disc in the drive,\nas opening the lid and swapping it would."
         const val PLAYERS_LABEL = "Players"
