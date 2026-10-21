@@ -72,6 +72,9 @@ public:
 
     /** Either change invalidates the region table; readMemory rebuilds it lazily from the current inputs. */
     void setMemoryMap(const struct retro_memory_map* map);
+    /** The core's memory map (its own copy), or nullptr; [memoryMapVersion] changes with every setMemoryMap. */
+    const struct retro_memory_map* currentMemoryMap() const { return haveMemoryMap ? &memoryMap : nullptr; }
+    unsigned memoryMapVersion() const { return mapVersion; }
     void setCoreMemoryAccessors(size_t (*getSize)(unsigned), void* (*getData)(unsigned));
 
     void login(const std::string& user, const std::string& token);
@@ -117,6 +120,7 @@ private:
     std::vector<std::string> descriptorStrings;
     struct retro_memory_map memoryMap {};
     bool haveMemoryMap = false;
+    unsigned mapVersion = 0;
     MemoryRegionTable regions;
     bool regionsInitTried = false;   // readMemory's lazy init runs at most once per loadGame / invalidation
     uint32_t consoleId = 0;

@@ -49,6 +49,7 @@
 #include "renderers/es3/imagerendereres3.h"
 #include "utils/rect.h"
 #include "achievements/achievements.h"
+#include "cheatmem.h"
 
 namespace libretrodroid {
 
@@ -70,6 +71,8 @@ private:
 public:
     void setCheat(unsigned index, bool enabled, const std::string& code);
     void resetCheat();
+    /** RetroArch RAM-patch cheats (handler 1), applied to the core's system RAM before every retro_run; empty = none. */
+    void setMemoryCheats(std::vector<CheatMemPatch> patches);
 
     // serializeState/serializeSRAM/serializeRTC/serializeMemory return a new[] buffer the caller must delete[], or (nullptr, 0) when there is
     // nothing to save (no core, no SRAM, or the core refused to serialize).
@@ -276,6 +279,14 @@ private:
     bool dirtyVideo = false;
 
     std::mutex coreLock;
+
+    // Under coreLock. The RAM is found on first use, again when the core's memory map changes.
+    std::vector<CheatMemPatch> memoryCheats;
+    std::vector<const CheatMemPatch*> memoryCheatList;
+    CheatMem cheatMem {};
+    bool cheatMemReady = false;
+    unsigned cheatMemMapVersion = 0;
+    void applyMemoryCheats();
 
     std::unique_ptr<Core> core;
     bool coreInitialized = false;

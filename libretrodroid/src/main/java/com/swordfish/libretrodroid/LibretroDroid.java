@@ -167,6 +167,8 @@ public class LibretroDroid {
 
     public static native void setCheat(int index, boolean enable, String code);
     public static native void resetCheat();
+    // nx-mobile: RetroArch RAM-patch cheats, 9 ints each (see libretrodroidjni.cpp); an empty array clears them.
+    public static native void setMemoryCheats(int[] fields);
 
     public static native byte[] serializeSRAM();
     public static native boolean unserializeSRAM(byte[] sram);

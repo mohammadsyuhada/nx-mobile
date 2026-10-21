@@ -77,6 +77,7 @@ add_library(libretrodroid SHARED
         videolayout.cpp
         screenregion.h
         screenregion.cpp
+        cheatmem.cpp
         hwcontext.h
         hwcontext.cpp
         vulkanbridge.h

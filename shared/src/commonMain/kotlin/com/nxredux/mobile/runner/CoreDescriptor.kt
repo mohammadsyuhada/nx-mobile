@@ -55,8 +55,16 @@ data class CoreDescriptor(
      * Every key needs a [defaultOptions] entry with a value that is not hidden, so the core's own default never slips through.
      */
     val hiddenValues: Map<String, Set<String>> = emptyMap(),
-    /** False when the core ignores retro_cheat_set (fbneo, flycast, gearcoleco, ...): the in-game menu has no Cheats row. */
+    /**
+     * False when the core ignores retro_cheat_set (fbneo, flycast, gearcoleco, ...): code cheats do nothing there, and
+     * the in-game menu has no Cheats row unless [ramCheats].
+     */
     val cheats: Boolean = true,
+    /**
+     * For a core with no [cheats]: its database files hold RetroArch RAM patches (handler 1), which the frontend applies
+     * to the core's system RAM, so its Cheats row lists those and the Cheat Database installs its folder.
+     */
+    val ramCheats: Boolean = false,
     /** The system-dir subfolder the core reads its BIOS from (flycast's `<system>/dc/`); empty = the system dir itself. */
     val biosSubdir: String = "",
     /**

@@ -33,9 +33,12 @@ class CheatFileTest {
         )
     }
 
-    @Test fun count_line_must_come_first_and_be_positive() {
+    @Test fun count_line_can_come_anywhere_and_must_be_positive() {
         assertNull(CheatFile.parse(""))
-        assertNull(CheatFile.parse("cheat0_desc = \"x\"\ncheat0_code = \"y\"\ncheats = 1\n"))
+        assertNull(CheatFile.parse("cheat0_desc = \"x\"\ncheat0_code = \"y\"\n"))
+        // RetroArch's cheat search writes the count last (nx-redux #261).
+        assertEquals(listOf(Cheat("x", "y")), CheatFile.parse("cheat0_desc = \"x\"\ncheat0_code = \"y\"\ncheats = 1\n"))
+        assertEquals(listOf(Cheat("x", "y")), CheatFile.parse("cheats_x = 9\ncheats = 1\ncheat0_desc = \"x\"\ncheat0_code = \"y\"\n"))
         assertNull(CheatFile.parse("cheats = 0\n"))
         assertNull(CheatFile.parse("cheats = abc\n"))
         assertEquals(listOf(Cheat("x", "y")), CheatFile.parse("\n\n  cheats=1\ncheat0_desc = \"x\"\ncheat0_code = \"y\"\n"))
@@ -68,8 +71,8 @@ class CheatFileTest {
             cheat0_desc = "d"
             cheat0_code = "c"
             cheat0_address = 1234
-            cheat0_handler = 1
             cheat0_big_endian = false
+            cheat0_unknown_key = 5
             cheat1_desc = "out of range"
             cheat1_code = "zz"
             cheat7_enable = true
@@ -107,5 +110,70 @@ class CheatFileTest {
     @Test fun count_is_capped() {
         val text = "cheats = 999999\ncheat0_desc = \"d\"\ncheat0_code = \"c\"\ncheat5000_desc = \"far\"\ncheat5000_code = \"x\"\n"
         assertEquals(listOf(Cheat("d", "c")), CheatFile.parse(text))
+    }
+
+    // RetroArch "handler 1" cheats (nx-redux #261): a RAM patch the frontend applies, no code. The FBNeo shape: quoted
+    // numbers, the count line last.
+    private val ramCheats = """
+        cheat0_desc = "Inf energy P1"
+        cheat0_handler = "1"
+        cheat0_address = "4608"
+        cheat0_value = "0x40"
+        cheat0_memory_search_size = "3"
+        cheat0_cheat_type = "1"
+        cheat0_enable = "true"
+
+        cheat1_desc = "Score"
+        cheat1_handler = 1
+        cheat1_address = 16
+        cheat1_value = 4660
+        cheat1_memory_search_size = 4
+        cheat1_cheat_type = 1
+        cheat1_big_endian = "true"
+        cheat1_address_bit_position = 255
+        cheat1_repeat_count = 3
+        cheat1_repeat_add_to_value = 1
+        cheat1_repeat_add_to_address = 2
+
+        cheat2_desc = "Handler 0 without a code"
+        cheat2_handler = 0
+
+        cheats = "3"
+    """.trimIndent()
+
+    @Test fun ram_patch_cheats_parse_with_the_count_line_last() {
+        assertEquals(
+            listOf(
+                Cheat("Inf energy P1", "", mem = MemoryPatch(address = 4608, value = 0x40, size = 3, type = 1)),
+                Cheat(
+                    "Score", "",
+                    mem = MemoryPatch(
+                        address = 16, value = 4660, size = 4, type = 1, bitMask = 255, bigEndian = true,
+                        repeatCount = 3, repeatAddToValue = 1, repeatAddToAddress = 2,
+                    ),
+                ),
+            ),
+            CheatFile.parse(ramCheats),   // a quoted enable = "true" stays off; a handler-0 cheat with no code is dropped
+        )
+    }
+
+    @Test fun ram_patch_defaults_follow_retroarch() {
+        val text = "cheats = 1\ncheat0_desc = \"d\"\ncheat0_handler = 1\n"
+        assertEquals(MemoryPatch(), CheatFile.parse(text)!![0].mem)
+        assertEquals(1, MemoryPatch().repeatCount)
+        assertEquals(1, MemoryPatch().repeatAddToAddress)
+    }
+
+    @Test fun numbers_read_like_strtoul_base_0() {
+        fun value(v: String) = CheatFile.parse("cheats = 1\ncheat0_desc = \"d\"\ncheat0_handler = 1\ncheat0_value = $v\n")!![0].mem!!.value
+        assertEquals(255L, value("0xFF"))
+        assertEquals(8L, value("010"))                // octal, as RetroArch reads it
+        assertEquals(12L, value("\"12\""))
+        assertEquals(4294967295L, value("4294967295"))
+        assertEquals(0L, value("x1"))                 // not a number: the field keeps its default
+    }
+
+    @Test fun a_code_cheat_has_no_memory_patch() {
+        assertNull(CheatFile.parse("cheats = 1\ncheat0_desc = \"d\"\ncheat0_code = \"01\"\n")!![0].mem)
     }
 }

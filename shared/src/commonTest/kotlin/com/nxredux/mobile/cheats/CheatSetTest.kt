@@ -97,4 +97,27 @@ class CheatSetTest {
         assertEquals(listOf(true, false, false, false), dupes.withSaved(listOf("Max HP")).entries.map { it.enabled })
         assertEquals(listOf("Max HP"), dupes.toggle(0, true).enabledKeys())
     }
+
+    @Test fun ram_patches_go_to_the_frontend_not_the_core() {
+        val patch = MemoryPatch(address = 1, value = 2, size = 3, type = 1)
+        val mixed = CheatSet(
+            listOf(
+                CheatEntry("Code", "01", "Code", enabled = true),
+                CheatEntry("Ram", "", "Ram", enabled = true, mem = patch),
+                CheatEntry("Ram off", "", "Ram off", enabled = false, mem = patch.copy(value = 9)),
+            ),
+            "",
+        )
+        assertEquals(listOf("01"), mixed.enabledCodes())
+        assertEquals(listOf(patch), mixed.enabledPatches())
+    }
+
+    @Test fun a_core_without_codes_keeps_only_ram_patches() {
+        val patch = MemoryPatch(address = 1, value = 2, size = 3, type = 1)
+        val mixed = CheatSet(
+            listOf(CheatEntry("Code", "01", "Code", enabled = true), CheatEntry("Ram", "", "Ram", enabled = false, mem = patch)),
+            "Game.cht",
+        )
+        assertEquals(CheatSet(listOf(mixed.entries[1]), "Game.cht"), mixed.ramPatchesOnly())
+    }
 }
