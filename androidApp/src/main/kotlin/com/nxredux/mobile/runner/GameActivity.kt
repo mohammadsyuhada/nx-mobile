@@ -159,6 +159,7 @@ import com.nxredux.mobile.storage.AndroidLibraryIndexStore
 import com.nxredux.mobile.storage.AndroidRefs
 import com.nxredux.mobile.storage.AndroidRomsSources
 import com.nxredux.mobile.test.NxTestResults
+import com.nxredux.mobile.tools.CheatsRoot
 import com.swordfish.libretrodroid.GLRetroView
 import com.swordfish.libretrodroid.GLRetroViewData
 import com.swordfish.libretrodroid.LibretroDroid
@@ -1182,7 +1183,7 @@ class GameActivity : ComponentActivity() {
             val resolvedSet = withContext(Dispatchers.IO) {
                 // PSP cheat files are named by serial ("[ULUS-10466]"), which the disc knows and the file name rarely does.
                 val serial = if (descriptor?.id == "ppsspp" && PspSerial.readable(romFileName)) PspSerialReader.read(refs, content, romFileName) else null
-                Cheats.resolve(sdRoot, tag, romFileName, title, extensions, serial)
+                Cheats.resolve(CheatsRoot.of(this@GameActivity), tag, romFileName, title, extensions, serial)
             }
             val combined = if (isDolphin) {
                 dolphinBuiltInPath = DolphinCheats.builtInFile(filesDir.absolutePath, CoreRegistry.contentName(tag, dolphinContent.await()))

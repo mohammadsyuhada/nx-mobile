@@ -7,7 +7,6 @@ import com.nxredux.mobile.cheats.db.CheatDbArchive
 import com.nxredux.mobile.cheats.db.CheatDbException
 import com.nxredux.mobile.cheats.db.CheatDbManifest
 import com.nxredux.mobile.cheats.db.CheatDbPlatform
-import com.nxredux.mobile.runner.NxStorage
 import com.nxredux.mobile.runner.writeAtomically
 import com.swordfish.libretrodroid.NxLog
 import java.io.File
@@ -26,10 +25,11 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** The Cheat Database tool on Android: HttpURLConnection into the cache, java.util.zip into `sd/Cheats/<TAG>/`. */
+/** The Cheat Database tool on Android: HttpURLConnection into the cache, java.util.zip into `Cheats/<TAG>/` under [CheatsRoot]. */
 class AndroidCheatDb(context: Context) : CheatDbPlatform {
     private val app = context.applicationContext
-    private val sdRoot: File get() = NxStorage.root(app)
+    // Read at each use: the home folder or All files access can change while the process lives.
+    private val sdRoot: File get() = CheatsRoot.of(app)
     private val cacheDir: File get() = File(app.cacheDir, "cheatdb").apply { mkdirs() }
 
     override fun freeBytes(): Long = runCatching { StatFs(sdRoot.path).availableBytes }.getOrDefault(Long.MAX_VALUE)

@@ -17,4 +17,7 @@ object CheatDbService {
             CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate), System::currentTimeMillis,
         ).also { instance = it }
     }
+
+    /** Re-reads the manifest when a controller exists (after [CheatsRoot.moveFromPrivate] moved it). */
+    fun refreshIfStarted() { instance?.refresh() }
 }
