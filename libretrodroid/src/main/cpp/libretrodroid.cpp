@@ -302,7 +302,10 @@ void LibretroDroid::onSurfaceCreated() {
     geometryWidth = (float) system_av_info.geometry.base_width;
     geometryHeight = (float) system_av_info.geometry.base_height;
     // A re-created Video (new context after load) gets the running game's aspect ratio; resume() does it the first time.
-    if (gameLoaded) refreshAspectRatio();
+    if (gameLoaded) {
+        refreshAspectRatio();
+        geometryChanged = true;
+    }
 
     if (Environment::getInstance().getHwContextReset() != nullptr && !(vulkan && hwContextLive)) {
         Environment::getInstance().getHwContextReset()();
@@ -616,7 +619,9 @@ void LibretroDroid::resume() {
     if (fpsSync) fpsSync->reset();
     if (audio) audio->start();
     // The Video is the GL thread's: the ratio is applied there at the next step.
-    geometryAspect = getAspectRatio();
+    float aspect = getAspectRatio();
+    if (aspect != geometryAspect) geometryChanged = true;
+    geometryAspect = aspect;
     aspectRatioPending = true;
 }
 

@@ -2872,7 +2872,7 @@ class GameActivity : ComponentActivity() {
         val p = SecondScreenPresentation(this, display)
         p.onSurface = { surface, width, height ->
             secondSurface = surface?.let { SecondSurface(it, width, height) }
-            pushSecondSurface()   // a null waits for the GL thread to drop its EGL surface, before the Surface goes
+            pushSecondSurface(force = true)   // a null waits for the GL thread to drop its EGL surface, before the Surface goes
             relayoutFrontend()
             if (surface != null) findViewById<View>(R.id.root).post { recheckPictureOn() }   // the display may have turned or resized
         }
@@ -2909,12 +2909,13 @@ class GameActivity : ComponentActivity() {
     /**
      * Hands the GL thread the second surface while it draws there ([secondDraws]: split, or the picture there), else takes
      * it away, waiting for the GL thread to drop its EGL surface. Only a change is sent: nothing held, nothing to drop (no
-     * wait). A view not running yet gets the surface from the on-ready path.
+     * wait). A view not running yet gets the surface from the on-ready path. [force] (a surfaceChanged) sends an unchanged
+     * surface again: that clears the GL thread's dropped state after an EGL failure.
      */
-    private fun pushSecondSurface() {
+    private fun pushSecondSurface(force: Boolean = false) {
         val view = retroView ?: return
         val want = secondSurface?.takeIf { secondDraws() }
-        if (want == pushedSecondSurface || (want != null && !view.isAttachedToWindow)) return
+        if ((want == pushedSecondSurface && !force) || (want != null && !view.isAttachedToWindow)) return
         view.setSecondarySurface(want?.surface, want?.width ?: 0, want?.height ?: 0)
         pushedSecondSurface = want
     }
