@@ -24,19 +24,18 @@ enum class PictureOn { MAIN, SECOND }
  * Which display is the bottom (touch) screen: [AUTO] goes by shape ([DualScreen.pictureOn]); [MAIN] or [SECOND] is the
  * user's choice (Settings → Emulators → Bottom screen, or the console's override), the picture going on the other.
  */
-enum class BottomScreen {
-    AUTO, MAIN, SECOND;
+enum class BottomScreen(
+    /** As stored: the system setting's pref and the console override ([com.nxredux.mobile.options.BottomScreenOptions]). */
+    val value: String,
+) {
+    AUTO("auto"), MAIN("main"), SECOND("second");
 
     companion object {
-        /** The stored value (`auto|main|second`, as the system setting and the console override save it); anything else is [AUTO]. */
-        fun parse(value: String?): BottomScreen = when (value) {
-            "main" -> MAIN
-            "second" -> SECOND
-            else -> AUTO
-        }
+        /** A stored [value]; anything else (the override's `default` too) is [AUTO]. */
+        fun parse(value: String?): BottomScreen = entries.firstOrNull { it.value == value } ?: AUTO
 
         /** The console's [override] when it picks a screen (main/second), else the [system] setting. */
-        fun resolve(override: String?, system: String?): BottomScreen = parse(override).takeIf { it != AUTO } ?: parse(system)
+        fun resolve(override: String?, system: BottomScreen): BottomScreen = parse(override).takeIf { it != AUTO } ?: system
     }
 }
 
@@ -86,11 +85,11 @@ object DualScreen {
         return PxRect(NdsLayout.wholePx((areaW - w) / 2f), NdsLayout.wholePx((areaH - h) / 2f), w, h)
     }
 
-    /** The [big] DS screen alone in the main display's area: fitted 4:3 and centred, shaded; touch only on the bottom screen. */
-    fun ndsMain(areaW: Float, areaH: Float, big: NdsScreen): List<NdsRegion> = single(areaW, areaH, big, NdsLayout.src(big), DS_ASPECT)
-
-    /** The screen other than [big] alone on the second display, by the same rules. */
-    fun ndsSecond(w: Float, h: Float, big: NdsScreen): List<NdsRegion> = ndsMain(w, h, big.other)
+    /**
+     * Split, DS screen [which] alone on a display's area (the main display's screen, or its `other` on the second one):
+     * fitted 4:3 and centred, shaded; touch only on the bottom screen.
+     */
+    fun ndsScreen(areaW: Float, areaH: Float, which: NdsScreen): List<NdsRegion> = single(areaW, areaH, which, NdsLayout.src(which), DS_ASPECT)
 
     /** Both DS screens side by side on the main display (the panel is on the second one); touch on the bottom screen. */
     fun ndsPanelUp(areaW: Float, areaH: Float, settings: NdsSettings): List<NdsRegion> = NdsLayout.regions(
@@ -98,14 +97,11 @@ object DualScreen {
     )
 
     /** [screen]'s rectangle in the 3DS frame in the split layout. */
-    fun n3dsSrc(screen: NdsScreen): FrameRect = if (screen == NdsScreen.TOP) N3DS_TOP_SRC else N3DS_BOTTOM_SRC
+    private fun n3dsSrc(screen: NdsScreen): FrameRect = if (screen == NdsScreen.TOP) N3DS_TOP_SRC else N3DS_BOTTOM_SRC
 
-    /** The [main] 3DS screen alone in the main display's area: the top fitted 5:3, the bottom 4:3, centred. */
-    fun n3dsMain(areaW: Float, areaH: Float, main: NdsScreen): List<NdsRegion> =
-        single(areaW, areaH, main, n3dsSrc(main), if (main == NdsScreen.TOP) N3DS_TOP_ASPECT else DS_ASPECT)
-
-    /** The 3DS screen other than [main] alone on the second display. */
-    fun n3dsSecond(w: Float, h: Float, main: NdsScreen): List<NdsRegion> = n3dsMain(w, h, main.other)
+    /** Split, 3DS screen [which] alone on a display's area, as [ndsScreen]: the top fitted 5:3, the bottom 4:3, centred. */
+    fun n3dsScreen(areaW: Float, areaH: Float, which: NdsScreen): List<NdsRegion> =
+        single(areaW, areaH, which, n3dsSrc(which), if (which == NdsScreen.TOP) N3DS_TOP_ASPECT else DS_ASPECT)
 
     /**
      * The Azahar options a mode needs, or null to put back the usual ones ([DualMode.OFF], [DualMode.PANEL]: the caller
@@ -114,12 +110,12 @@ object DualScreen {
     fun n3dsCoreOptions(mode: DualMode): Map<String, String>? = when (mode) {
         DualMode.SPLIT -> mapOf(
             "citra_layout_option" to "default", "citra_stacked_small_proportion" to "1",
-            "citra_swap_screen" to "Top", "citra_swap_screen_mode" to "Hold",
+            SWAP_SCREEN to "Top", SWAP_SCREEN_MODE to "Hold",
         )
         // Panel up, the whole frame is drawn and SWAP is Azahar's own key again: Toggle, so one press swaps the screens.
         DualMode.PANEL_UP -> mapOf(
             "citra_layout_option" to "side_by_side",
-            "citra_swap_screen" to "Top", "citra_swap_screen_mode" to "Toggle",
+            SWAP_SCREEN to "Top", SWAP_SCREEN_MODE to "Toggle",
         )
         DualMode.OFF, DualMode.PANEL -> null
     }

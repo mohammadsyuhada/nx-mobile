@@ -2692,7 +2692,7 @@ class GameActivity : ComponentActivity() {
             }
             return null
         }
-        if (dualMode == DualMode.SPLIT) return DualScreen.ndsMain(w, h, DualScreen.splitMain(NdsSettings.parse(frontendValues).big, pictureOn))
+        if (dualMode == DualMode.SPLIT) return DualScreen.ndsScreen(w, h, DualScreen.splitMain(NdsSettings.parse(frontendValues).big, pictureOn))
         if (dualMode == DualMode.PANEL_UP) return DualScreen.ndsPanelUp(w, h, NdsSettings.parse(frontendValues))
         val landscape = isLandscape()
         return NdsLayout.regions(
@@ -2716,7 +2716,7 @@ class GameActivity : ComponentActivity() {
 
     /** 3DS split across the displays: the main display's screen alone, as a region of Azahar's fixed stacked frame; else null. */
     private fun n3dsSplitLayout(w: Float, h: Float): List<NdsRegion>? =
-        if (isN3ds && dualMode == DualMode.SPLIT) DualScreen.n3dsMain(w, h, DualScreen.splitMain(n3dsPicture, pictureOn)) else null
+        if (isN3ds && dualMode == DualMode.SPLIT) DualScreen.n3dsScreen(w, h, DualScreen.splitMain(n3dsPicture, pictureOn)) else null
 
     /** The GL thread draws on the second display: split, and the picture there with the panel on main ([pictureOn]). */
     private fun secondDraws(mode: DualMode = dualMode, picture: PictureOn = pictureOn): Boolean =
@@ -2738,8 +2738,8 @@ class GameActivity : ComponentActivity() {
         val dsFrame = isNds && NdsLayout.isDsFrame(g[0].roundToInt(), g[1].roundToInt())
         val regions = when {
             // Not the plain DS stack (no frame yet, or another layout): main draws it whole, so nothing is cut for here.
-            dualMode == DualMode.SPLIT && isNds -> if (!dsFrame) return emptyList() else DualScreen.ndsSecond(sw, sh, DualScreen.splitMain(NdsSettings.parse(frontendValues).big, pictureOn))
-            dualMode == DualMode.SPLIT && isN3ds -> DualScreen.n3dsSecond(sw, sh, DualScreen.splitMain(n3dsPicture, pictureOn))
+            dualMode == DualMode.SPLIT && isNds -> if (!dsFrame) return emptyList() else DualScreen.ndsScreen(sw, sh, DualScreen.splitMain(NdsSettings.parse(frontendValues).big, pictureOn).other)
+            dualMode == DualMode.SPLIT && isN3ds -> DualScreen.n3dsScreen(sw, sh, DualScreen.splitMain(n3dsPicture, pictureOn).other)
             dualMode == DualMode.PANEL_UP && dsFrame -> DualScreen.ndsPanelUp(sw, sh, NdsSettings.parse(frontendValues))
             else -> return listOfNotNull(wholeFrameRegion(sw, sh, g))
         }
@@ -2842,7 +2842,7 @@ class GameActivity : ComponentActivity() {
         val w = if (root.width > 0) root.width else dm.widthPixels
         val h = if (root.height > 0) root.height else dm.heightPixels
         val real = android.graphics.Point().also { @Suppress("DEPRECATION") display.getRealSize(it) }
-        val bottom = BottomScreenOptions.resolve(frontendValues, appSettings.bottomScreen)
+        val bottom = BottomScreen.resolve(frontendValues[BottomScreenOptions.KEY], appSettings.bottomScreen)
         // A core that turns its picture (SET_ROTATION): the second display's regions draw it unturned, so it stays on main.
         return DualScreen.pictureOn(maxOf(w, h), minOf(w, h), real.x, real.y, GameGeometry.of(geometry).rotated, bottom)
     }

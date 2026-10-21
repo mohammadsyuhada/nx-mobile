@@ -9,17 +9,12 @@ import com.nxredux.mobile.runner.BottomScreen
  */
 object BottomScreenOptions {
     const val KEY = "nx_bottom_screen"
-    const val DEFAULT = "default"
-    const val MAIN = "main"
-    const val SECOND = "second"
+    const val DEFAULT = "default"   // System default; the others are [BottomScreen.value]s ([BottomScreen.resolve] reads them)
 
     val row = FrontendOption(
-        KEY, "Bottom screen", listOf(DEFAULT, MAIN, SECOND), DEFAULT,
+        KEY, "Bottom screen", listOf(DEFAULT, BottomScreen.MAIN.value, BottomScreen.SECOND.value), DEFAULT,
         "Which screen is the touch screen with a second\nscreen in use: the picture goes on the other.\n" +
             "System default follows Settings → Emulators.",
         visual = false, valueLabels = listOf("System default", "Main screen", "Second screen"),
     )
-
-    /** The bottom screen in effect: the console's choice in [values], else the [system] setting (`auto|main|second`). */
-    fun resolve(values: Map<String, String>, system: String?): BottomScreen = BottomScreen.resolve(values[KEY], system)
 }

@@ -1908,7 +1908,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 else if (deps.builtInSecondScreen()) { onboarding.startBottomScreen(); showOnboarding() }   // the bottom screen question, then the folders
                 else startFolderSteps()
             OnboardingStep.BOTTOM_SCREEN -> {
-                if (index == 0) deps.settings.bottomScreen = "main"   // Skip keeps Auto
+                if (index == 0) deps.settings.bottomScreen = BottomScreen.MAIN   // Skip keeps Auto
                 startFolderSteps()
             }
             OnboardingStep.HANDHELD -> {
@@ -2066,7 +2066,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      */
     fun onboardingBottomScreenOnSecond() {
         if (onboarding.step != OnboardingStep.BOTTOM_SCREEN || (_screen.value as? Screen.Onboarding)?.step != OnboardingStep.BOTTOM_SCREEN) return
-        deps.settings.bottomScreen = "second"
+        deps.settings.bottomScreen = BottomScreen.SECOND
         startFolderSteps()
     }
 
@@ -2975,7 +2975,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             SettingsKind.SECONDARY_ACCENT -> pick(SecondaryAccent.entries, s.secondaryAccent, { it.label }, ::cycleSecondaryAccent)
             SettingsKind.SAVE_FORMAT -> pick(SaveFormat.entries, s.saveFormat, { it.label }, ::cycleSaveFormat)
             SettingsKind.STATE_FORMAT -> pick(StateFormat.entries, s.stateFormat, { it.label }, ::cycleStateFormat)
-            SettingsKind.BOTTOM_SCREEN -> pick(BottomScreen.entries, BottomScreen.parse(s.bottomScreen), ::bottomScreenLabel, ::cycleBottomScreen)
+            SettingsKind.BOTTOM_SCREEN -> pick(BottomScreen.entries, s.bottomScreen, ::bottomScreenLabel, ::cycleBottomScreen)
             SettingsKind.MENU_STYLE -> row.category?.let { c -> pick(MenuStyles.MAIN_MENU_STYLES, MenuStyles.styleOf(s.menuStyles, c), ::menuStyleLabel) { cycleMenuStyle(c, it) } } ?: false
             SettingsKind.GAME_LIST_STYLE -> pick(MenuStyles.GAME_LIST_STYLES, s.gameListStyle, ::menuStyleLabel, ::cycleGameListStyle)
             SettingsKind.CONTROLLER_ART -> pick(ConsoleArt.entries, s.consoleArt, { it.label }, ::cycleConsoleArt)
@@ -3173,7 +3173,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         ) + if (secondConnected) listOf(SettingsRow(SettingsKind.SECOND_SCREEN, "Second screen")) else emptyList()   // absent, not disabled, without one
         SettingsSection.SECOND_SCREEN -> listOf(
             SettingsRow(SettingsKind.SECOND_SCREEN_ENABLE, "Enable", if (deps.settings.secondScreen) "On" else "Off"),
-            SettingsRow(SettingsKind.BOTTOM_SCREEN, "Bottom screen", bottomScreenLabel(BottomScreen.parse(deps.settings.bottomScreen))),
+            SettingsRow(SettingsKind.BOTTOM_SCREEN, "Bottom screen", bottomScreenLabel(deps.settings.bottomScreen)),
         )
         // NX Redux's Settings → System save rows, so both devices name saves alike.
         SettingsSection.SAVES -> listOf(
@@ -3461,7 +3461,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** Emulators → Bottom screen: Auto, Main screen, Second screen (LEFT back, RIGHT and A forward, wrapping). */
     private fun cycleBottomScreen(step: Int) {
         val all = BottomScreen.entries
-        deps.settings.bottomScreen = all[(all.indexOf(BottomScreen.parse(deps.settings.bottomScreen)) + step).mod(all.size)].name.lowercase()
+        deps.settings.bottomScreen = all[(all.indexOf(deps.settings.bottomScreen) + step).mod(all.size)]
         refreshSettings()
     }
 

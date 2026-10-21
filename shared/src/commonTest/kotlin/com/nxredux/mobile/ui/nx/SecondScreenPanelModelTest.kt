@@ -19,8 +19,8 @@ class SecondScreenPanelModelTest {
     @Test fun tap_empty_does_nothing() = assertNull(PanelModel.tap(3, empty))
 
     @Test fun long_press_manual_saves() {
-        assertEquals(PanelEvent.Save(2), PanelModel.longPress(2, full))
-        assertEquals(PanelEvent.Save(3), PanelModel.longPress(3, empty))
+        assertEquals(PanelEvent.Save(2), PanelModel.longPress(2))
+        assertEquals(PanelEvent.Save(3), PanelModel.longPress(3))
     }
-    @Test fun long_press_auto_ignored() = assertNull(PanelModel.longPress(0, auto))
+    @Test fun long_press_auto_ignored() = assertNull(PanelModel.longPress(0))
 }

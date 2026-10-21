@@ -1,5 +1,6 @@
 package com.nxredux.mobile.settings
 
+import com.nxredux.mobile.runner.BottomScreen
 import com.nxredux.mobile.runner.ContentRef
 import com.nxredux.mobile.storage.SaveFormat
 import com.nxredux.mobile.storage.SaveNaming
@@ -321,11 +322,11 @@ interface AppSettings {
         get() = true
         set(@Suppress("UNUSED_PARAMETER") value) {}
     /**
-     * Settings → Emulators → Bottom screen (default `auto`): which display is the touch screen, `auto|main|second`
-     * ([com.nxredux.mobile.runner.BottomScreen.parse]); a console's own choice wins. Defaulted, like [debugLog].
+     * Settings → Emulators → Bottom screen (default Auto): which display is the touch screen; a console's own choice wins.
+     * Defaulted, like [debugLog].
      */
-    var bottomScreen: String
-        get() = "auto"
+    var bottomScreen: BottomScreen
+        get() = BottomScreen.AUTO
         set(@Suppress("UNUSED_PARAMETER") value) {}
 
     /**

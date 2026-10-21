@@ -18,25 +18,25 @@ class DualScreenTest {
     @Test fun mode_panel_for_regular_game() = assertEquals(DualMode.PANEL, DualScreen.mode(true, true, false, false))
 
     @Test fun nds_split_top_main() {
-        val main = DualScreen.ndsMain(1920f, 1080f, NdsScreen.TOP).single()
+        val main = DualScreen.ndsScreen(1920f, 1080f, NdsScreen.TOP).single()
         assertEquals(NdsLayout.TOP_SRC, main.src); assertFalse(main.touch)
         assertEquals(PxRect(240f, 0f, 1440f, 1080f), main.dst)
-        val second = DualScreen.ndsSecond(1240f, 1080f, NdsScreen.TOP).single()
+        val second = DualScreen.ndsScreen(1240f, 1080f, NdsScreen.TOP.other).single()
         assertEquals(NdsLayout.BOTTOM_SRC, second.src); assertTrue(second.touch)
     }
     @Test fun nds_split_swapped_touch_follows_bottom() {
-        assertTrue(DualScreen.ndsMain(1920f, 1080f, NdsScreen.BOTTOM).single().touch)
-        assertFalse(DualScreen.ndsSecond(1240f, 1080f, NdsScreen.BOTTOM).single().touch)
+        assertTrue(DualScreen.ndsScreen(1920f, 1080f, NdsScreen.BOTTOM).single().touch)
+        assertFalse(DualScreen.ndsScreen(1240f, 1080f, NdsScreen.BOTTOM.other).single().touch)
     }
     @Test fun nds_split_main_follows_area() =
-        assertEquals(PxRect(0f, 0f, 1080f, 810f), DualScreen.ndsMain(1080f, 1920f, NdsScreen.TOP).single().dst.let { it.copy(y = 0f) })
+        assertEquals(PxRect(0f, 0f, 1080f, 810f), DualScreen.ndsScreen(1080f, 1920f, NdsScreen.TOP).single().dst.let { it.copy(y = 0f) })
     @Test fun nds_panel_up_is_side_by_side_with_bottom_touch() {
         val r = DualScreen.ndsPanelUp(1920f, 1080f, NdsSettings(landscape = NdsLandscapeLayout.PIP))
         assertEquals(2, r.size); assertEquals(listOf(false, true), r.map { it.touch })
     }
     @Test fun n3ds_split_rects() {
-        assertEquals(FrameRect(0.1f, 0.5f, 0.9f, 1f), DualScreen.n3dsSecond(1240f, 1080f, NdsScreen.TOP).single().src)
-        assertEquals(1800f / 1080f, DualScreen.n3dsMain(1920f, 1080f, NdsScreen.TOP).single().dst.let { it.width / it.height }, 0.01f)
+        assertEquals(FrameRect(0.1f, 0.5f, 0.9f, 1f), DualScreen.n3dsScreen(1240f, 1080f, NdsScreen.TOP.other).single().src)
+        assertEquals(1800f / 1080f, DualScreen.n3dsScreen(1920f, 1080f, NdsScreen.TOP).single().dst.let { it.width / it.height }, 0.01f)
     }
     @Test fun n3ds_split_core_options() = assertEquals(
         mapOf("citra_layout_option" to "default", "citra_stacked_small_proportion" to "1",
@@ -85,10 +85,11 @@ class DualScreenTest {
         assertEquals(BottomScreen.SECOND, BottomScreen.parse("second"))
         assertEquals(BottomScreen.AUTO, BottomScreen.parse(null))
         assertEquals(BottomScreen.AUTO, BottomScreen.parse("x"))
-        assertEquals(BottomScreen.SECOND, BottomScreen.resolve("second", "main"))
-        assertEquals(BottomScreen.MAIN, BottomScreen.resolve("main", "second"))
-        assertEquals(BottomScreen.SECOND, BottomScreen.resolve("default", "second"))
-        assertEquals(BottomScreen.AUTO, BottomScreen.resolve(null, "auto"))
+        assertEquals(BottomScreen.SECOND, BottomScreen.resolve("second", BottomScreen.MAIN))
+        assertEquals(BottomScreen.MAIN, BottomScreen.resolve("main", BottomScreen.SECOND))
+        assertEquals(BottomScreen.SECOND, BottomScreen.resolve("default", BottomScreen.SECOND))
+        assertEquals(BottomScreen.AUTO, BottomScreen.resolve(null, BottomScreen.AUTO))
+        assertEquals(listOf("auto", "main", "second"), BottomScreen.entries.map { it.value })   // stored prefs stay valid
     }
     @Test fun picture_on_main_without_a_size() = assertEquals(PictureOn.MAIN, DualScreen.pictureOn(1920, 1080, 0, 0))
     @Test fun full_frame_fits_and_centres() =

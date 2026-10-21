@@ -154,7 +154,7 @@ class AppStateTest {
         override var padLayouts: com.nxredux.mobile.settings.PadLayoutMap = emptyMap()
         override var debugLog = false
         override var secondScreen = true
-        override var bottomScreen = "auto"
+        override var bottomScreen = com.nxredux.mobile.runner.BottomScreen.AUTO
         override var menuPad = true
         override var saveFormat = SaveFormat.DEFAULT
         override var stateFormat = StateFormat.DEFAULT
@@ -326,7 +326,7 @@ class AppStateTest {
                 "second" -> state.onboardingBottomScreenOnSecond()
                 else -> { state.select(1); state.onButton(NxButton.A) }
             }
-            assertEquals(if (pick == "skip") "auto" else pick, settings.bottomScreen, pick)
+            assertEquals(if (pick == "skip") "auto" else pick, settings.bottomScreen.value, pick)
             assertIs<Screen.PickFolder>(state.screen.value)
             state.onButton(NxButton.B)                                         // the first folder step goes back to it
             assertEquals(OnboardingStep.BOTTOM_SCREEN, assertIs<Screen.Onboarding>(state.screen.value).step, pick)
@@ -344,7 +344,7 @@ class AppStateTest {
         state.load(); state.getStarted(); state.setHomePast(ContentRef("Home")); state.skipFirstExtra()
         assertEquals(OnboardingStep.HANDHELD, assertIs<Screen.Onboarding>(state.screen.value).step)
         state.onboardingBottomScreenOnSecond()                                 // a stray tap: not on the step, nothing stored
-        assertEquals("auto", settings.bottomScreen)
+        assertEquals("auto", settings.bottomScreen.value)
         assertEquals(OnboardingStep.HANDHELD, assertIs<Screen.Onboarding>(state.screen.value).step)
     }
 
@@ -9841,15 +9841,15 @@ class AppStateTest {
         assertTrue(settingsNxRow(row()).cycleable)
         state.select(rows().indexOf(row()))
         state.onButton(NxButton.A)
-        assertEquals("main", settings.bottomScreen)
+        assertEquals("main", settings.bottomScreen.value)
         assertEquals("Main screen", row().secondary)
         state.onButton(NxButton.RIGHT)
-        assertEquals("second", settings.bottomScreen)
+        assertEquals("second", settings.bottomScreen.value)
         assertEquals("Second screen", row().secondary)
         state.onButton(NxButton.RIGHT)
-        assertEquals("auto", settings.bottomScreen)
+        assertEquals("auto", settings.bottomScreen.value)
         state.onButton(NxButton.LEFT)
-        assertEquals("second", settings.bottomScreen)
+        assertEquals("second", settings.bottomScreen.value)
     }
 
     // Settings → Emulators → Saves, NX Redux's three save-naming settings with its labels and defaults.

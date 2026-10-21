@@ -277,7 +277,7 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
             is MenuRow.Submenu -> openSubmenu(row.target)
             is MenuRow.Option -> {
                 val achievement = if (state.page.kind == PageKind.Achievements) achievementFor(row.key) else null
-                if (row.key == SECOND_SCREEN_KEY && state.page.kind == PageKind.Root) return flipSecondScreen()
+                if (row.key == SECOND_SCREEN_KEY) return flipSecondScreen()   // a root row only
                 if (achievement != null) push(achievementDetailPage(achievement))
                 else if (row.visual) push(adjustPage(row.key))
                 else if (row.info.isNotBlank()) push(message(row.label, row.info))

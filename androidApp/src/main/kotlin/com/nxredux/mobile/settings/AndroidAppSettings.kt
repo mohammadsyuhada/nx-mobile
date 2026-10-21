@@ -5,6 +5,7 @@ import androidx.core.content.edit
 import com.nxredux.mobile.BuildConfig
 import com.nxredux.mobile.options.VulkanFallback
 import com.nxredux.mobile.achievements.RaSortOrder
+import com.nxredux.mobile.runner.BottomScreen
 import com.nxredux.mobile.runner.ContentRef
 import com.nxredux.mobile.storage.SaveFormat
 import com.nxredux.mobile.storage.StateFormat
@@ -225,10 +226,10 @@ class AndroidAppSettings(context: Context) : AppSettings {
             prefs.edit { putBoolean(KEY_SECOND_SCREEN, value) }
         }
 
-    override var bottomScreen: String
-        get() = prefs.getString(KEY_BOTTOM_SCREEN, null) ?: "auto"
+    override var bottomScreen: BottomScreen
+        get() = BottomScreen.parse(prefs.getString(KEY_BOTTOM_SCREEN, null))
         set(value) {
-            prefs.edit { putString(KEY_BOTTOM_SCREEN, value) }
+            prefs.edit { putString(KEY_BOTTOM_SCREEN, value.value) }
         }
 
     override var debugLog: Boolean

@@ -71,7 +71,7 @@ object PanelModel {
     fun tap(slotIndex: Int, slot: SlotUi): PanelEvent? = if (slot.occupied) PanelEvent.Load(slotIndex) else null
 
     /** A long press saves over a manual slot, with no confirm (as the menu's Save); Auto is load-only. */
-    fun longPress(slotIndex: Int, slot: SlotUi): PanelEvent? = if (slotIndex >= 1) PanelEvent.Save(slotIndex) else null
+    fun longPress(slotIndex: Int): PanelEvent? = if (slotIndex >= 1) PanelEvent.Save(slotIndex) else null
 }
 
 /**
@@ -138,7 +138,7 @@ private fun StatesTab(slots: List<SlotUi>, picked: Int?, onPick: (Int) -> Unit, 
             SlotRow(
                 slot, selected = picked == i,
                 onTap = { onPick(i); PanelModel.tap(i, slot)?.let(onEvent) },
-                onLongPress = PanelModel.longPress(i, slot)?.let { e -> { onPick(i); onEvent(e) } },
+                onLongPress = PanelModel.longPress(i)?.let { e -> { onPick(i); onEvent(e) } },
             )
         }
     }

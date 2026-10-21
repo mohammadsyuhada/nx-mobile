@@ -25,10 +25,12 @@ class BottomScreenOptionsTest {
     }
 
     @Test fun the_override_beats_the_system_setting_and_default_follows_it() {
-        assertEquals(BottomScreen.MAIN, BottomScreenOptions.resolve(mapOf(BottomScreenOptions.KEY to "main"), "second"))
-        assertEquals(BottomScreen.SECOND, BottomScreenOptions.resolve(mapOf(BottomScreenOptions.KEY to "second"), "auto"))
-        assertEquals(BottomScreen.MAIN, BottomScreenOptions.resolve(mapOf(BottomScreenOptions.KEY to "default"), "main"))
-        assertEquals(BottomScreen.AUTO, BottomScreenOptions.resolve(emptyMap(), "auto"))
-        assertEquals(BottomScreen.SECOND, BottomScreenOptions.resolve(mapOf(BottomScreenOptions.KEY to "junk"), "second"))
+        // The row's values are the BottomScreen vocabulary, so resolve reads them as stored.
+        assertEquals(BottomScreen.MAIN, BottomScreen.resolve("main", BottomScreen.SECOND))
+        assertEquals(BottomScreen.SECOND, BottomScreen.resolve("second", BottomScreen.AUTO))
+        assertEquals(BottomScreen.MAIN, BottomScreen.resolve(BottomScreenOptions.DEFAULT, BottomScreen.MAIN))
+        assertEquals(BottomScreen.AUTO, BottomScreen.resolve(null, BottomScreen.AUTO))
+        assertEquals(BottomScreen.SECOND, BottomScreen.resolve("junk", BottomScreen.SECOND))
+        assertEquals(listOf(BottomScreen.MAIN, BottomScreen.SECOND), BottomScreenOptions.row.values.drop(1).map(BottomScreen::parse))
     }
 }
