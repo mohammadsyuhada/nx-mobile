@@ -1,0 +1,37 @@
+# license: modifies Beetle PCE Fast (https://github.com/libretro/beetle-pce-fast-libretro), GPL-2.0 (COPYING); this patch is distributed under the same license.
+# retro_cheat_set strcpy'd each code into a 256-byte stack buffer; codes of 256+ chars
+# (about 26 parts) overflowed it. Copy to the heap instead.
+diff --git a/libretro.cpp b/libretro.cpp
+index a3ba3e3..45e440a 100644
+--- a/libretro.cpp
++++ b/libretro.cpp
+@@ -2649,14 +2649,18 @@ void retro_cheat_reset(void)
+ void retro_cheat_set(unsigned index, bool enabled, const char *code)
+ {
+    char name[256];
+-   char temp[256];
++   char *temp;
+    char *codepart;
+ 
+    if (code == NULL)
+       return;
+ 
+    sprintf(name, "N/A");
+-   strcpy(temp, code);
++   /* nx-redux: heap copy; strcpy into the 256-byte stack buffer
++    * overflowed on any code of 256 chars or more */
++   temp = strdup(code);
++   if (!temp)
++      return;
+    codepart = strtok(temp, "+,;._ ");
+ 
+    while (codepart)
+@@ -2716,6 +2720,8 @@ void retro_cheat_set(unsigned index, bool enabled, const char *code)
+          log_cb(RETRO_LOG_DEBUG, "Invalid or unknown code: '%s'\n", codepart);
+       codepart = strtok(NULL,"+,;._ ");
+    }
++
++   free(temp);
+ }
+ 
+ extern "C" void MDFN_DispMessage(const char *format, ...)

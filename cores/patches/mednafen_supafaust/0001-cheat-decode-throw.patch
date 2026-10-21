@@ -1,0 +1,58 @@
+# license: modifies Supafaust (https://github.com/libretro/supafaust), GPL-2.0 (COPYING); this patch is distributed under the same license.
+# retro_run decoded each cheat with the first format only (Game Genie), which throws on
+# anything but one 9-char code; nothing caught it, so a PAR or '+'-joined code aborted the
+# app. Split on '+', try every format, skip a part none accepts.
+diff --git a/libretro.cpp b/libretro.cpp
+index 9fbf7bb..eed32c7 100644
+--- a/libretro.cpp
++++ b/libretro.cpp
+@@ -447,17 +447,43 @@ RETRO_API void retro_run(void)
+   //
+   MemoryPatch mp;
+ 
++  // nx-redux: DecodeCheat throws MDFN_Error on any code that isn't exactly
++  // one Game Genie code (a '+'-joined multi-part code, a Pro Action Replay
++  // code, an empty disabled slot), and nothing here caught it, so the throw
++  // left retro_run and aborted the app. Split on '+', try every format, and
++  // skip a part no format accepts.
+   for(size_t i = 0; i < Cheats.size(); i++)
+   {
+-   for(auto const& cfie : cgi->CheatInfo.CheatFormatInfo)
++   const std::string& code = Cheats[i];
++   size_t start = 0;
++
++   while(start <= code.size())
+    {
+-     if(!cfie.DecodeCheat(Cheats[i], &mp))
++    size_t end = code.find('+', start);
++    if(end == std::string::npos)
++     end = code.size();
++    const std::string part = code.substr(start, end - start);
++    start = end + 1;
++
++    if(part.empty())
++     continue;
++
++    for(auto const& cfie : cgi->CheatInfo.CheatFormatInfo)
++    {
++     try
+      {
+-      MDFNI_AddCheat(mp);
+-      //
+-      mp = MemoryPatch();
++      if(!cfie.DecodeCheat(part, &mp))
++      {
++       MDFNI_AddCheat(mp);
++       mp = MemoryPatch();
++       break;
++      }
+      }
+-     break;
++     catch(std::exception&)
++     {
++     }
++     mp = MemoryPatch();
++    }
+    }
+   }
+ 

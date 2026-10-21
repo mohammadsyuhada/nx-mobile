@@ -112,6 +112,8 @@ snes9x_BUILD_PATH = libretro
 # libretro/jni/Android.mk defines LOCAL_MODULE := retro -> libs/arm64-v8a/libretro.so
 snes9x_ARTIFACT = libs/$(ABI)/libretro.so
 
+# patches/genesis_plus_gx/0001: retro_cheat_set heap-copies the code and stops at MAX_CHEATS parts; the 151st part
+# wrote past cheatlist[] and codes over 255 chars were cut.
 genesis_plus_gx_REPO = https://github.com/libretro/Genesis-Plus-GX
 genesis_plus_gx_HASH = c2838c7dc4236fc2fe94e5dbd08b41486067918e
 genesis_plus_gx_LICENSE = LICENSE.txt core/ntsc/license.txt
@@ -234,6 +236,7 @@ race_KIND = ndkbuild
 race_BUILD_PATH = .
 race_ARTIFACT = libs/$(ABI)/libretro.so
 
+# patches/mednafen_pce_fast/0001: retro_cheat_set heap-copies the code; 256+ chars overflowed its stack buffer.
 mednafen_pce_fast_REPO = https://github.com/libretro/beetle-pce-fast-libretro
 mednafen_pce_fast_HASH = 52675734da114a19b3705f03906b1455f3d76644
 mednafen_pce_fast_LICENSE = COPYING mednafen/tremor/COPYING
@@ -288,6 +291,8 @@ mednafen_wswan_ARTIFACT = libs/$(ABI)/libretro.so
 # Its jni/Android.mk includes ../Makefile.common (cwd-relative), so ndk-build must run inside jni/.
 mednafen_wswan_FLAGS = -C jni
 
+# patches/mednafen_supafaust/0001: retro_run tries every cheat format on each '+' part and skips one none accepts;
+# the Game Genie decoder threw on anything else, which aborted the app.
 mednafen_supafaust_REPO = https://github.com/libretro/supafaust
 mednafen_supafaust_HASH = e25f66765938d33f9ad5850e8d6cd597e55b7299
 mednafen_supafaust_LICENSE = COPYING
