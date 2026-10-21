@@ -1,0 +1,104 @@
+package com.nxredux.mobile.runner
+
+import com.nxredux.mobile.options.NdsLandscapeLayout
+import com.nxredux.mobile.options.NdsScreen
+import com.nxredux.mobile.options.NdsSettings
+import com.nxredux.mobile.options.PxRect
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class DualScreenTest {
+    @Test fun mode_off_without_display() = assertEquals(DualMode.OFF, DualScreen.mode(false, true, true, false))
+    @Test fun mode_off_when_setting_off() = assertEquals(DualMode.OFF, DualScreen.mode(true, false, true, true))
+    @Test fun mode_split_for_ds() = assertEquals(DualMode.SPLIT, DualScreen.mode(true, true, true, false))
+    @Test fun mode_panel_up_for_ds() = assertEquals(DualMode.PANEL_UP, DualScreen.mode(true, true, true, true))
+    @Test fun mode_panel_for_regular_game() = assertEquals(DualMode.PANEL, DualScreen.mode(true, true, false, false))
+
+    @Test fun nds_split_top_main() {
+        val main = DualScreen.ndsMain(1920f, 1080f, NdsScreen.TOP).single()
+        assertEquals(NdsLayout.TOP_SRC, main.src); assertFalse(main.touch)
+        assertEquals(PxRect(240f, 0f, 1440f, 1080f), main.dst)
+        val second = DualScreen.ndsSecond(1240f, 1080f, NdsScreen.TOP).single()
+        assertEquals(NdsLayout.BOTTOM_SRC, second.src); assertTrue(second.touch)
+    }
+    @Test fun nds_split_swapped_touch_follows_bottom() {
+        assertTrue(DualScreen.ndsMain(1920f, 1080f, NdsScreen.BOTTOM).single().touch)
+        assertFalse(DualScreen.ndsSecond(1240f, 1080f, NdsScreen.BOTTOM).single().touch)
+    }
+    @Test fun nds_split_main_follows_area() =
+        assertEquals(PxRect(0f, 0f, 1080f, 810f), DualScreen.ndsMain(1080f, 1920f, NdsScreen.TOP).single().dst.let { it.copy(y = 0f) })
+    @Test fun nds_panel_up_is_side_by_side_with_bottom_touch() {
+        val r = DualScreen.ndsPanelUp(1920f, 1080f, NdsSettings(landscape = NdsLandscapeLayout.PIP))
+        assertEquals(2, r.size); assertEquals(listOf(false, true), r.map { it.touch })
+    }
+    @Test fun n3ds_split_rects() {
+        assertEquals(FrameRect(0.1f, 0.5f, 0.9f, 1f), DualScreen.n3dsSecond(1240f, 1080f, NdsScreen.TOP).single().src)
+        assertEquals(1800f / 1080f, DualScreen.n3dsMain(1920f, 1080f, NdsScreen.TOP).single().dst.let { it.width / it.height }, 0.01f)
+    }
+    @Test fun n3ds_split_core_options() = assertEquals(
+        mapOf("citra_layout_option" to "default", "citra_stacked_small_proportion" to "1",
+              "citra_swap_screen" to "Top", "citra_swap_screen_mode" to "Hold"),
+        DualScreen.n3dsCoreOptions(DualMode.SPLIT))
+    @Test fun n3ds_panel_up_side_by_side_swap_toggles() = assertEquals(
+        mapOf("citra_layout_option" to "side_by_side", "citra_swap_screen" to "Top", "citra_swap_screen_mode" to "Toggle"),
+        DualScreen.n3dsCoreOptions(DualMode.PANEL_UP))
+    @Test fun n3ds_off_restores() = assertNull(DualScreen.n3dsCoreOptions(DualMode.OFF))
+
+    @Test fun n3ds_swap_restore_prefers_the_running_values() = assertEquals(
+        mapOf("citra_swap_screen" to "Bottom", "citra_swap_screen_mode" to "Hold"),
+        DualScreen.n3dsSwapRestore(mapOf("citra_swap_screen" to "Bottom", "citra_swap_screen_mode" to "Hold"),
+            mapOf("citra_swap_screen" to "Top", "citra_swap_screen_mode" to "Toggle")))
+    @Test fun n3ds_swap_restore_falls_back_to_stored_then_defaults() {
+        assertEquals(mapOf("citra_swap_screen" to "Bottom", "citra_swap_screen_mode" to "Toggle"),
+            DualScreen.n3dsSwapRestore(null, mapOf("citra_swap_screen" to "Bottom")))
+        assertEquals(mapOf("citra_swap_screen" to "Top", "citra_swap_screen_mode" to "Hold"),
+            DualScreen.n3dsSwapRestore(mapOf("citra_swap_screen_mode" to "Hold"), emptyMap()))
+    }
+    @Test fun n3ds_touch_anywhere_in_split() {
+        assertEquals("disabled", DualScreen.n3dsTouchMainOnly(DualMode.SPLIT, padOverGame = true))
+        assertEquals("enabled", DualScreen.n3dsTouchMainOnly(DualMode.OFF, padOverGame = true))
+        assertEquals("disabled", DualScreen.n3dsTouchMainOnly(DualMode.OFF, padOverGame = false))
+    }
+    @Test fun picture_on_second_when_wider() = assertEquals(PictureOn.SECOND, DualScreen.pictureOn(1240, 1080, 1920, 1080))
+    @Test fun picture_on_main_when_wider() = assertEquals(PictureOn.MAIN, DualScreen.pictureOn(1920, 1080, 1240, 1080))
+    @Test fun picture_on_tie_goes_second() = assertEquals(PictureOn.SECOND, DualScreen.pictureOn(1920, 1080, 1280, 720))
+    @Test fun picture_on_main_for_a_rotated_core() =
+        assertEquals(PictureOn.MAIN, DualScreen.pictureOn(1240, 1080, 1920, 1080, rotated = true))
+    // Bottom screen: the chosen one is the touch screen, so the picture goes on the other; Auto is the shape rule.
+    @Test fun bottom_main_puts_the_picture_on_second() =
+        assertEquals(PictureOn.SECOND, DualScreen.pictureOn(1920, 1080, 1240, 1080, bottom = BottomScreen.MAIN))
+    @Test fun bottom_second_puts_the_picture_on_main() =
+        assertEquals(PictureOn.MAIN, DualScreen.pictureOn(1240, 1080, 1920, 1080, bottom = BottomScreen.SECOND))
+    @Test fun bottom_auto_is_the_shape_rule() {
+        assertEquals(DualScreen.pictureOn(1240, 1080, 1920, 1080), DualScreen.pictureOn(1240, 1080, 1920, 1080, bottom = BottomScreen.AUTO))
+        assertEquals(DualScreen.pictureOn(1920, 1080, 1240, 1080), DualScreen.pictureOn(1920, 1080, 1240, 1080, bottom = BottomScreen.AUTO))
+        assertEquals(PictureOn.SECOND, DualScreen.pictureOn(1280, 960, 1280, 960, bottom = BottomScreen.AUTO))   // same shape
+    }
+    @Test fun a_rotated_core_wins_over_the_bottom_screen() =
+        assertEquals(PictureOn.MAIN, DualScreen.pictureOn(1920, 1080, 1240, 1080, rotated = true, bottom = BottomScreen.MAIN))
+    @Test fun bottom_screen_parses_the_setting_and_the_override_wins() {
+        assertEquals(BottomScreen.AUTO, BottomScreen.parse("auto"))
+        assertEquals(BottomScreen.MAIN, BottomScreen.parse("main"))
+        assertEquals(BottomScreen.SECOND, BottomScreen.parse("second"))
+        assertEquals(BottomScreen.AUTO, BottomScreen.parse(null))
+        assertEquals(BottomScreen.AUTO, BottomScreen.parse("x"))
+        assertEquals(BottomScreen.SECOND, BottomScreen.resolve("second", "main"))
+        assertEquals(BottomScreen.MAIN, BottomScreen.resolve("main", "second"))
+        assertEquals(BottomScreen.SECOND, BottomScreen.resolve("default", "second"))
+        assertEquals(BottomScreen.AUTO, BottomScreen.resolve(null, "auto"))
+    }
+    @Test fun picture_on_main_without_a_size() = assertEquals(PictureOn.MAIN, DualScreen.pictureOn(1920, 1080, 0, 0))
+    @Test fun full_frame_fits_and_centres() =
+        assertEquals(PxRect(240f, 0f, 1440f, 1080f), DualScreen.fullFrame(1920f, 1080f, 4f / 3f))
+    @Test fun full_frame_letterboxes_a_wide_picture() =
+        assertEquals(PxRect(0f, 191f, 1240f, 697f), DualScreen.fullFrame(1240f, 1080f, 16f / 9f))
+    @Test fun full_frame_empty_without_an_aspect() = assertEquals(PxRect(0f, 0f, 0f, 0f), DualScreen.fullFrame(1920f, 1080f, 0f))
+    @Test fun split_main_screen_follows_the_picture() {
+        assertEquals(NdsScreen.TOP, DualScreen.splitMain(NdsScreen.TOP, PictureOn.MAIN))
+        assertEquals(NdsScreen.BOTTOM, DualScreen.splitMain(NdsScreen.TOP, PictureOn.SECOND))
+        assertEquals(NdsScreen.TOP, DualScreen.splitMain(NdsScreen.BOTTOM, PictureOn.SECOND))
+    }
+}

@@ -219,6 +219,18 @@ class AndroidAppSettings(context: Context) : AppSettings {
             prefs.edit { putBoolean(KEY_MENU_PAD, value) }
         }
 
+    override var secondScreen: Boolean
+        get() = prefs.getBoolean(KEY_SECOND_SCREEN, true)
+        set(value) {
+            prefs.edit { putBoolean(KEY_SECOND_SCREEN, value) }
+        }
+
+    override var bottomScreen: String
+        get() = prefs.getString(KEY_BOTTOM_SCREEN, null) ?: "auto"
+        set(value) {
+            prefs.edit { putString(KEY_BOTTOM_SCREEN, value) }
+        }
+
     override var debugLog: Boolean
         get() = prefs.getBoolean(KEY_DEBUG_LOG, false)
         set(value) {
@@ -322,6 +334,8 @@ class AndroidAppSettings(context: Context) : AppSettings {
         const val KEY_PAD_LAYOUTS = "pad_layouts"
         const val KEY_GAME_RUMBLE = "game_rumble"
         const val KEY_DEBUG_LOG = "debug_log"
+        const val KEY_SECOND_SCREEN = "second_screen"
+        const val KEY_BOTTOM_SCREEN = "bottom_screen"
         const val KEY_MENU_PAD = "menu_pad"
         const val KEY_SAVE_FORMAT = "save_format"
         const val KEY_STATE_FORMAT = "state_format"

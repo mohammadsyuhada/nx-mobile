@@ -315,6 +315,19 @@ interface AppSettings {
     var debugLog: Boolean
         get() = false
         set(@Suppress("UNUSED_PARAMETER") value) {}
+
+    /** Settings → Emulators → Second screen (default on): a built-in or wired second screen shows part of the frame. Defaulted, like [debugLog]. */
+    var secondScreen: Boolean
+        get() = true
+        set(@Suppress("UNUSED_PARAMETER") value) {}
+    /**
+     * Settings → Emulators → Bottom screen (default `auto`): which display is the touch screen, `auto|main|second`
+     * ([com.nxredux.mobile.runner.BottomScreen.parse]); a console's own choice wins. Defaulted, like [debugLog].
+     */
+    var bottomScreen: String
+        get() = "auto"
+        set(@Suppress("UNUSED_PARAMETER") value) {}
+
     /**
      * First setup's All files access step was answered (Allow or Skip); it is never shown again. Defaulted, like
      * [debugLog].

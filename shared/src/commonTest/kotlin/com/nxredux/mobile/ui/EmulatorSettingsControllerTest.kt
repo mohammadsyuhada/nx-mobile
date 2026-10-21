@@ -4,6 +4,7 @@ import com.nxredux.mobile.achievements.RaSortOrder
 import com.nxredux.mobile.library.FakeRomsSource
 import com.nxredux.mobile.library.GameEntry
 import com.nxredux.mobile.library.SystemFolder
+import com.nxredux.mobile.options.BottomScreenOptions
 import com.nxredux.mobile.options.ConfigFile
 import com.nxredux.mobile.options.ConsoleRow
 import com.nxredux.mobile.options.CoreConfig
@@ -353,6 +354,18 @@ class EmulatorSettingsControllerTest {
         state.emulatorSettings.openGame(games.entries[0])
         await { state.screen.value is Screen.EmulatorOptions }
         return games
+    }
+
+    // An open Game Settings page (the console rows are shared with Emulator Settings) follows a second screen coming and going.
+    @Test fun an_open_page_gains_and_loses_the_bottom_screen_row_with_the_second_screen() = runTest {
+        val state = TestState(MemoryConfigs())
+        openGame(state)
+        fun keys() = options(state).rows.filterIsInstance<EmulatorRow.Console>().map { it.row.option.key }
+        assertFalse(BottomScreenOptions.KEY in keys())
+        state.onSecondScreenChanged(true)
+        await { BottomScreenOptions.KEY in keys() }
+        state.onSecondScreenChanged(false)
+        await { BottomScreenOptions.KEY !in keys() }
     }
 
     @Test fun a_first_game_change_writes_a_snapshot_with_the_console_binds() = runTest {

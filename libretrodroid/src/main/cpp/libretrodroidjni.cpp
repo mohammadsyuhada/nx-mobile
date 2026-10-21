@@ -1102,6 +1102,27 @@ JNIEXPORT void JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_setScreenR
     LibretroDroid::getInstance().setScreenRegions(ScreenRegion::unpack(data.data(), data.size()));
 }
 
+JNIEXPORT void JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_setSecondaryRegions(
+    JNIEnv* env,
+    jclass obj,
+    jfloatArray packed
+) {
+    jsize count = packed != nullptr ? env->GetArrayLength(packed) : 0;
+    std::vector<float> data((size_t) count);
+    if (count > 0) env->GetFloatArrayRegion(packed, 0, count, data.data());
+    LibretroDroid::getInstance().setSecondaryRegions(ScreenRegion::unpack(data.data(), data.size()));
+}
+
+JNIEXPORT void JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_renderSecondary(
+    JNIEnv* env,
+    jclass obj,
+    jint width,
+    jint height
+) {
+    if (width <= 0 || height <= 0) return;
+    LibretroDroid::getInstance().renderSecondary((unsigned) width, (unsigned) height);
+}
+
 JNIEXPORT void JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_setShaderChain(
     JNIEnv* env,
     jclass obj,
@@ -1243,8 +1264,8 @@ JNIEXPORT jfloatArray JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_get
     jclass obj
 ) {
     auto geometry = LibretroDroid::getInstance().getGameGeometry();
-    jfloatArray result = env->NewFloatArray(3);
-    env->SetFloatArrayRegion(result, 0, 3, geometry.data());
+    jfloatArray result = env->NewFloatArray(geometry.size());
+    env->SetFloatArrayRegion(result, 0, geometry.size(), geometry.data());
     return result;
 }
 

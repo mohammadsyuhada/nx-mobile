@@ -2,6 +2,7 @@ package com.nxredux.mobile.ui
 
 import com.nxredux.mobile.ui.OnboardingStep.ACCENT
 import com.nxredux.mobile.ui.OnboardingStep.ARTWORK
+import com.nxredux.mobile.ui.OnboardingStep.BOTTOM_SCREEN
 import com.nxredux.mobile.ui.OnboardingStep.DONE
 import com.nxredux.mobile.ui.OnboardingStep.HANDHELD
 import com.nxredux.mobile.ui.OnboardingStep.IMPORT_SAVES
@@ -21,6 +22,7 @@ import com.nxredux.mobile.ui.OnboardingStep.SYNC_OFFER
 import com.nxredux.mobile.ui.OnboardingStep.WELCOME
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -121,5 +123,27 @@ class OnboardingControllerTest {
         val (n, m) = c.position()
         c.context = c.context.copy(buttons = false)   // rotated: TITLE no longer applies
         assertEquals(Pair(n, m), c.position())        // TITLE kept in place and in the total
+    }
+
+    // The bottom screen question sits right after the text size (before the folder steps), unnumbered; it is not in the
+    // post-folder list, which starts at the handheld either way.
+    @Test fun theBottomScreenStepFollowsTheTextSizeUnnumbered() {
+        assertEquals(
+            listOf(HANDHELD, IMPORT_SAVES, ARTWORK, RA_SIGN_IN, CUSTOMISE, ACCENT, DONE),
+            onboardingSteps(OnboardingContext(handheld = false)),
+        )
+        assertTrue(BOTTOM_SCREEN !in onboardingSteps(OnboardingContext(customise = true, padPage = true, buttons = true)))
+        val c = OnboardingController()
+        c.startTextSize()
+        c.startBottomScreen()
+        assertEquals(BOTTOM_SCREEN, c.step)
+        assertEquals(Pair(0, 0), c.position())
+        assertFalse(c.isFirstMain())
+        assertEquals(TEXT_SIZE, c.back())
+        assertEquals(WELCOME, c.back())
+        c.startMain(resume = BOTTOM_SCREEN)               // never saved, never resumed: the first post-folder step
+        assertEquals(HANDHELD, c.step)
+        assertTrue(c.isFirstMain())
+        assertEquals(Pair(1, 7), c.position())
     }
 }

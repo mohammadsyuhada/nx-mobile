@@ -8,6 +8,7 @@ import com.nxredux.mobile.achievements.sortedBy
 import com.nxredux.mobile.cheats.CheatEntry
 import com.nxredux.mobile.netplay.NetplayText
 import com.nxredux.mobile.options.ConfigSource
+import com.nxredux.mobile.options.BottomScreenOptions
 import com.nxredux.mobile.options.ConsoleSettings
 import com.nxredux.mobile.options.CoreOption
 import com.nxredux.mobile.options.CoreOptionFilter
@@ -114,6 +115,8 @@ sealed interface MenuEffect {
     data class SetCheat(val index: Int, val enabled: Boolean) : MenuEffect
     /** Put disc [index] (0-based) in the drive now; not persisted. */
     data class ChangeDisc(val index: Int) : MenuEffect
+    /** Turn the second-screen setting [on] or off (already flipped in the model); the host persists it and re-syncs the dual mode. */
+    data class SetSecondScreen(val on: Boolean) : MenuEffect
     /** Flip achievement [id]'s notification mute (already flipped in the model); the host persists it. */
     data class ToggleMute(val id: Int) : MenuEffect
     /** Put pad [key] in player [slot] (0-based), swapping as the host's slot model does; null empties it. */
@@ -142,6 +145,9 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
     /** The core's disc count and current disc (0-based), from [setDiscs]; the Disc row shows when [discCount] > 1. */
     private var discCount = 0
     private var discIndex = 0
+    /** From [setSecondScreen]; the root page shows the Second screen row only while a second display is [secondConnected]. */
+    private var secondConnected = false
+    private var secondOn = true
     /** From [setPlayers]; the root page shows Players when there is more than one slot. */
     private var playerSlots: List<PlayerSlotRow> = emptyList()
     private var playerPads: List<PlayerPadRow> = emptyList()
@@ -271,6 +277,7 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
             is MenuRow.Submenu -> openSubmenu(row.target)
             is MenuRow.Option -> {
                 val achievement = if (state.page.kind == PageKind.Achievements) achievementFor(row.key) else null
+                if (row.key == SECOND_SCREEN_KEY && state.page.kind == PageKind.Root) return flipSecondScreen()
                 if (achievement != null) push(achievementDetailPage(achievement))
                 else if (row.visual) push(adjustPage(row.key))
                 else if (row.info.isNotBlank()) push(message(row.label, row.info))
@@ -449,6 +456,27 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         refreshRoot()
     }
 
+    /**
+     * A second display is [connected] and the setting is [on]; shows (or hides) the root's Second screen row and Console
+     * Settings' Bottom screen row, keeping the selection.
+     */
+    fun setSecondScreen(connected: Boolean, on: Boolean) {
+        val changed = connected != secondConnected
+        secondConnected = connected
+        secondOn = on
+        refreshRoot()
+        if (!changed) return
+        // Console Settings may come or go with its Bottom screen row (a console whose other rows are all locked).
+        state = state.copy(stack = state.stack.map { p -> if (p.kind == PageKind.Options) rebuilt(p, optionsPage()) else p })
+        refreshFrontendPages()
+    }
+
+    private fun flipSecondScreen(): MenuEffect {
+        secondOn = !secondOn
+        refreshRoot()
+        return MenuEffect.SetSecondScreen(secondOn)
+    }
+
     private fun changeDisc(delta: Int): MenuEffect? {
         if (discCount < 2) return null
         discIndex = ((discIndex + delta) % discCount + discCount) % discCount
@@ -569,6 +597,7 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
             row.key.startsWith(PLAYER_KEY_PREFIX) -> changePlayer(row.key.removePrefix(PLAYER_KEY_PREFIX).toInt(), delta)
             row.key.startsWith(PAD_KEY_PREFIX) -> togglePlaying(row.key.removePrefix(PAD_KEY_PREFIX))
             row.key == DISC_KEY -> changeDisc(delta)
+            row.key == SECOND_SCREEN_KEY -> flipSecondScreen()
             state.page.kind == PageKind.Cheats -> toggleCheat(row.key)
             isSettingsPage(state.page.kind) -> changeFrontend(row.key, delta)
             else -> {
@@ -782,6 +811,7 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
             if (discCount > 1) add(MenuRow.Option(DISC_LABEL, DISC_KEY, "${discIndex + 1}/$discCount", DISC_INFO))
             add(MenuRow.Slot("Save", SlotAction.SAVE))
             add(MenuRow.Slot("Load", SlotAction.LOAD))
+            if (secondConnected) add(MenuRow.Option(SECOND_SCREEN_LABEL, SECOND_SCREEN_KEY, if (secondOn) "On" else "Off"))
             if (playerSlots.size > 1) add(MenuRow.Submenu(PLAYERS_LABEL, PageKind.Players))
             add(MenuRow.Submenu("Options", PageKind.Options))
             add(MenuRow.Action("Quit", MenuAction.QUIT))
@@ -816,9 +846,12 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
 
     /**
      * This console's Console Settings rows, locked ones and the ones read only at launch ([FrontendOption.atLaunch]: set in
-     * Game Settings / Emulator Settings) left out; none left = the page is not offered.
+     * Game Settings / Emulator Settings) left out, and Bottom screen while no second display is [secondConnected]; none
+     * left = the page is not offered.
      */
-    private fun consoleRows() = ConsoleSettings.tableFor(frontendTag).filter { it.key !in frontendLocked && !it.atLaunch }
+    private fun consoleRows() = ConsoleSettings.tableFor(frontendTag).filter {
+        it.key !in frontendLocked && !it.atLaunch && (secondConnected || it.key != BottomScreenOptions.KEY)
+    }
 
     private fun frontendPage() = MenuPage(
         PageKind.Frontend, "Frontend",
@@ -914,6 +947,8 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         const val CONSOLE_SETTINGS_LABEL = "Console Settings"
         const val DISC_KEY = "nx:disc"
         const val DISC_LABEL = "Disc"
+        const val SECOND_SCREEN_KEY = "nx_second_screen"
+        const val SECOND_SCREEN_LABEL = "Second screen"
         const val DISC_INFO = "Left and right change the disc in the drive,\nas opening the lid and swapping it would."
         const val PLAYERS_LABEL = "Players"
         const val PLAYER_KEY_PREFIX = "nx:player:"

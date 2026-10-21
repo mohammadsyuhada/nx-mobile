@@ -26,6 +26,7 @@ DerivedData/
 
 # Local
 /.local/
+.superpowers/
 
 # cores pipeline outputs (see cores/README.md)
 cores/src/

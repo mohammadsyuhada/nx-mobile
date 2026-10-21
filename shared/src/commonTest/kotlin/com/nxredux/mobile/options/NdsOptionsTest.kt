@@ -44,8 +44,8 @@ class NdsOptionsTest {
     }
 
     @Test fun only_nds_gets_the_ds_rows() {
-        val pad = listOf(PadOptions.layoutRow)
-        val dsPad = listOf(PadOptions.portraitPadRow, PadOptions.layoutRow)
+        val pad = listOf(BottomScreenOptions.row, PadOptions.layoutRow)
+        val dsPad = listOf(BottomScreenOptions.row, PadOptions.portraitPadRow, PadOptions.layoutRow)
         assertEquals(NdsOptions.table + dsPad + FrontendOptions.table, FrontendOptions.allFor("NDS"))
         assertEquals(NdsOptions.table + dsPad + FrontendOptions.table, FrontendOptions.allFor(" nds "))
         assertEquals(pad + FrontendOptions.table, FrontendOptions.allFor("GBA"))

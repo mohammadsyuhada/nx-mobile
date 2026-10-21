@@ -139,6 +139,10 @@ public class LibretroDroid {
     public static native void setScreenOffset(float x, float y);
     /** 11 floats per region: src l,t,r,b (0..1 of the frame), dst l,t,r,b (0..1 of the viewport), shaded, touch (0/1), alpha (0..1). */
     public static native void setScreenRegions(float[] packed);
+    /** Same packing as setScreenRegions; dst is 0..1 of the whole second surface. GL thread. */
+    public static native void setSecondaryRegions(float[] packed);
+    /** Draws the last frame's secondary regions into the current default framebuffer (width x height); never runs the core. GL thread. */
+    public static native void renderSecondary(int width, int height);
     public static native float[] getGameGeometry();
 
     public static native boolean isHardwareRendered();

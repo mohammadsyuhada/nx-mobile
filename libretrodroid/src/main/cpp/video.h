@@ -91,6 +91,14 @@ public:
     void updateScreenOffset(float x, float y);
     void updateContentSize(unsigned width, unsigned height);
     void updateScreenRegions(std::vector<ScreenRegion> regions);
+    // Regions drawn on a second surface by renderSecondary; dst is 0..1 of that whole surface. Doesn't redraw the main
+    // output.
+    void updateSecondaryRegions(std::vector<ScreenRegion> regions);
+
+    // Draws the last frame's secondary regions into the bound default framebuffer, width x height, shielding a GL core's
+    // state as renderFrame does. Never runs the core nor touches the main output's state (dirty flag, frame count,
+    // layout, preset FBOs). Black when there are no secondary regions or no frame yet.
+    void renderSecondary(unsigned width, unsigned height);
 
     // force: draw even when skipDuplicateFrames would skip an unchanged frame.
     void renderFrame(bool force = false);
@@ -123,7 +131,7 @@ private:
     void drawFrame(bool force);
     void updateProgram();
 
-    float getScreenDensity();
+    float getScreenDensity(float screenWidth, float screenHeight);
     // The last frame's size: the part of the texture the core drew.
     float getTextureWidth();
     float getTextureHeight();
@@ -138,9 +146,13 @@ private:
     // Compiles one shader pass and looks up the handles the built-in draw loops use. Throws when the program fails.
     static ShaderChainEntry createShaderChainEntry(const ShaderManager::Pass& pass);
 
-    void renderRegions();
-    void drawBuiltInChain(const std::array<float, 12>& vertices, const std::array<float, 12>& coordinates);
-    void drawPlain(const RegionQuad& quad);
+    // layout's region quads on framebuffer 0 at layout's screen size; preset (may be null) draws the shaded ones.
+    void renderRegions(VideoLayout& layout, PresetChainRenderer* preset);
+    void drawBuiltInChain(const std::array<float, 12>& vertices, const std::array<float, 12>& coordinates,
+                          unsigned screenWidth, unsigned screenHeight);
+    void drawPlain(const RegionQuad& quad, unsigned screenWidth, unsigned screenHeight);
+    // Builds secondaryPresetRenderer from the requested chain when the main one is live and it isn't yet.
+    void updateSecondaryPresetRenderer();
 
 private:
     ShaderManager::Config requestedShaderConfig = ShaderManager::Config {
@@ -166,6 +178,13 @@ private:
     bool immersiveModeEnabled = false;
     ImmersiveMode immersiveMode;
     VideoLayout videoLayout;
+
+    // The second surface: its own layout (viewport = the whole surface) and its own preset chain instance, so its
+    // size never resizes the main chain's FBOs. The chain is built on the first secondary draw that needs it, not
+    // with the main one: no second compile while there is no second surface.
+    VideoLayout secondaryLayout;
+    std::unique_ptr<PresetChainRenderer> secondaryPresetRenderer;
+    bool secondaryPresetFailed = false;   // don't retry a failed build every frame; cleared with the main chain
 
     std::unique_ptr<Renderer> renderer;
     class AhbRenderer* ahbRenderer = nullptr;   // renderer, when it is one

@@ -79,6 +79,13 @@ import com.nxredux.mobile.tools.CheatDbService
 import com.nxredux.mobile.ui.App
 import com.nxredux.mobile.ui.AppDeps
 import com.nxredux.mobile.ui.AppState
+import com.nxredux.mobile.ui.OnboardingStep
+import com.nxredux.mobile.ui.Screen
+import com.nxredux.mobile.ui.nx.BottomScreenButton
+import com.nxredux.mobile.ui.nx.NxTheme
+import com.nxredux.mobile.ui.nx.nxColorsFor
+import com.nxredux.mobile.runner.SecondScreenPresentation
+import com.nxredux.mobile.runner.SecondScreens
 import com.nxredux.mobile.ui.nx.AxisDirections
 import com.nxredux.mobile.ui.nx.InputRouter
 import com.nxredux.mobile.ui.nx.NxButton
@@ -88,6 +95,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.concurrent.thread
 import java.lang.ref.WeakReference
@@ -194,6 +202,10 @@ class MainActivity : ComponentActivity(), FolderPicker {
             .exceptionOrNull()
 
     private val allFiles by lazy { AndroidAllFilesAccess(this) }   // the setup step, the Settings row and the pickers ask it
+    private val secondScreens by lazy { SecondScreens(this) }   // onboarding's Bottom screen step asks it
+    /** The Bottom screen step's button on the built-in second screen ([syncBottomScreenPrompt]); null while not shown. */
+    private var bottomScreenPrompt: SecondScreenPresentation? = null
+    private var inFront = false
     private lateinit var launcher: AndroidAppLauncher
     /**
      * The ROLE_HOME dialog: whatever the answer, the Launcher page re-reads the state. Without the role (declined, or
@@ -342,9 +354,12 @@ class MainActivity : ComponentActivity(), FolderPicker {
                 notificationAccess = notificationAccess,
                 localFiles = AndroidLocalFiles(AndroidLocalFiles.deviceVolumes(applicationContext)),
                 archiveHead = { ref, name, exts, max -> withContext(Dispatchers.IO) { Archives.head(applicationContext, ref, name, exts, max) } },
+                builtInSecondScreen = { secondScreens.builtInNow() != null },
             ),
             scope,
         )
+        // Settings shows the dual-screen rows only with a second screen. Only while started: stop() clears `current`, which is not a removal.
+        scope.launch { secondScreens.current.collect { if (inFront) state.onSecondScreenChanged(it != null) } }
         usbConsent = { consent: Intent ->
             runOnUiThread { runCatching { vpnConsent.launch(consent) }.onFailure { UsbCables.get(this).onConsent(false) } }
         }.also { UsbCables.get(this).askConsent = it }
@@ -370,6 +385,27 @@ class MainActivity : ComponentActivity(), FolderPicker {
             CompositionLocalProvider(LocalPosture provides posture.value) { App(state, ::pad) }
         }
         collectPosture()
+        scope.launch { state.screen.collect { syncBottomScreenPrompt() } }
+    }
+
+    /**
+     * Onboarding's Bottom screen step: its "This is the bottom screen" button on the built-in second screen too, while the
+     * step shows and the app is in front; a tap there picks that screen. Gone with the step, or when the app stops.
+     */
+    private fun syncBottomScreenPrompt() {
+        val onStep = ::state.isInitialized && (state.screen.value as? Screen.Onboarding)?.step == OnboardingStep.BOTTOM_SCREEN
+        val display = if (onStep && inFront) secondScreens.builtInNow() else null
+        if (bottomScreenPrompt?.display?.displayId == display?.displayId) return
+        bottomScreenPrompt?.dismiss()
+        bottomScreenPrompt = null
+        if (display == null) return
+        val prompt = SecondScreenPresentation(this, display)
+        val colors = nxColorsFor(settings.accent, settings.secondaryAccent)
+        prompt.theme = { content -> NxTheme(colors) { content() } }
+        prompt.showPanel { BottomScreenButton { state.onboardingBottomScreenOnSecond() } }
+        // The display may have gone meanwhile: the step still works from the main screen.
+        runCatching { prompt.show() }.onSuccess { bottomScreenPrompt = prompt }
+            .onFailure { NxLog.w("NXAPP", "bottom screen prompt: ${it.message}") }
     }
 
     /** Flex mode from launch: the folding feature (and the hinge angle where it hides half-open), in window px. */
@@ -404,6 +440,10 @@ class MainActivity : ComponentActivity(), FolderPicker {
             state.refreshResume()
             state.onForeground()   // a card inserted while in the background: its games come back
         }
+        inFront = true
+        syncBottomScreenPrompt()
+        secondScreens.start()
+        if (::state.isInitialized) state.onSecondScreenChanged(secondScreens.current.value != null)   // what is there now, once, after the pause
     }
 
     /**
@@ -440,6 +480,9 @@ class MainActivity : ComponentActivity(), FolderPicker {
     }
 
     override fun onStop() {
+        inFront = false
+        syncBottomScreenPrompt()   // takes the second screen's button away
+        secondScreens.stop()
         inputManager?.unregisterInputDeviceListener(inputDeviceListener)   // a no-op when onStart handed over before registering
         if (::router.isInitialized) { releaseHat(); router.releaseAll() }
         frameRateBoost.reset()

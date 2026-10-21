@@ -131,6 +131,8 @@ internal class EmulatorSettingsController(
     private val work: CoroutineContext = Dispatchers.Default,
     /** Whether Vulkan failed for a core id on this phone ([com.nxredux.mobile.options.VulkanFallback]). */
     private val vulkanFailed: (String) -> Boolean = { false },
+    /** Whether a qualifying second screen is connected now: the Bottom screen row shows only then. */
+    private val secondScreen: () -> Boolean = { true },
 ) {
     private val lock = Mutex()
     private var listRows: List<EmulatorListRow> = emptyList()
@@ -252,7 +254,7 @@ internal class EmulatorSettingsController(
     private fun defaults(d: CoreDescriptor) = coreDefaults(d.id) + d.defaultOptions
 
     private fun build(tag: String, d: CoreDescriptor, game: Listed?, files: Pair<ConfigFile?, ConfigFile?>): EmulatorPage =
-        EmulatorSettings.page(tag, d, coreOptions.table(d.id), defaults(d), files.first, files.second, forGame = game != null, vulkanFailed = vulkanFailed(d.id))
+        EmulatorSettings.page(tag, d, coreOptions.table(d.id), defaults(d), files.first, files.second, forGame = game != null, vulkanFailed = vulkanFailed(d.id), secondScreen = secondScreen())
 
     private suspend fun readPage(tag: String, d: CoreDescriptor, game: Listed?): EmulatorPage =
         build(tag, d, game, configs.read(tag, d.id, game?.game?.fileName))
@@ -364,6 +366,18 @@ internal class EmulatorSettingsController(
                         runCatching { readPage(tag, d, game) }.getOrNull()
                     }
                 }
+                page?.let { show(s, it) }
+            }
+        }
+    }
+
+    /** A second screen came or went: the open page (if any) is read again, so its Bottom screen row follows. */
+    fun refreshOpenPage() {
+        val s = screen.value as? Screen.EmulatorOptions ?: return
+        val d = descriptorOf(s) ?: return
+        scope.launch {
+            lock.withLock {
+                val page = withContext(work) { runCatching { readPage(s.page.tag, d, s.game) }.getOrNull() }
                 page?.let { show(s, it) }
             }
         }

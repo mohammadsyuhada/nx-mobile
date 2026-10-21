@@ -25,6 +25,7 @@ import android.opengl.GLSurfaceView
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.Surface
 import android.view.WindowManager
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleObserver
@@ -102,6 +103,51 @@ class GLRetroView(
         val packed = ScreenRegions.pack(value)
         queueEvent { LibretroDroid.setScreenRegions(packed) }
     }
+
+    /**
+     * Parts of the core frame drawn on the second display's surface ([setSecondarySurface]); dst is 0..1 of that whole
+     * surface. Main thread; applied on the GL thread, and re-applied after create().
+     */
+    var secondaryRegions: List<ScreenRegion> by Delegates.observable(emptyList()) { _, old, value ->
+        if (old == value) return@observable
+        val packed = ScreenRegions.pack(value)
+        queueEvent { LibretroDroid.setSecondaryRegions(packed) }
+    }
+
+    // GL thread only.
+    private val secondaryOutput = SecondaryOutput()
+
+    /**
+     * The second display's surface ([width] x [height] px), drawn with [secondaryRegions] after each frame; null tears
+     * it down. Main thread. A null waits (briefly) for the GL thread to destroy the EGL surface, so the caller may
+     * release the Surface right after; drawing to a surface that went bad stops until a new one is set.
+     */
+    fun setSecondarySurface(surface: Surface?, width: Int, height: Int) {
+        if (Thread.currentThread().name.startsWith("GLThread")) {
+            secondaryOutput.setSurface(surface, width, height)
+            return
+        }
+        // Setting a surface needn't wait; nor does a null on a detached view (its exited GL thread took the EGL surface).
+        if (surface != null || emulationThreadGone) {
+            queueEvent { secondaryOutput.setSurface(surface, width, height) }
+            return
+        }
+        val latch = CountDownLatch(1)
+        queueEvent {
+            try {
+                secondaryOutput.setSurface(null, 0, 0)
+            } finally {
+                latch.countDown()
+            }
+        }
+        if (!latch.awaitUninterruptibly(SECONDARY_TEARDOWN_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+            NxLog.w(TAG_LOG, "GL thread did not drop the second surface within $SECONDARY_TEARDOWN_TIMEOUT_MS ms")
+        }
+    }
+
+    /** Where a touch at ([x01], [y01], 0..1 of the second surface) lands in the core frame; null outside a touch region. */
+    fun mapSecondaryTouch(x01: Float, y01: Float): FramePoint? =
+        ScreenRegions.mapTouch(secondaryRegions, ScreenRect(0f, 0f, 1f, 1f), x01, y01)
 
     /**
      * Keeps the touch pointer where it was when the finger lifts or leaves the picture, instead of releasing it. Set for
@@ -230,6 +276,7 @@ class GLRetroView(
         val offsetX = screenOffset.x
         val offsetY = screenOffset.y
         val regions = ScreenRegions.pack(screenRegions)
+        val secondary = ScreenRegions.pack(secondaryRegions)
         val sticky = stickyPointer
         val chain = shaderChain?.let { it.copy(params = it.params + shaderParameterOverrides) }
         queueEvent {
@@ -237,6 +284,7 @@ class GLRetroView(
             LibretroDroid.setScaleMode(mode)
             LibretroDroid.setScreenOffset(offsetX, offsetY)
             LibretroDroid.setScreenRegions(regions)
+            LibretroDroid.setSecondaryRegions(secondary)
             setStickyPointers(sticky)
             pushShaderChain(chain)
         }
@@ -501,7 +549,10 @@ class GLRetroView(
         return LibretroDroid.getVariables()
     }
 
-    /** `[baseWidth, baseHeight, aspectRatio]` of the running game; zeros before it loads. Safe from any thread. */
+    /**
+     * `[baseWidth, baseHeight, aspectRatio, rotation]` of the running game (rotation in radians, the core's SET_ROTATION);
+     * zeros before it loads. Safe from any thread.
+     */
     fun getGameGeometry(): FloatArray = LibretroDroid.getGameGeometry()
 
     /** True once the running core's frames come from its own GL framebuffer (a hardware-rendered core). Safe from any thread. */
@@ -621,6 +672,7 @@ class GLRetroView(
                     shaderErrorPolled = true
                     reportShaderError()
                 }
+                secondaryOutput.draw()
             }
         }
 
@@ -633,6 +685,8 @@ class GLRetroView(
         override fun onSurfaceCreated(gl: GL10, config: EGLConfig) = catchExceptions {
             Thread.currentThread().priority = Thread.MAX_PRIORITY
             shaderErrorPolled = false
+            // A new context: the second surface's EGL surface went with the old one; re-made on the next draw.
+            secondaryOutput.contextLost()
             initializeCore()
             retroGLEventsSubject.tryEmit(GLRetroEvents.SurfaceCreated)
         }
@@ -855,6 +909,7 @@ class GLRetroView(
         private val TAG_LOG = GLRetroView::class.java.simpleName
         private const val EMULATION_THREAD_TIMEOUT_SECONDS = 10L
         private const val DESTROY_TIMEOUT_SECONDS = 5L
+        private const val SECONDARY_TEARDOWN_TIMEOUT_MS = 500L
         private const val POINTER_PORTS = 4   // the native runner's per-port pointers (input.h)
 
         const val MOTION_SOURCE_DPAD = LibretroDroid.MOTION_SOURCE_DPAD

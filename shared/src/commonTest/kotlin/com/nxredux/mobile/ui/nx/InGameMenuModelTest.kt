@@ -5,6 +5,7 @@ import com.nxredux.mobile.achievements.RaAchievementState
 import com.nxredux.mobile.achievements.RaSortOrder
 import com.nxredux.mobile.cheats.CheatEntry
 import com.nxredux.mobile.options.ConfigSource
+import com.nxredux.mobile.options.BottomScreenOptions
 import com.nxredux.mobile.options.ConsoleSettings
 import com.nxredux.mobile.options.CoreOption
 import com.nxredux.mobile.options.FrontendOptions
@@ -723,6 +724,40 @@ class InGameMenuModelTest {
         assertEquals(MenuEffect.SaveSlot(3), m.press(NxButton.A))          // slot 2 (0-based) from model(), 1-based in the effect
     }
 
+    @Test fun second_screen_row_hidden_without_display() {
+        val m = model()
+        m.setSecondScreen(connected = false, on = true)
+        assertEquals(listOf("Continue", "Save", "Load", "Options", "Quit"), m.labels())
+    }
+
+    @Test fun second_screen_row_after_load_when_connected() {
+        val m = model()
+        m.setSecondScreen(connected = true, on = true)
+        assertEquals(listOf("Continue", "Save", "Load", "Second screen", "Options", "Quit"), m.labels())
+        val row = assertIs<MenuRow.Option>(m.state.page.rows[3])
+        assertEquals(InGameMenuModel.SECOND_SCREEN_KEY, row.key)
+        assertEquals("On", row.valueLabel)
+        m.setSecondScreen(connected = false, on = true)
+        assertEquals(listOf("Continue", "Save", "Load", "Options", "Quit"), m.labels())
+    }
+
+    @Test fun second_screen_row_right_emits_off() {
+        val m = model()
+        m.setSecondScreen(connected = true, on = true)
+        repeat(3) { m.press(NxButton.DOWN) }
+        assertEquals(MenuEffect.SetSecondScreen(false), m.press(NxButton.RIGHT))
+        assertEquals("Off", assertIs<MenuRow.Option>(m.state.page.rows[3]).valueLabel)
+        assertEquals(3, m.state.page.selected)
+    }
+
+    @Test fun second_screen_row_a_flips() {
+        val m = model()
+        m.setSecondScreen(connected = true, on = false)
+        repeat(3) { m.press(NxButton.DOWN) }
+        assertEquals(MenuEffect.SetSecondScreen(true), m.press(NxButton.A))
+        assertEquals("On", assertIs<MenuRow.Option>(m.state.page.rows[3]).valueLabel)
+    }
+
     private val BADGES = mapOf("b1.png" to "content://b1", "b2_lock.png" to "content://b2l")
     private fun ach(id: Int, state: RaAchievementState, title: String = "A$id", points: Int = 5) =
         RaAchievement(id, title, "desc $id", points, "b$id", state, if (state == RaAchievementState.LOCKED) null else 100L, "3/10", 30f, 50f, null)
@@ -820,6 +855,33 @@ class InGameMenuModelTest {
         assertEquals(listOf("Wii Controller", "Motion Controls", "Controller Layout"), inGameConsoleRows("WII"))
     }
 
+    // Bottom screen (every console) shows in the running game's Console Settings only while a second display is
+    // attached, and changes live like any frontend row; the page follows the display coming and going.
+    @Test fun the_bottom_screen_row_shows_with_a_second_display_and_edits_live() {
+        val m = model()
+        m.setFrontend(FrontendOptions.defaults("GBA"), emptyList(), emptySet(), "GBA")
+        m.select(3); m.activate(3)                                         // Options
+        assertNull(m.activate(0))                                          // Console Settings
+        assertEquals(listOf("Controller Layout"), m.state.page.rows.map { it.label })
+        m.setSecondScreen(connected = true, on = true)
+        assertEquals(listOf("Bottom screen", "Controller Layout"), m.state.page.rows.map { it.label })
+        m.select(0)
+        assertEquals("System default", m.optionRow(0).valueLabel)
+        assertEquals(MenuEffect.SetFrontend(BottomScreenOptions.KEY, "main"), m.press(NxButton.RIGHT))
+        assertEquals("Main screen", m.optionRow(0).valueLabel)
+        m.setSecondScreen(connected = false, on = true)
+        assertEquals(listOf("Controller Layout"), m.state.page.rows.map { it.label })
+    }
+
+    @Test fun a_second_display_offers_console_settings_where_every_other_row_is_locked() {
+        val m = model()   // plainLocked: the plain console's only row locked
+        m.setSecondScreen(connected = true, on = true)
+        m.select(4); m.activate(4)                                         // Options, after the root's Second screen row
+        assertEquals(listOf("Console Settings", "Frontend", "Shaders", "Core Options", "Cheats", "Save Changes"), m.state.page.rows.map { it.label })
+        m.setSecondScreen(connected = false, on = true)
+        assertEquals(listOf("Frontend", "Shaders", "Core Options", "Cheats", "Save Changes"), m.state.page.rows.map { it.label })
+    }
+
     @Test fun console_settings_is_not_offered_when_every_row_is_locked() {
         val m = model()   // plainLocked: the plain console's only row locked
         m.select(3); m.activate(3)
@@ -829,7 +891,7 @@ class InGameMenuModelTest {
     @Test fun console_settings_lists_the_ds_rows_and_edits_them_like_frontend_rows() {
         val m = model().openConsoleSettings()
         assertEquals("Console Settings", m.state.page.title)
-        assertEquals(ConsoleSettings.tableFor("NDS").map { it.label }, m.state.page.rows.map { it.label })
+        assertEquals(ConsoleSettings.tableFor("NDS").filter { it != BottomScreenOptions.row }.map { it.label }, m.state.page.rows.map { it.label })
         assertEquals(
             listOf(
                 "Layout (portrait)", "Layout (portrait, controller)", "Layout (landscape)", "Big Screen", "Inset Corner", "Inset Size",
