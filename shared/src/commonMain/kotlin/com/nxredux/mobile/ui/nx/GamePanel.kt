@@ -16,13 +16,21 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -107,7 +115,7 @@ private fun PanelHeader(h: GamePanelHeader) {
 @Composable
 private fun ShortcutsTab(shortcuts: List<ShortcutState>, focused: Int?, bottom: Dp, onEvent: (GamePanelEvent) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val columns = if (maxWidth < GP_NARROW) 2 else 4
+        val columns = gamePanelColumns(maxWidth)
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                 .padding(start = GP_GUTTER, end = GP_GUTTER, top = 10.dp, bottom = bottom),
@@ -126,13 +134,19 @@ private fun ShortcutsTab(shortcuts: List<ShortcutState>, focused: Int?, bottom: 
     }
 }
 
+/** The shortcut grid's columns in a panel [width] wide: 4, or 2 under [GP_NARROW] (the in-game menu steps by them). */
+internal fun gamePanelColumns(width: Dp): Int = if (width < GP_NARROW) 2 else 4
+
 /** A hollow pill ([nxButtonRing]): the label, its value under it; at 0.35 alpha and not clickable while disabled. */
 @Composable
 private fun ShortcutPill(s: ShortcutState, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val colors = LocalNxColors.current
     val font = LocalNxFont.current
+    // The controller's pill scrolls into view in the grid's scroll.
+    val into = remember { BringIntoViewRequester() }
+    LaunchedEffect(selected) { if (selected) into.bringIntoView() }
     Column(
-        modifier.alpha(if (s.enabled) 1f else GP_DISABLED_ALPHA).heightIn(min = GP_PILL_HEIGHT).clip(RoundedCornerShape(50))
+        modifier.bringIntoViewRequester(into).alpha(if (s.enabled) 1f else GP_DISABLED_ALPHA).heightIn(min = GP_PILL_HEIGHT).clip(RoundedCornerShape(50))
             .then(if (selected) Modifier.background(colors.accent) else Modifier.nxButtonRing(colors))
             .then(if (s.enabled) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -159,7 +173,10 @@ private fun AchievementsTab(
 ) {
     val colors = LocalNxColors.current
     val font = LocalNxFont.current
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = GP_LIST_GUTTER, end = GP_LIST_GUTTER, top = 6.dp, bottom = bottom)) {
+    LazyColumn(
+        Modifier.fillMaxSize(), state = rememberFocusedListState(focused),
+        contentPadding = PaddingValues(start = GP_LIST_GUTTER, end = GP_LIST_GUTTER, top = 6.dp, bottom = bottom),
+    ) {
         itemsIndexed(list, key = { _, a -> a.id }) { i, a ->
             val selected = focused == i
             val sub = raAchievementSubtitle(a)
@@ -186,7 +203,11 @@ private fun AchievementsTab(
  */
 @Composable
 private fun PlayersTab(players: List<PlayerSlotRow>, pads: List<PlayerPadRow>, focused: Int?, bottom: Dp, onEvent: (GamePanelEvent) -> Unit) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = GP_LIST_GUTTER, end = GP_LIST_GUTTER, top = 6.dp, bottom = bottom)) {
+    // Item indices are the focus indices: the slots, then the pads (no header item).
+    LazyColumn(
+        Modifier.fillMaxSize(), state = rememberFocusedListState(focused),
+        contentPadding = PaddingValues(start = GP_LIST_GUTTER, end = GP_LIST_GUTTER, top = 6.dp, bottom = bottom),
+    ) {
         itemsIndexed(players) { i, s ->
             PlayerRow("Player ${i + 1}", GamePanelModel.playerValue(s), focused == i, Modifier.clickable { onEvent(GamePanelModel.nextPlayer(i, players, pads)) })
         }
@@ -194,6 +215,30 @@ private fun PlayersTab(players: List<PlayerSlotRow>, pads: List<PlayerPadRow>, f
             PlayerRow(p.name, if (p.playing) "Playing" else "Not playing", focused == players.size + j, Modifier.clickable { onEvent(GamePanelModel.togglePlaying(p)) })
         }
     }
+}
+
+/**
+ * A list's state that follows the controller's [focused] item (its LazyColumn index): the least scroll that shows it
+ * whole, or a jump to it when it is off screen.
+ */
+@Composable
+private fun rememberFocusedListState(focused: Int?): LazyListState {
+    val state = rememberLazyListState()
+    LaunchedEffect(focused) {
+        val i = focused ?: return@LaunchedEffect
+        // Not laid out yet (the tab's first frame): wait for it, so the focus is measured against real rows.
+        if (state.layoutInfo.visibleItemsInfo.isEmpty()) withFrameNanos { }
+        val info = state.layoutInfo
+        val item = info.visibleItemsInfo.firstOrNull { it.index == i }
+        val top = info.viewportStartOffset + info.beforeContentPadding
+        val bottom = info.viewportEndOffset - info.afterContentPadding
+        when {
+            item == null -> state.animateScrollToItem(i)
+            item.offset < top -> state.animateScrollBy((item.offset - top).toFloat())
+            item.offset + item.size > bottom -> state.animateScrollBy((item.offset + item.size - bottom).toFloat())
+        }
+    }
+    return state
 }
 
 @Composable

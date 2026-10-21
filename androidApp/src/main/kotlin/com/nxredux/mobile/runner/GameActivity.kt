@@ -15,6 +15,7 @@ import android.graphics.drawable.GradientDrawable
 import android.hardware.input.InputManager
 import android.media.AudioManager
 import android.net.Uri
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -177,6 +178,7 @@ import com.nxredux.mobile.ui.nx.DpadHat
 import com.nxredux.mobile.ui.nx.LocalNxColors
 import com.nxredux.mobile.ui.nx.NxDefaults
 import com.nxredux.mobile.ui.nx.PadProfile
+import com.nxredux.mobile.ui.nx.GamePanelHeader
 import com.nxredux.mobile.ui.nx.InGameMenu
 import com.nxredux.mobile.ui.nx.NxTheme
 import com.nxredux.mobile.ui.nx.PanelEvent
@@ -2787,7 +2789,7 @@ class GameActivity : ComponentActivity() {
         )
     }
 
-    /** Shows the in-game menu's Second screen row while a second display is attached, with the setting's value. */
+    /** Shows the in-game menu panel's Second screen shortcut while a second display is attached, with the setting's value. */
     private fun publishSecondScreen(model: InGameMenuModel) {
         model.setSecondScreen(secondScreens.current.value != null, appSettings.secondScreen)
         menuState.value = model.state
@@ -3494,6 +3496,7 @@ class GameActivity : ComponentActivity() {
         publishPlayers(model)
         publishSecondScreen(model)
         applyAchievements(model)
+        model.setPanelHeader(menuPanelHeader())
         menuModel = model
         // Multi-disc content (an m3u, a multi-disc PBP): the core reports its discs through the disk-control interface.
         retroView?.takeIf { gameReady && netplay == null }?.let { view ->
@@ -3555,10 +3558,12 @@ class GameActivity : ComponentActivity() {
                             muted = { id -> id in (achievements?.muted ?: emptySet()) },
                             onInfoTruncated = { info, t -> if (!quitting) menuModel?.let { it.setInfoTruncated(info, t); menuState.value = it.state } },
                             // Two panes on a wide area (the unfolded Fold, a phone in landscape), as Settings.
-                            preview = { row -> menuModel?.previewFor(row) },
                             onSplit = { split -> menuModel?.split = split },
                             onParentTap = { kind, i -> if (!quitting) menuModel?.let { m -> val e = m.tapParent(kind, i); menuState.value = m.state; handle(e) } },
-                            onPreviewTap = { i -> if (!quitting) menuModel?.let { m -> val e = m.tapPreview(i); menuState.value = m.state; handle(e) } },
+                            // The game panel beside the root list (the model caches it until its inputs change).
+                            panel = menuModel?.panelState(),
+                            onPanelEvent = { ev -> if (!quitting) menuModel?.let { m -> val e = m.panelEvent(ev); menuState.value = m.state; handle(e) } },
+                            onPanelColumns = { c -> menuModel?.panelColumns = c },
                         )
                     }
                     }
@@ -3568,6 +3573,17 @@ class GameActivity : ComponentActivity() {
         menuView = overlay
         root.addView(overlay, menuLayoutParams(resources.configuration.orientation))
         updatePadVisibility()
+    }
+
+    /**
+     * The in-game menu panel's header for now: the game's title and console, the clock and battery at the open. No box
+     * art or play time yet (0); the achievement count comes from the menu model's own set.
+     */
+    private fun menuPanelHeader(): GamePanelHeader {
+        val battery = (getSystemService(BATTERY_SERVICE) as? BatteryManager)
+            ?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it in 0..100 }
+        val clock = android.text.format.DateFormat.getTimeFormat(this).format(java.util.Date())
+        return GamePanelHeader(intent.getStringExtra(EXTRA_TITLE) ?: "Paused", null, gameTag, 0L, 0L, null, clock, battery)
     }
 
     /**

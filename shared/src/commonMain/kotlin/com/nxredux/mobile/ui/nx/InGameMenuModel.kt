@@ -82,8 +82,20 @@ data class MenuPage(
     val scrollDir: Int = 0,
 )
 
-/** [truncatedInfo]: the last info text the UI reported cut off in the list's info area (see [InGameMenuModel.setInfoTruncated]). */
-data class MenuState(val stack: List<MenuPage>, val slotIndex: Int, val truncatedInfo: String? = null) {
+/**
+ * [truncatedInfo]: the last info text the UI reported cut off in the list's info area (see [InGameMenuModel.setInfoTruncated]).
+ * [panelFocus]: where the controller is in the root's game panel, null on the menu list; [panelTab]: the panel's tab.
+ * [panelVersion] counts changes to the panel's other inputs (players, second screen, achievements, header), which the
+ * pages do not show, so a host publishing this state on every change still sees a new value.
+ */
+data class MenuState(
+    val stack: List<MenuPage>,
+    val slotIndex: Int,
+    val truncatedInfo: String? = null,
+    val panelFocus: PanelFocus? = null,
+    val panelTab: GamePanelTab = GamePanelTab.SHORTCUTS,
+    val panelVersion: Int = 0,
+) {
     val page: MenuPage get() = stack.last()
 
     /** The selected row is an option whose description does not fit the info area below the list: X shows it whole. */
@@ -115,7 +127,7 @@ sealed interface MenuEffect {
     data class SetCheat(val index: Int, val enabled: Boolean) : MenuEffect
     /** Put disc [index] (0-based) in the drive now; not persisted. */
     data class ChangeDisc(val index: Int) : MenuEffect
-    /** Turn the second-screen setting [on] or off (already flipped in the model); the host persists it and re-syncs the dual mode. */
+    /** Turn the second-screen setting [on] or off (the panel's shortcut; already flipped in the model); the host persists it and re-syncs the dual mode. */
     data class SetSecondScreen(val on: Boolean) : MenuEffect
     /** Flip achievement [id]'s notification mute (already flipped in the model); the host persists it. */
     data class ToggleMute(val id: Int) : MenuEffect
@@ -133,6 +145,9 @@ sealed interface MenuEffect {
  * only for a console with its own rows), Frontend (→ Adjust), Shaders (→ Shader Parameters, → Adjust), Core Options →
  * category, Cheats, and Save Changes. Slots are 0-based internally and 1-based in effects.
  *
+ * Beside the root list (but for Save / Load, which show their slot) sits the game panel ([panelState]): RIGHT enters it
+ * on its tab row, L1/R1 switch its tabs, LEFT at its left edge or B comes back; a page push or pop leaves it.
+ *
  * The host builds a new model each time the menu opens and calls [setFrontend] and [setShaders] right away;
  * [MenuEffect.Close] does not reset the stack.
  */
@@ -145,12 +160,17 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
     /** The core's disc count and current disc (0-based), from [setDiscs]; the Disc row shows when [discCount] > 1. */
     private var discCount = 0
     private var discIndex = 0
-    /** From [setSecondScreen]; the root page shows the Second screen row only while a second display is [secondConnected]. */
+    /** From [setSecondScreen]; the panel shows the Second screen shortcut only while a second display is [secondConnected]. */
     private var secondConnected = false
     private var secondOn = true
-    /** From [setPlayers]; the root page shows Players when there is more than one slot. */
+    /** From [setPlayers]; the panel shows its Players tab when there is more than one slot. */
     private var playerSlots: List<PlayerSlotRow> = emptyList()
     private var playerPads: List<PlayerPadRow> = emptyList()
+    /** From [setPanelHeader]; until then the panel's header is the game's title alone. */
+    private var panelHeader: GamePanelHeader? = null
+
+    /** The panel's shortcut grid columns as drawn (the UI reports them: 2 when narrow); UP/DOWN step a row of them. */
+    var panelColumns: Int = 4
 
     var state: MenuState = MenuState(listOf(rootPage()), initialSlot.coerceIn(0, slotCount - 1))
         private set
@@ -192,7 +212,7 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
     private var cheatsFolder = ""     // "Cheats/<TAG>", for the empty-page footer
     private var cheatsExpected = ""   // the first file name looked for; blank until the host has resolved
 
-    /** Null while the game is not recognised; the Options row shows only once [achievementsAvailable]. */
+    /** Null while the game is not recognised; the panel's Achievements tab shows only with a set once [achievementsAvailable]. */
     private var achievements: List<RaAchievement>? = null
     private var achievementsAvailable = false
     private var achievementSummary: Pair<Int, Int>? = null
@@ -213,7 +233,10 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
     /** An [MenuEffect.OpenCoreOptions] was emitted and its [showCoreOptions] has not arrived yet. */
     private var coreOptionsPending = false
 
-    fun press(button: NxButton): MenuEffect? {
+    fun press(button: NxButton): MenuEffect? =
+        pressMenu(button).also { if (it == MenuEffect.Close) state = state.copy(panelFocus = null) }
+
+    private fun pressMenu(button: NxButton): MenuEffect? {
         if (state.page.kind == PageKind.Message) {
             when (button) {
                 NxButton.A, NxButton.B, NxButton.X -> { pop(); return null }
@@ -226,6 +249,8 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
             }
         }
         if (state.page.kind is PageKind.Adjust) return pressAdjust(button)
+        if (state.panelFocus != null) return pressPanel(button)
+        if ((button == NxButton.L1 || button == NxButton.R1) && panelShown()) { stepTab(if (button == NxButton.L1) -1 else 1); return null }
         if (state.page.kind == PageKind.Achievements || state.page.kind is PageKind.AchievementDetail) {
             when (button) {
                 NxButton.Y -> { achievementsLockedOnly = !achievementsLockedOnly; refreshAchievementsPage(); return null }
@@ -245,7 +270,12 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
             NxButton.UP -> { move(-1); null }
             NxButton.DOWN -> { move(1); null }
             NxButton.LEFT -> change(-1)
-            NxButton.RIGHT -> if (split && opensPage(state.page.rows.getOrNull(state.page.selected))) activate(state.page.selected) else change(1)
+            NxButton.RIGHT -> when {
+                // The Disc row keeps RIGHT for its value; every other row beside the panel enters it.
+                panelShown() && state.page.rows.getOrNull(state.page.selected) !is MenuRow.Option -> { state = state.copy(panelFocus = PanelFocus.Tabs); null }
+                split && opensPage(state.page.rows.getOrNull(state.page.selected)) -> activate(state.page.selected)
+                else -> change(1)
+            }
             // A on Quit saves and quits; a touch tap ([activate]) asks how to quit instead.
             NxButton.A -> if (selectedAction() == MenuAction.QUIT) MenuEffect.Quit else activate(state.page.selected)
             NxButton.B -> back()
@@ -263,8 +293,12 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         if (next != state.truncatedInfo) state = state.copy(truncatedInfo = next)
     }
 
+    /** Highlights row [index] of the top page; on the root the focus comes back from the panel to the list. */
     fun select(index: Int) {
-        if (index in state.page.rows.indices) replaceTop(state.page.copy(selected = index))
+        if (index in state.page.rows.indices) {
+            replaceTop(state.page.copy(selected = index))
+            state = state.copy(panelFocus = null)
+        }
     }
 
     fun activate(index: Int): MenuEffect? {
@@ -277,7 +311,6 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
             is MenuRow.Submenu -> openSubmenu(row.target)
             is MenuRow.Option -> {
                 val achievement = if (state.page.kind == PageKind.Achievements) achievementFor(row.key) else null
-                if (row.key == SECOND_SCREEN_KEY) return flipSecondScreen()   // a root row only
                 if (achievement != null) push(achievementDetailPage(achievement))
                 else if (row.visual) push(adjustPage(row.key))
                 else if (row.info.isNotBlank()) push(message(row.label, row.info))
@@ -297,24 +330,6 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
     }
 
     /**
-     * The page [row] would open, built without opening it, for the two-pane root's preview ([menuPanes]); null for a
-     * row that opens none, or whose page is not ready without the host (Core Options loads from the core).
-     */
-    fun previewFor(row: MenuRow): MenuPage? = when (val target = (row as? MenuRow.Submenu)?.target) {
-        PageKind.Options -> optionsPage()
-        PageKind.ConsoleSettings -> consoleSettingsPage()
-        PageKind.Frontend -> frontendPage()
-        PageKind.Shaders -> shadersPage()
-        PageKind.ShaderParams -> shaderParamsPage()
-        PageKind.Cheats -> cheatsPage()
-        PageKind.Achievements -> if (achievements.isNullOrEmpty()) null else achievementsPage()
-        PageKind.SaveChanges -> saveChangesPage()
-        PageKind.Players -> playersPage()
-        is PageKind.Category -> categoryPage(target.key)
-        else -> null
-    }
-
-    /**
      * A tap on row [index] of the dimmed left pane, the page of kind [parent] under the top one ([menuPanes]): that level
      * comes back, as B would, on [index]; a row that opens a page opens it in place of the old one, as A there would. The
      * row already open, or a [parent] no longer under the top page, does nothing: a one-tap list ([nxTap]) calls this
@@ -327,19 +342,6 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         pop()
         select(index)
         return if (opensPage(state.page.rows[index])) activate(index) else null
-    }
-
-    /**
-     * A tap on row [index] of the root's preview pane ([menuPanes]): opens the highlighted row's page on that row. Only
-     * while the root is the top page, so the second call of a one-tap list does nothing.
-     */
-    fun tapPreview(index: Int): MenuEffect? {
-        if (state.stack.size != 1) return null
-        val row = state.page.rows.getOrNull(state.page.selected) ?: return null
-        if (previewFor(row) == null) return null
-        val effect = activate(state.page.selected)
-        if (state.stack.size > 1) select(index)
-        return effect
     }
 
     /**
@@ -407,8 +409,8 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
 
     /**
      * This game's achievements ([list] null: the game is not recognised), the (unlocked, total) [summary] for the
-     * Options row, the sort [order], the [muted] ids and the [badges] listing (file name -> image model). Makes the
-     * Achievements row visible and refreshes open Options/Achievements pages.
+     * panel's header, the sort [order], the [muted] ids and the [badges] listing (file name -> image model). Makes the
+     * panel's Achievements tab visible (with a set) and refreshes an open Achievements page.
      */
     fun setAchievements(list: List<RaAchievement>?, summary: Pair<Int, Int>?, order: RaSortOrder, muted: Set<Int>, badges: Map<String, String>) {
         achievements = list
@@ -417,14 +419,14 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         this.muted = muted
         this.badges = badges
         achievementsAvailable = true
-        refreshOptionsPage()
         refreshAchievementsPage()
+        fixPanel()
     }
 
-    /** Shows or hides the Achievements row (hidden when RetroAchievements is off or signed out). */
+    /** Shows or hides the panel's Achievements tab (hidden when RetroAchievements is off or signed out). */
     fun setAchievementsAvailable(available: Boolean) {
         achievementsAvailable = available
-        refreshOptionsPage()
+        fixPanel()
     }
 
     /** The achievement shown by the top AchievementDetail page, or null. */
@@ -457,8 +459,8 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
     }
 
     /**
-     * A second display is [connected] and the setting is [on]; shows (or hides) the root's Second screen row and Console
-     * Settings' Bottom screen row, keeping the selection.
+     * A second display is [connected] and the setting is [on]; shows (or hides) the panel's Second screen shortcut and
+     * Console Settings' Bottom screen row, keeping the selection.
      */
     fun setSecondScreen(connected: Boolean, on: Boolean) {
         val changed = connected != secondConnected
@@ -471,12 +473,6 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         refreshFrontendPages()
     }
 
-    private fun flipSecondScreen(): MenuEffect {
-        secondOn = !secondOn
-        refreshRoot()
-        return MenuEffect.SetSecondScreen(secondOn)
-    }
-
     private fun changeDisc(delta: Int): MenuEffect? {
         if (discCount < 2) return null
         discIndex = ((discIndex + delta) % discCount + discCount) % discCount
@@ -486,7 +482,7 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
 
     /**
      * The host's player slots and connected pads. Called when the menu opens and after every [MenuEffect.SetPlayer] /
-     * [MenuEffect.SetPlaying] the host applied; refreshes the root and an open Players page, keeping their rows.
+     * [MenuEffect.SetPlaying] the host applied; refreshes the panel and an open Players page, keeping their rows.
      */
     fun setPlayers(slots: List<PlayerSlotRow>, pads: List<PlayerPadRow>) {
         playerSlots = slots
@@ -518,7 +514,7 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
     private fun togglePlaying(key: String): MenuEffect? =
         playerPads.firstOrNull { it.key == key }?.let { MenuEffect.SetPlaying(key, !it.playing) }
 
-    /** Rebuilds the root page, keeping the selection on the row with the same label (root labels are unique). */
+    /** Rebuilds the root page, keeping the selection on the row with the same label (root labels are unique), and the panel. */
     private fun refreshRoot() {
         state = state.copy(stack = state.stack.map { p ->
             if (p.kind != PageKind.Root) p else {
@@ -527,6 +523,156 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
                 fresh.copy(selected = fresh.rows.indexOfFirst { it.label == label }.coerceAtLeast(0))
             }
         })
+        fixPanel()
+    }
+
+    // ------------------------------------------------------------------ the game panel
+
+    /** The panel's header: the game, its art and times ([GamePanelHeader]), the clock and battery. Shown at the next draw. */
+    fun setPanelHeader(header: GamePanelHeader) {
+        panelHeader = header
+        fixPanel()
+    }
+
+    /**
+     * What the root's game panel draws: the header (the achievement count from [setAchievements] while there is a set),
+     * the tabs that apply, the Shortcuts (Swap disc, Second screen, the future ones), the achievements in the chosen
+     * order, the Players page's rows, and the controller's [MenuState.panelFocus].
+     */
+    fun panelState(): GamePanelState {
+        // Asked on every recomposition of the menu: rebuilt (the achievements sorted again) only when an input changed.
+        val key = listOf(
+            state.panelTab, state.panelFocus, panelHeader, achievements, achievementsAvailable, achievementSummary, achievementOrder,
+            badges, playerSlots, playerPads, discCount, discIndex, secondConnected, secondOn, netplay, frontendTag,
+        )
+        panelCache?.takeIf { it.first == key }?.let { return it.second }
+        return buildPanelState().also { panelCache = key to it }
+    }
+
+    private var panelCache: Pair<List<Any?>, GamePanelState>? = null
+
+    private fun buildPanelState(): GamePanelState {
+        val tabs = panelTabs()
+        val ra = achievementSummary.takeIf { GamePanelTab.ACHIEVEMENTS in tabs }
+        val header = panelHeader ?: GamePanelHeader(gameTitle, null, frontendTag, 0L, 0L, null, "", null)
+        return GamePanelState(
+            header.copy(ra = ra), tabs, GamePanelModel.resolveTab(state.panelTab, tabs), panelShortcuts(), panelAchievements(),
+            badges, playerSlots, playerPads, touchOnly = false, focus = state.panelFocus,
+        )
+    }
+
+    /**
+     * A tap on the panel (or A on its focused item): Swap disc and Second screen as the menu's own effects, an
+     * achievement's detail page, a player slot or pad as the Players page sets them, a tab shown.
+     */
+    fun panelEvent(event: GamePanelEvent): MenuEffect? = when (event) {
+        GamePanelEvent.SwapDisc -> changeDisc(1)
+        is GamePanelEvent.SetSecondScreen -> {
+            secondOn = event.on
+            refreshRoot()
+            MenuEffect.SetSecondScreen(event.on)
+        }
+        is GamePanelEvent.SelectTab -> {
+            if (event.tab in panelTabs()) state = state.copy(panelTab = event.tab, panelFocus = state.panelFocus?.let { PanelFocus.Tabs })
+            null
+        }
+        is GamePanelEvent.OpenAchievement -> { achievements?.firstOrNull { it.id == event.id }?.let { push(achievementDetailPage(it)) }; null }
+        is GamePanelEvent.SetPlayer -> MenuEffect.SetPlayer(event.slot, event.key)
+        is GamePanelEvent.SetPlaying -> MenuEffect.SetPlaying(event.key, event.playing)
+        GamePanelEvent.ShowGame -> null
+    }
+
+    /** The root's right side is the panel: the root on top with a row other than Save / Load (their slot card) highlighted. */
+    private fun panelShown(): Boolean = state.stack.size == 1 && state.page.rows.getOrNull(state.page.selected) !is MenuRow.Slot
+
+    /** Achievements with a set; Players with more than one slot, never in netplay (the root had no Players row there). */
+    private fun panelTabs(): List<GamePanelTab> =
+        GamePanelModel.tabs(raAvailable = achievementsAvailable && !achievements.isNullOrEmpty(), playerSlots = if (netplay) 0 else playerSlots.size)
+
+    private fun panelShortcuts(): List<ShortcutState> = GamePanelModel.shortcuts(discCount, discIndex, secondConnected, secondOn, netplay)
+
+    private fun panelAchievements(): List<RaAchievement> = achievements.orEmpty().sortedBy(achievementOrder)
+
+    private fun panelTab(): GamePanelTab = GamePanelModel.resolveTab(state.panelTab, panelTabs())
+
+    private fun panelItemCount(tab: GamePanelTab): Int = when (tab) {
+        GamePanelTab.SHORTCUTS -> panelShortcuts().size
+        GamePanelTab.ACHIEVEMENTS -> panelAchievements().size
+        GamePanelTab.PLAYERS -> playerSlots.size + playerPads.size
+    }
+
+    /**
+     * Input while the focus is in the panel: L1/R1 tabs, UP/DOWN between the tab row and the items (a row of the shortcut
+     * grid at a time), LEFT/RIGHT along a grid row, LEFT at the left edge or on the tabs and B back to the list, A the
+     * item (on the tab row: Achievements and Players open their full page).
+     */
+    private fun pressPanel(button: NxButton): MenuEffect? {
+        val tab = panelTab()
+        val count = panelItemCount(tab)
+        val cols = if (tab == GamePanelTab.SHORTCUTS) panelColumns.coerceAtLeast(1) else 1
+        val at = (state.panelFocus as? PanelFocus.Item)?.index
+        val focus: PanelFocus? = when (button) {
+            NxButton.L1, NxButton.R1 -> { stepTab(if (button == NxButton.L1) -1 else 1); return null }
+            NxButton.MENU -> return MenuEffect.Close
+            NxButton.A -> return if (at == null) { openTabPage(tab); null } else panelItemEvent(tab, at)?.let(::panelEvent)
+            NxButton.B -> null
+            NxButton.UP -> if (at == null || at - cols < 0) PanelFocus.Tabs else PanelFocus.Item(at - cols)
+            NxButton.DOWN -> when {
+                at == null -> if (count > 0) PanelFocus.Item(0) else PanelFocus.Tabs
+                at + cols < count -> PanelFocus.Item(at + cols)
+                at / cols < (count - 1) / cols -> PanelFocus.Item(count - 1)   // the short last row's last pill
+                else -> PanelFocus.Item(at)
+            }
+            NxButton.LEFT -> if (at == null || at % cols == 0) null else PanelFocus.Item(at - 1)
+            NxButton.RIGHT -> if (at != null && at % cols < cols - 1 && at + 1 < count) PanelFocus.Item(at + 1) else state.panelFocus
+            else -> state.panelFocus
+        }
+        state = state.copy(panelFocus = focus)
+        return null
+    }
+
+    /** L1/R1: the previous/next shown tab, wrapping; focus on an item lands on the new tab's first (its tab row if empty). */
+    private fun stepTab(delta: Int) {
+        val tabs = panelTabs()
+        if (tabs.size < 2) return
+        val next = tabs[(tabs.indexOf(panelTab()) + delta).mod(tabs.size)]
+        val focus = when (state.panelFocus) {
+            is PanelFocus.Item -> if (panelItemCount(next) > 0) PanelFocus.Item(0) else PanelFocus.Tabs
+            else -> state.panelFocus
+        }
+        state = state.copy(panelTab = next, panelFocus = focus)
+    }
+
+    /** A on the tab row: the Achievements and Players tabs open their full page (Locked only, Mute; the footer). */
+    private fun openTabPage(tab: GamePanelTab) {
+        when (tab) {
+            GamePanelTab.ACHIEVEMENTS -> push(achievementsPage())
+            GamePanelTab.PLAYERS -> push(playersPage())
+            GamePanelTab.SHORTCUTS -> Unit
+        }
+    }
+
+    /** What A on item [index] of [tab] asks for, as a tap there would ([GamePanel]); null for a disabled shortcut. */
+    private fun panelItemEvent(tab: GamePanelTab, index: Int): GamePanelEvent? = when (tab) {
+        GamePanelTab.SHORTCUTS -> panelShortcuts().getOrNull(index)?.let(GamePanelModel::eventFor)
+        GamePanelTab.ACHIEVEMENTS -> panelAchievements().getOrNull(index)?.let { GamePanelEvent.OpenAchievement(it.id) }
+        GamePanelTab.PLAYERS ->
+            if (index < playerSlots.size) GamePanelModel.nextPlayer(index, playerSlots, playerPads)
+            else playerPads.getOrNull(index - playerSlots.size)?.let(GamePanelModel::togglePlaying)
+    }
+
+    /**
+     * After the panel's data changed: [MenuState.panelVersion] moves on, a tab no longer shown goes back to Shortcuts, an
+     * item focus stays in range.
+     */
+    private fun fixPanel() {
+        state = state.copy(panelVersion = state.panelVersion + 1)
+        val tab = panelTab()
+        val focus = when (val f = state.panelFocus) {
+            is PanelFocus.Item -> panelItemCount(tab).let { n -> if (n == 0) PanelFocus.Tabs else PanelFocus.Item(f.index.coerceAtMost(n - 1)) }
+            else -> f
+        }
+        if (tab != state.panelTab || focus != state.panelFocus) state = state.copy(panelTab = tab, panelFocus = focus)
     }
 
     private fun pressAdjust(button: NxButton): MenuEffect? = when (button) {
@@ -597,7 +743,6 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
             row.key.startsWith(PLAYER_KEY_PREFIX) -> changePlayer(row.key.removePrefix(PLAYER_KEY_PREFIX).toInt(), delta)
             row.key.startsWith(PAD_KEY_PREFIX) -> togglePlaying(row.key.removePrefix(PAD_KEY_PREFIX))
             row.key == DISC_KEY -> changeDisc(delta)
-            row.key == SECOND_SCREEN_KEY -> flipSecondScreen()
             state.page.kind == PageKind.Cheats -> toggleCheat(row.key)
             isSettingsPage(state.page.kind) -> changeFrontend(row.key, delta)
             else -> {
@@ -660,13 +805,6 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
 
     private fun noCheatsText() =
         if (cheatsExpected.isBlank()) NO_CHEATS else "$NO_CHEATS\nLooked for $cheatsFolder/$cheatsExpected"
-
-    private fun refreshOptionsPage() {
-        // rebuilt() clears the footer of a non-empty page; the Options page keeps its status line.
-        state = state.copy(stack = state.stack.map { p ->
-            if (p.kind == PageKind.Options) rebuilt(p, optionsPage()).copy(footer = statusText()) else p
-        })
-    }
 
     private fun refreshAchievementsPage() {
         state = state.copy(stack = state.stack.map { p -> if (p.kind == PageKind.Achievements) rebuilt(p, achievementsPage()) else p })
@@ -768,11 +906,12 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         replaceTop(p.copy(selected = ((p.selected + delta) % p.rows.size + p.rows.size) % p.rows.size))
     }
 
-    private fun push(page: MenuPage) { state = state.copy(stack = state.stack + page) }
-    private fun pop() { if (state.stack.size > 1) state = state.copy(stack = state.stack.dropLast(1)) }
+    // A push or pop leaves the panel: back on the root, the focus is on the list.
+    private fun push(page: MenuPage) { state = state.copy(stack = state.stack + page, panelFocus = null) }
+    private fun pop() { if (state.stack.size > 1) state = state.copy(stack = state.stack.dropLast(1), panelFocus = null) }
     private fun popTo(kind: PageKind) {
         val i = state.stack.indexOfLast { it.kind == kind }
-        if (i >= 0) state = state.copy(stack = state.stack.take(i + 1))
+        if (i >= 0) state = state.copy(stack = state.stack.take(i + 1), panelFocus = null)
     }
     private fun replaceTop(page: MenuPage) { state = state.copy(stack = state.stack.dropLast(1) + page) }
     /** [new] with [old]'s title, keeping the selected row by identity (option key / submenu target) when it survives. */
@@ -811,8 +950,6 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
             if (discCount > 1) add(MenuRow.Option(DISC_LABEL, DISC_KEY, "${discIndex + 1}/$discCount", DISC_INFO))
             add(MenuRow.Slot("Save", SlotAction.SAVE))
             add(MenuRow.Slot("Load", SlotAction.LOAD))
-            if (secondConnected) add(MenuRow.Option(SECOND_SCREEN_LABEL, SECOND_SCREEN_KEY, if (secondOn) "On" else "Off"))
-            if (playerSlots.size > 1) add(MenuRow.Submenu(PLAYERS_LABEL, PageKind.Players))
             add(MenuRow.Submenu("Options", PageKind.Options))
             add(MenuRow.Action("Quit", MenuAction.QUIT))
         },
@@ -826,10 +963,6 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
             add(MenuRow.Submenu("Shaders", PageKind.Shaders))
             add(MenuRow.Submenu("Core Options", PageKind.CoreOptions))
             if (cheatsAvailable) add(MenuRow.Submenu(CHEATS_LABEL, PageKind.Cheats, CHEATS_INFO))
-            if (achievementsAvailable) {
-                val info = achievementSummary?.let { "${it.first} / ${it.second} unlocked" } ?: NOT_RECOGNISED
-                add(MenuRow.Submenu(ACHIEVEMENTS_LABEL, PageKind.Achievements, info))
-            }
             add(MenuRow.Submenu("Save Changes", PageKind.SaveChanges))
         },
         footer = statusText(),
@@ -947,8 +1080,6 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         const val CONSOLE_SETTINGS_LABEL = "Console Settings"
         const val DISC_KEY = "nx:disc"
         const val DISC_LABEL = "Disc"
-        const val SECOND_SCREEN_KEY = "nx:second_screen"   // a menu row, not a frontend (nx_) option
-        const val SECOND_SCREEN_LABEL = "Second screen"
         const val DISC_INFO = "Left and right change the disc in the drive,\nas opening the lid and swapping it would."
         const val PLAYERS_LABEL = "Players"
         const val PLAYER_KEY_PREFIX = "nx:player:"
@@ -964,7 +1095,6 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         const val CHEAT_KEY_PREFIX = "cheat:"
         const val NO_CHEATS = "No cheats for this game."
         const val ACHIEVEMENTS_LABEL = "Achievements"
-        const val NOT_RECOGNISED = "Not recognised"
         const val NO_ACHIEVEMENTS = "This game is not recognised, or has\nno achievements yet."
         const val NO_LOCKED = "Everything unlocked."
         const val ACH_KEY_PREFIX = "ach:"

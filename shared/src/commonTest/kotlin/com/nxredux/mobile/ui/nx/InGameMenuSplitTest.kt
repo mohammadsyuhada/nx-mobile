@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
 
 /**
  * The two-pane in-game menu: the Settings / RetroAchievements split rule on the overlay's own area, the root
- * beside a preview of its highlighted row, a deeper page beside its parent (column browser), and the split-only input.
+ * beside the game panel (or the slot card), a deeper page beside its parent (column browser), and the split-only input.
  */
 class InGameMenuSplitTest {
     private val tag = "N64"   // no Console Settings rows
@@ -32,27 +32,23 @@ class InGameMenuSplitTest {
         assertFalse(inGameMenuSplit(DpSize(673.dp, 841.dp)))   // the unfolded Fold in portrait
     }
 
-    @Test fun theRootSitsBesideAPreviewOfItsHighlightedRow() {
+    @Test fun theRootSitsBesideTheGamePanelOrTheSlotCard() {
         val m = model()
         m.onRow("Save")
-        assertEquals(MenuPanes(m.state.stack[0], MenuPaneContent.Slots, focusLeft = true), menuPanes(m.state, m::previewFor))
-        m.onRow("Options")
-        val panes = menuPanes(m.state, m::previewFor)!!
-        assertTrue(panes.focusLeft)
-        val preview = assertIs<MenuPaneContent.Page>(panes.right).page
-        assertEquals(PageKind.Options, preview.kind)
-        assertEquals(1, m.state.stack.size)   // a preview opens nothing
-        m.onRow("Continue")
-        assertEquals(MenuPaneContent.Empty, menuPanes(m.state, m::previewFor)!!.right)
-        m.onRow("Quit")
-        assertEquals(MenuPaneContent.Empty, menuPanes(m.state, m::previewFor)!!.right)
+        assertEquals(MenuPanes(m.state.stack[0], MenuPaneContent.Slots, focusLeft = true), menuPanes(m.state))
+        // Every other row shows the panel; the Options row's page preview is gone.
+        for (row in listOf("Options", "Continue", "Quit")) {
+            m.onRow(row)
+            assertEquals(MenuPanes(m.state.stack[0], MenuPaneContent.Panel, focusLeft = true), menuPanes(m.state))
+        }
+        assertEquals(1, m.state.stack.size)
     }
 
     @Test fun aDeeperPageSitsBesideItsParentOnTheRowThatOpenedIt() {
         val m = model()
         m.onRow("Options"); m.press(NxButton.A)
         m.onRow("Frontend"); m.press(NxButton.A)
-        val panes = menuPanes(m.state, m::previewFor)!!
+        val panes = menuPanes(m.state)!!
         assertFalse(panes.focusLeft)
         assertEquals(PageKind.Options, panes.left.kind)
         assertEquals("Frontend", panes.left.rows[panes.left.selected].label)
@@ -66,16 +62,19 @@ class InGameMenuSplitTest {
         val visual = m.state.page.rows.indexOfFirst { (it as? MenuRow.Option)?.visual == true }
         m.activate(visual)
         assertIs<PageKind.Adjust>(m.state.page.kind)
-        assertNull(menuPanes(m.state, m::previewFor))
+        assertNull(menuPanes(m.state))
         m.showMessage("Hello", "World")
-        assertNull(menuPanes(m.state, m::previewFor))
+        assertNull(menuPanes(m.state))
     }
 
-    @Test fun rightOpensARowThatOpensAPageWhenSplit() {
+    @Test fun rightOnTheRootEntersThePanelAndOpensARowThatOpensAPageDeeper() {
         val m = model()
         m.onRow("Options")
         assertNull(m.press(NxButton.RIGHT))
-        assertEquals(PageKind.Options, m.state.page.kind)
+        assertEquals(PageKind.Root, m.state.page.kind)
+        assertEquals(PanelFocus.Tabs, m.state.panelFocus)
+        m.press(NxButton.B)
+        m.press(NxButton.A)
         m.onRow("Frontend")
         m.press(NxButton.RIGHT)
         assertEquals(PageKind.Frontend, m.state.page.kind)
@@ -89,11 +88,20 @@ class InGameMenuSplitTest {
         assertEquals(1, m.state.stack.size)
     }
 
-    @Test fun rightOnASubmenuDoesNothingWhenNotSplit() {
+    @Test fun rightOnARootSubmenuEntersThePanelWhenNotSplit() {
         val m = model(split = false)
         m.onRow("Options")
         assertNull(m.press(NxButton.RIGHT))
         assertEquals(PageKind.Root, m.state.page.kind)
+        assertEquals(PanelFocus.Tabs, m.state.panelFocus)
+    }
+
+    @Test fun rightOnASubmenuDeeperDoesNothingWhenNotSplit() {
+        val m = model(split = false)
+        m.onRow("Options"); m.press(NxButton.A)
+        m.onRow("Frontend")
+        assertNull(m.press(NxButton.RIGHT))
+        assertEquals(PageKind.Options, m.state.page.kind)
     }
 
     @Test fun aTapOnTheParentPaneOpensThatRowInPlaceOfTheCurrentPage() {
@@ -119,13 +127,5 @@ class InGameMenuSplitTest {
         // The second call of the same tap: the root is no longer a parent pane, so it does not quit.
         assertNull(m.tapParent(PageKind.Root, quit))
         assertEquals(1, m.state.stack.size)
-    }
-
-    @Test fun aTapOnThePreviewOpensItsPageOnThatRow() {
-        val m = model()
-        m.onRow("Options")
-        m.tapPreview(1)
-        assertEquals(PageKind.Options, m.state.page.kind)
-        assertEquals(1, m.state.page.selected)
     }
 }

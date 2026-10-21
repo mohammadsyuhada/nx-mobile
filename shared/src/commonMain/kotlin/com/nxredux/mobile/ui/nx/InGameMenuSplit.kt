@@ -11,10 +11,11 @@ import com.nxredux.mobile.ui.settingsSplit
  */
 fun inGameMenuSplit(window: DpSize): Boolean = settingsSplit(window)
 
-/** What a pane of the two-pane in-game menu shows: a page's rows, the save-slot preview, or nothing. */
+/** What a pane of the two-pane in-game menu shows: a page's rows, the save-slot preview, the game panel, or nothing. */
 sealed interface MenuPaneContent {
     data class Page(val page: MenuPage) : MenuPaneContent
     data object Slots : MenuPaneContent
+    data object Panel : MenuPaneContent
     data object Empty : MenuPaneContent
 }
 
@@ -23,19 +24,19 @@ data class MenuPanes(val left: MenuPage, val right: MenuPaneContent, val focusLe
 
 /**
  * The panes [state] draws as when the menu splits, or null for a page drawn whole (an Adjust strip, a Message). On the
- * root the root is focused on the left and the right previews its highlighted row: Save / Load the slot card, a row
- * with a page that page ([preview], [InGameMenuModel.previewFor]), anything else nothing. Deeper (a column browser, as
- * the RetroAchievements levels) the top page is focused on the right and the page under it dimmed on the left, its
- * highlighted row the one that opened the top (an AchievementDetail beside the achievements list).
+ * root the root is focused on the left and the right is the game panel ([InGameMenuModel.panelState]), but for Save /
+ * Load, which show the slot card. Deeper (a column browser, as the RetroAchievements levels) the top page is focused on
+ * the right and the page under it dimmed on the left, its highlighted row the one that opened the top (an
+ * AchievementDetail beside the achievements list).
  */
-fun menuPanes(state: MenuState, preview: (MenuRow) -> MenuPage?): MenuPanes? {
+fun menuPanes(state: MenuState): MenuPanes? {
     val top = state.page
     if (top.kind is PageKind.Adjust || top.kind == PageKind.Message) return null
     if (state.stack.size == 1) {
-        val right = when (val row = top.rows.getOrNull(top.selected)) {
+        val right = when (top.rows.getOrNull(top.selected)) {
             null -> MenuPaneContent.Empty
             is MenuRow.Slot -> MenuPaneContent.Slots
-            else -> preview(row)?.let { MenuPaneContent.Page(it) } ?: MenuPaneContent.Empty
+            else -> MenuPaneContent.Panel
         }
         return MenuPanes(top, right, focusLeft = true)
     }

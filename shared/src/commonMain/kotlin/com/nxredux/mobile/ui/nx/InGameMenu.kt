@@ -82,10 +82,14 @@ data class SlotUi(
  * [onPress] (see [adjustHintButton]). An AchievementDetail page draws [achievementDetail] (the model's
  * `achievementDetail()`) with its badge from [badgePath] and the [muted] marker; a tap on it calls [onDismiss].
  *
+ * Beside the root list sits the game [panel] ([GamePanel]; its taps go to [onPanelEvent], its shortcut columns as drawn
+ * to [onPanelColumns]), but for Save / Load, which show their slot card. While the controller is in the panel
+ * ([MenuState.panelFocus]) the root list is dimmed.
+ *
  * On a wide window ([inGameMenuSplit] on [LocalWindowSize], the Settings rule, reported through [onSplit])
- * the menu draws as two panes ([menuPanes]) under the one title and over the one hint bar: the root beside a dimmed
- * preview of its highlighted row ([preview]; a tap there calls [onPreviewTap]), a deeper page beside its dimmed parent
- * (a tap there calls [onParentTap] with the parent's kind). Adjust strips and message pages stay whole.
+ * the menu draws as two panes ([menuPanes]) under the one title and over the one hint bar: the root beside the panel
+ * (or the slot card), a deeper page beside its dimmed parent (a tap there calls [onParentTap] with the parent's kind).
+ * Adjust strips and message pages stay whole. Narrow, the root keeps the panel in its right column.
  */
 @Composable
 fun InGameMenu(
@@ -101,10 +105,11 @@ fun InGameMenu(
     badgePath: (RaAchievement) -> String? = { null },
     muted: (Int) -> Boolean = { false },
     onInfoTruncated: (String, Boolean) -> Unit = { _, _ -> },
-    preview: (MenuRow) -> MenuPage? = { null },
     onSplit: (Boolean) -> Unit = {},
     onParentTap: (PageKind, Int) -> Unit = { _, _ -> },
-    onPreviewTap: (Int) -> Unit = {},
+    panel: GamePanelState? = null,
+    onPanelEvent: (GamePanelEvent) -> Unit = {},
+    onPanelColumns: (Int) -> Unit = {},
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
         // The lists' row rule: the root rows' text is the Tools lists' label size.
@@ -119,9 +124,10 @@ fun InGameMenu(
             AdjustContent(under.page, rowHeight, onDismiss, onChange, onPress)
         } else {
             val detail = AchievementDetailUi(achievementDetail, badgePath, muted)
-            val panes = if (split) menuPanes(under, preview) else null
-            val splitUi = panes?.let { SplitUi(it, onParentTap, onPreviewTap) }
-            InGameMenuContent(under, slots, rowHeight, onSelect, onActivate, onDismiss, onChange, onPress, detail, onInfoTruncated, splitUi)
+            val panes = if (split) menuPanes(under) else null
+            val splitUi = panes?.let { SplitUi(it, onParentTap) }
+            val panelUi = panel?.let { PanelUi(it, onPanelEvent, onPanelColumns) }
+            InGameMenuContent(under, slots, rowHeight, onSelect, onActivate, onDismiss, onChange, onPress, detail, onInfoTruncated, splitUi, panelUi)
         }
         if (dialog != null) {
             // Only a tap opens it (a pad's A / X quit on the row itself), so no key hints.
@@ -141,8 +147,21 @@ internal fun menuDialog(state: MenuState): MenuDialog =
         MenuDialog(state, null)
     }
 
-/** The two panes to draw ([menuPanes]) and their taps: a row of the dimmed parent, a row of the root's preview. */
-private class SplitUi(val panes: MenuPanes, val onParentTap: (PageKind, Int) -> Unit, val onPreviewTap: (Int) -> Unit)
+/** The two panes to draw ([menuPanes]) and the taps on a row of the dimmed parent. */
+private class SplitUi(val panes: MenuPanes, val onParentTap: (PageKind, Int) -> Unit)
+
+/** The root's game panel ([GamePanel]): what it draws, its taps, and the shortcut columns it drew. */
+private class PanelUi(val state: GamePanelState, val onEvent: (GamePanelEvent) -> Unit, val onColumns: (Int) -> Unit)
+
+/** The panel in [modifier]'s box, reporting the shortcut grid's columns at that width ([gamePanelColumns]) for the model's UP/DOWN. */
+@Composable
+private fun MenuGamePanel(panel: PanelUi, modifier: Modifier) {
+    BoxWithConstraints(modifier) {
+        val columns = gamePanelColumns(maxWidth)
+        SideEffect { panel.onColumns(columns) }
+        GamePanel(panel.state, panel.onEvent, Modifier.fillMaxSize())
+    }
+}
 
 @Composable
 private fun InGameMenuContent(
@@ -157,6 +176,7 @@ private fun InGameMenuContent(
     detail: AchievementDetailUi,
     onInfoTruncated: (String, Boolean) -> Unit,
     split: SplitUi?,
+    panel: PanelUi?,
 ) {
     val page = state.page
     // The save-slot card's text: the list label size at the menu's row height.
@@ -173,9 +193,9 @@ private fun InGameMenuContent(
         // The standard page title (the game list's and every Tools/Settings page's): the game on the root, the page's name below.
         NxPageTitle(page.title)
         if (split != null) {
-            SplitBody(state, split, slots, rowHeight, slotTextSize, onSelect, onActivate, onDismiss, onChange, detail, onInfoTruncated, Modifier.weight(1f))
+            SplitBody(state, split, panel, slots, rowHeight, slotTextSize, onSelect, onActivate, onDismiss, onChange, detail, onInfoTruncated, Modifier.weight(1f))
         } else when (page.kind) {
-            PageKind.Root -> RootBody(page, state.slotIndex, slots, rowHeight, slotTextSize, onSelect, onActivate, onChange, Modifier.weight(1f))
+            PageKind.Root -> RootBody(state, panel, slots, rowHeight, slotTextSize, onSelect, onActivate, onChange, Modifier.weight(1f))
             PageKind.Message -> MessageBody(page, onDismiss, Modifier.weight(1f))
             is PageKind.AchievementDetail -> AchievementDetailBody(detail, onDismiss, Modifier.weight(1f))
             // Keyed by page so each page gets its own scroll position.
@@ -189,14 +209,17 @@ private fun InGameMenuContent(
         } else {
             Modifier
         }
-        NxHintBar(hintsFor(page, selectedRow, state.selectedInfoTruncated), hintModifier, onHint = { onPress(menuHintButton(it)) })
+        NxHintBar(
+            hintsFor(page, selectedRow, state.selectedInfoTruncated, state.panelFocus, state.panelTab, panel = panel != null), hintModifier,
+            onHint = { onPress(menuHintButton(it)) },
+        )
     }
 }
 
 @Composable
 private fun RootBody(
-    page: MenuPage,
-    slotIndex: Int,
+    state: MenuState,
+    panel: PanelUi?,
     slots: List<SlotUi>,
     rowHeight: Dp,
     slotTextSize: TextUnit,
@@ -205,14 +228,16 @@ private fun RootBody(
     onChange: (Int) -> Unit,
     modifier: Modifier,
 ) {
+    val page = state.page
+    val slotIndex = state.slotIndex
     val showSlots = page.rows.getOrNull(page.selected) is MenuRow.Slot
     // The labels start [MenuPillPadding] into their pills, where the page title's first letter sits ([nxListInset]).
     Row(modifier.fillMaxWidth().padding(start = nxListInset() - MenuPillPadding, end = 20.dp, top = 8.dp, bottom = 8.dp)) {
-        Box(Modifier.weight(0.42f).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
+        Box(Modifier.weight(0.42f).fillMaxHeight().alpha(rootListAlpha(state)), contentAlignment = Alignment.CenterStart) {
             RootList(page, rowHeight, onSelect, onActivate, onChange)
         }
-        // Always reserve the preview column so the list keeps a fixed width and doesn't shift
-        // when Save/Load (which shows the preview) is selected.
+        // Always reserve the right column so the list keeps a fixed width and doesn't shift
+        // when Save/Load (which shows the slot preview in place of the panel) is selected.
         if (showSlots) {
             SlotPreview(
                 slot = slots.getOrNull(slotIndex),
@@ -223,11 +248,16 @@ private fun RootBody(
                 onChange = onChange,
                 modifier = Modifier.weight(0.58f).fillMaxHeight().padding(start = 12.dp),
             )
+        } else if (panel != null) {
+            MenuGamePanel(panel, Modifier.weight(0.58f).fillMaxHeight().padding(start = 12.dp))
         } else {
             Spacer(Modifier.weight(0.58f).fillMaxHeight())
         }
     }
 }
+
+/** The root list dims ([UNFOCUSED_ALPHA]) while the controller is in the panel; a tap on it still brings the focus back. */
+private fun rootListAlpha(state: MenuState): Float = if (state.panelFocus != null) UNFOCUSED_ALPHA else 1f
 
 /**
  * The root page's list: its rows at [rowHeight], an Option row (Disc N/M) with its value, the change arrows while selected.
@@ -255,12 +285,14 @@ private fun RootList(page: MenuPage, pageRowHeight: Dp, onSelect: (Int) -> Unit,
 
 /**
  * The two panes between the title and the hint bar ([SplitPanes], the Settings frame): the focused one takes the
- * input callbacks; the dimmed one ([UNFOCUSED_ALPHA]) sends its taps to [SplitUi]. A dimmed preview page highlights no row.
+ * input callbacks; the dimmed one ([UNFOCUSED_ALPHA]) sends its taps to [SplitUi]. The root's right is the game panel
+ * (full brightness: it is tapped itself) or the slot card.
  */
 @Composable
 private fun SplitBody(
     state: MenuState,
     split: SplitUi,
+    panel: PanelUi?,
     slots: List<SlotUi>,
     rowHeight: Dp,
     slotTextSize: TextUnit,
@@ -278,7 +310,7 @@ private fun SplitBody(
         SplitPanes(
             left = {
                 if (panes.focusLeft) {
-                    PaneBody(panes.left, rowHeight, onSelect, onActivate, onChange, onInfoTruncated, detail, onDismiss, Modifier)
+                    PaneBody(panes.left, rowHeight, onSelect, onActivate, onChange, onInfoTruncated, detail, onDismiss, Modifier.alpha(rootListAlpha(state)))
                 } else {
                     val tap: (Int) -> Unit = { i -> split.onParentTap(panes.left.kind, i) }
                     PaneBody(panes.left, rowHeight, tap, tap, {}, noInfo, detail, {}, Modifier.alpha(UNFOCUSED_ALPHA))
@@ -287,17 +319,14 @@ private fun SplitBody(
             right = {
                 when (val right = panes.right) {
                     MenuPaneContent.Empty -> Unit
+                    MenuPaneContent.Panel -> panel?.let { MenuGamePanel(it, Modifier.fillMaxSize()) }
                     // Full brightness, unlike a page preview: the card is swiped and tapped itself.
                     MenuPaneContent.Slots -> SlotPreview(
                         slot = slots.getOrNull(state.slotIndex), slotIndex = state.slotIndex, slotCount = slots.size,
                         textSize = slotTextSize, onTap = { onActivate(state.page.selected) }, onChange = onChange,
                         modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 8.dp),
                     )
-                    is MenuPaneContent.Page -> if (panes.focusLeft) {
-                        PaneBody(right.page.copy(selected = -1), rowHeight, split.onPreviewTap, split.onPreviewTap, {}, noInfo, detail, {}, Modifier.alpha(UNFOCUSED_ALPHA))
-                    } else {
-                        PaneBody(right.page, rowHeight, onSelect, onActivate, onChange, onInfoTruncated, detail, onDismiss, Modifier)
-                    }
+                    is MenuPaneContent.Page -> PaneBody(right.page, rowHeight, onSelect, onActivate, onChange, onInfoTruncated, detail, onDismiss, Modifier)
                 }
             },
         )
@@ -641,7 +670,29 @@ private fun FooterText(text: String, lineHeight: TextUnit, onTruncated: ((Boolea
     )
 }
 
-internal fun hintsFor(page: MenuPage, row: MenuRow?, infoTruncated: Boolean = false): List<Hint> = when {
+/**
+ * The hint bar's hints for [page] with [row] highlighted; while the controller is in the root's game panel ([panelFocus],
+ * on [panelTab]) the panel's: L1/R1 tabs, A on an item (Open on the Achievements or Players tab row), B back to the list.
+ * With a [panel] drawn beside the root, a root row that shows it (not Save / Load, not the Disc row's ◄► Change) leads
+ * with ◄► Panel (RIGHT enters it).
+ */
+internal fun hintsFor(
+    page: MenuPage, row: MenuRow?, infoTruncated: Boolean = false, panelFocus: PanelFocus? = null, panelTab: GamePanelTab? = null,
+    panel: Boolean = false,
+): List<Hint> {
+    val hints = pageHints(page, row, infoTruncated, panelFocus, panelTab)
+    val entersPanel = panel && panelFocus == null && page.kind == PageKind.Root && row != null && row !is MenuRow.Slot && row !is MenuRow.Option
+    return if (entersPanel) listOf(Hint(NxButton.RIGHT, "Panel")) + hints else hints
+}
+
+private fun pageHints(page: MenuPage, row: MenuRow?, infoTruncated: Boolean, panelFocus: PanelFocus?, panelTab: GamePanelTab?): List<Hint> = when {
+    panelFocus != null -> buildList {
+        add(Hint(NxButton.L1, "Tab"))
+        if (panelFocus is PanelFocus.Item) add(Hint(NxButton.A, "Select"))
+        else if (panelTab == GamePanelTab.ACHIEVEMENTS || panelTab == GamePanelTab.PLAYERS) add(Hint(NxButton.A, "Open"))
+        add(Hint(NxButton.B, "Back"))
+        add(Hint(NxButton.R1, "Tab"))
+    }
     page.kind is PageKind.Adjust -> listOf(Hint(NxButton.LEFT, "Change"), Hint(NxButton.UP, "Next"), Hint(NxButton.B, "Done"))
     page.kind == PageKind.Message -> listOf(Hint(NxButton.B, "Back"))
     page.kind is PageKind.AchievementDetail -> listOf(Hint(NxButton.LEFT, "Next"), Hint(NxButton.X, "Mute"), Hint(NxButton.B, "Back"))
