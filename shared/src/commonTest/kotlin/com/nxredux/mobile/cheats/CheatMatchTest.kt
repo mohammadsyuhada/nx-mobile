@@ -116,4 +116,32 @@ class CheatMatchTest {
         assertEquals("Code Breaker", CheatMatch.sourceLabel("Contra (USA, Europe) (Code Breaker).cht"))
         assertEquals("", CheatMatch.sourceLabel("Zelda (USA).cht"))
     }
+
+    // libretro's PSP set names files "Name [US] [ULUS-10041].cht" (nx-redux #257): the stem ends at " [" and the
+    // region code compares with the ROM's No-Intro region.
+    @Test fun psp_bracket_region_matches_the_rom_region() {
+        val files = listOf(
+            "Grand Theft Auto - Liberty City Stories [EU] [ULES-00151].cht",
+            "Grand Theft Auto - Liberty City Stories [JP] [ULJM-05255].cht",
+            "Grand Theft Auto - Liberty City Stories [US] [ULUS-10041].cht",
+        )
+        val name = "Grand Theft Auto - Liberty City Stories"
+        assertEquals(listOf(files[2]), CheatMatch.select(name, "$name (USA).iso", files))
+        assertEquals(listOf(files[0]), CheatMatch.select(name, "$name (Europe) (En,Fr,De,Es,It).iso", files))
+    }
+
+    @Test fun psp_multi_region_code_matches_either_region() {
+        val files = listOf("Lumines [JP] [ULJM-05013].cht", "Lumines [US-EU] [ULUS-10046].cht")
+        assertEquals(listOf(files[1]), CheatMatch.select("Lumines", "Lumines (Europe)", files))
+    }
+
+    @Test fun psp_serial_in_the_rom_name_picks_that_file() {
+        val files = listOf("Daxter [US] [UCUS-98618].cht", "Daxter [US] [UCUS-98646].cht")
+        assertEquals(listOf(files[1]), CheatMatch.select("Daxter", "Daxter (USA) [UCUS-98646]", files))
+    }
+
+    @Test fun psp_retail_serial_beats_a_homebrew_id_of_the_same_region() {
+        val files = listOf("Patapon 2 [US] [HB4B12D3BC].cht", "Patapon 2 [US] [UCUS-98732].cht", "Patapon 2 [EU] [UCES-01177].cht")
+        assertEquals(listOf(files[1]), CheatMatch.select("Patapon 2", "Patapon 2 (USA) (En,Fr,Es).iso", files))
+    }
 }

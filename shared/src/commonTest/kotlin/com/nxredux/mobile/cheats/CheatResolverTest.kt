@@ -88,7 +88,10 @@ class CheatResolverTest {
         assertEquals(listOf("US"), us.entries.map { it.desc })
         // Unknown serial (a .chd, or a disc the cheats don't list): the name stages as before.
         val none = CheatResolver.resolve(disk.keys.toList(), "Tekken 6.iso", "Tekken 6", psp, read = { disk[it] }, serial = "ULUS-99999")
-        assertEquals(listOf("Store"), none.entries.map { it.desc })
+        assertEquals(listOf("EU"), none.entries.map { it.desc })   // region-less name: a guess between [EU] and [US]
+        // A .chd has no serial read: the ROM's region picks its [US] file, not the first name in the folder.
+        val chd = CheatResolver.resolve(disk.keys.toList(), "Tekken 6 (USA).chd", "Tekken 6", psp + "chd", read = { disk[it] })
+        assertEquals(listOf("US"), chd.entries.map { it.desc })
     }
 
     @Test fun nothing_matching_gives_an_empty_set_with_the_expected_name() {
