@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -68,6 +69,7 @@ private const val NX_SUBTITLE_DIM_ALPHA = 0.55f
  * optional [thumbnail] (any Coil model string: a `file://` path or a content uri) at the left. [placeholder]: the icon
  * drawn in the hint colour on the dark thumbnail slot when there is no [thumbnail] (the gamepad by default, so no slot is empty).
  * [subtitleSpans], when set, replaces [subtitle] on screen with bold values and dimmed words in the same tone colour.
+ * [titleBadge]: a short count in a small pill after the title (an achievement's points, [NxCountPill]).
  */
 data class NxRichRow(
     val title: String,
@@ -77,7 +79,17 @@ data class NxRichRow(
     val enabled: Boolean = true,
     val placeholder: DrawableResource = Res.drawable.nx_gamepad,
     val subtitleSpans: List<NxSubtitleSpan>? = null,
+    val titleBadge: String? = null,
 )
+
+/** A short count ([text]) in a small hollow pill ([nxButtonRing]), dim, or on the accent's muted colour while [lit]. */
+@Composable
+internal fun NxCountPill(text: String, lit: Boolean, fontSize: TextUnit) {
+    val colors = LocalNxColors.current
+    Box(Modifier.clip(RoundedCornerShape(50)).nxButtonRing(colors).padding(horizontal = 7.dp, vertical = 1.dp)) {
+        Text(text, color = if (lit) colors.onAccentMuted else colors.hint, fontFamily = LocalNxFont.current, fontSize = fontSize, lineHeight = fontSize, maxLines = 1)
+    }
+}
 
 /** The colour of a subtitle in [tone]; [selected] rows sit on the accent pill, so they take its variants. */
 fun NxColors.toneColor(tone: NxTone, selected: Boolean): Color = when (tone) {
@@ -185,13 +197,19 @@ fun NxRichList(
                         }
                         Spacer(Modifier.width(nxListInset()))   // the plain list's text padding
                         Column {
-                            Text(
-                                row.title,
-                                color = if (lit) colors.onAccent else colors.listText,
-                                style = lineStyle, fontFamily = font, fontWeight = FontWeight.SemiBold, fontSize = titleSize, lineHeight = NxTextSizes.line(titleSize),
-                                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                modifier = if (selected) Modifier.basicMarquee() else Modifier,
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    row.title,
+                                    color = if (lit) colors.onAccent else colors.listText,
+                                    style = lineStyle, fontFamily = font, fontWeight = FontWeight.SemiBold, fontSize = titleSize, lineHeight = NxTextSizes.line(titleSize),
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false).then(if (selected) Modifier.basicMarquee() else Modifier),
+                                )
+                                row.titleBadge?.let {
+                                    Spacer(Modifier.width(6.dp))
+                                    NxCountPill(it, lit, subtitleSize * 0.85f)
+                                }
+                            }
                             val toneColor = colors.toneColor(row.subtitleTone, lit)
                             val spans = row.subtitleSpans
                             if (spans != null) {

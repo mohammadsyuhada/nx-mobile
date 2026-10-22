@@ -259,14 +259,6 @@ class AndroidAppSettings(context: Context) : AppSettings {
     fun recordVulkanFailure(coreId: String) =
         prefs.edit { putString(KEY_VULKAN_FAILURES, VulkanFallback.record(prefs.getString(KEY_VULKAN_FAILURES, null), coreId, APP_VERSION)) }
 
-    /**
-     * Pads set "Not playing" on the Players page, by `InputDevice.descriptor`. Multiplayer games ignore them;
-     * one-player games still use them.
-     */
-    var benchedPads: Set<String>
-        get() = prefs.getString(KEY_BENCHED_PADS, "")!!.lineSequence().filter { it.isNotBlank() }.toSet()
-        set(value) = prefs.edit { putString(KEY_BENCHED_PADS, value.joinToString("\n")) }
-
     override var accent: AccentPreset
         get() = AccentPreset.fromId(prefs.getString(KEY_MENU_ACCENT, null))
         set(value) = prefs.edit { putString(KEY_MENU_ACCENT, value.id) }
@@ -343,7 +335,6 @@ class AndroidAppSettings(context: Context) : AppSettings {
         private const val KEY_SAVE_FORMAT = "save_format"
         private const val KEY_STATE_FORMAT = "state_format"
         private const val KEY_USE_EXTRACTED_FILE_NAME = "use_extracted_file_name"
-        private const val KEY_BENCHED_PADS = "benched_pads"
         private const val KEY_VULKAN_FAILURES = "vulkan_failures"
         /** The build a Vulkan failure is recorded for: a new release, or a new debug build, tries Vulkan again. */
         private const val APP_VERSION = BuildConfig.VERSION_NAME + "-" + BuildConfig.GIT_COMMIT

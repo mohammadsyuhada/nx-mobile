@@ -838,7 +838,7 @@ class InGameMenuModelTest {
         assertEquals("2/3", assertIs<MenuRow.Option>(m.state.page.rows[1]).valueLabel)   // the root's Disc row follows
         m.press(NxButton.RIGHT)
         assertEquals(MenuEffect.SetSecondScreen(false), m.press(NxButton.A))
-        assertEquals("Off", m.panelState().shortcuts[1].value)
+        assertEquals(false, m.panelState().shortcuts[1].on)
         // A tap acts as A.
         assertEquals(MenuEffect.SetSecondScreen(true), m.panelEvent(GamePanelEvent.SetSecondScreen(true)))
         assertEquals(MenuEffect.ChangeDisc(2, toast = true), m.panelEvent(GamePanelEvent.SwapDisc))
@@ -854,11 +854,11 @@ class InGameMenuModelTest {
         assertEquals(PanelFocus.Item(1), m.state.panelFocus)
         m.panelEvent(GamePanelEvent.SwapDisc)
         assertEquals(PanelFocus.Item(0), m.state.panelFocus)
-        // Players: a slot is its row, a pad the row after the slots.
+        // Players: a slot is its row.
         m.setPlayers(listOf(p1, PlayerSlotRow(null, "", connected = false)), listOf(padA))
         m.toTab(GamePanelTab.PLAYERS)
-        m.panelEvent(GamePanelEvent.SetPlaying("k1", playing = false))
-        assertEquals(PanelFocus.Item(2), m.state.panelFocus)
+        m.panelEvent(GamePanelEvent.SetPlayer(0, null))
+        assertEquals(PanelFocus.Item(0), m.state.panelFocus)
         m.panelEvent(GamePanelEvent.SetPlayer(1, "k1"))
         assertEquals(PanelFocus.Item(1), m.state.panelFocus)
     }
@@ -880,22 +880,22 @@ class InGameMenuModelTest {
         assertEquals(PanelFocus.Item(3), m.state.panelFocus)
     }
 
-    @Test fun achievement_a_pushes_detail() {
+    @Test fun achievement_a_in_the_panel_does_nothing() {
         val m = model()
         m.setAchievements(listOf(ach(2, RaAchievementState.LOCKED, "Zed"), ach(1, RaAchievementState.UNLOCKED, "Alpha")), 1 to 2, RaSortOrder.TITLE_AZ, emptySet(), BADGES)
         m.press(NxButton.RIGHT); m.toTab(GamePanelTab.ACHIEVEMENTS)
         assertEquals(listOf("Alpha", "Zed"), m.panelState().achievements.map { it.title })   // the chosen order
         m.press(NxButton.DOWN); m.press(NxButton.DOWN)
         assertNull(m.press(NxButton.A))
-        assertEquals(PageKind.AchievementDetail(2), m.state.page.kind)
-        assertEquals(2, m.achievementDetail()!!.id)
+        assertEquals(PageKind.Root, m.state.page.kind)                 // no detail page
+        assertEquals(PanelFocus.Item(1), m.state.panelFocus)
     }
 
     @Test fun page_push_resets_panel_focus() {
         val m = model()
         m.setAchievements(listOf(ach(1, RaAchievementState.UNLOCKED)), 1 to 1, RaSortOrder.DEFAULT, emptySet(), BADGES)
         m.press(NxButton.RIGHT); m.toTab(GamePanelTab.ACHIEVEMENTS)
-        m.press(NxButton.DOWN); m.press(NxButton.A)
+        m.press(NxButton.A)                                   // A on the tab row opens the full page
         assertNull(m.state.panelFocus)
         m.press(NxButton.B)
         assertEquals(PageKind.Root, m.state.page.kind)
@@ -964,7 +964,7 @@ class InGameMenuModelTest {
         assertTrue(before != m.state); before = m.state
         m.panelEvent(GamePanelEvent.SetSecondScreen(false))
         assertTrue(before != m.state); before = m.state
-        m.setPanelHeader(GamePanelHeader("Tetris", null, "GBA", 1L, 2L, null, "12:00", 50))
+        m.setPanelHeader(GamePanelHeader("Tetris", null, "GBA", 2L, null, "12:00", 50))
         assertTrue(before != m.state)
         assertEquals(listOf("Continue", "Save", "Load", "Options", "Quit"), m.labels())   // the pages themselves did not change
     }
@@ -1030,18 +1030,16 @@ class InGameMenuModelTest {
         assertEquals(MenuEffect.ToggleMute(2), m.press(NxButton.X)); assertEquals(listOf("Zed"), m.state.page.rows.map { it.label })
         m.press(NxButton.Y); assertEquals(3, m.state.page.rows.size)
     }
-    @Test fun achievement_detail_opens_on_a_and_steps_with_left_right() {
+    @Test fun achievement_rows_open_nothing_and_x_still_mutes() {
         val m = model()
         m.setAchievements(listOf(ach(1, RaAchievementState.UNLOCKED), ach(2, RaAchievementState.LOCKED)), 1 to 2, RaSortOrder.DEFAULT, emptySet(), BADGES)
         m.openAchievements()
-        assertNull(m.press(NxButton.A))
-        assertEquals(PageKind.AchievementDetail(1), m.state.page.kind); assertEquals(1, m.achievementDetail()!!.id)
-        assertEquals("Achievements", m.state.page.title)   // the achievement's name is the headline, not the title
-        assertEquals("content://b1", m.badgePath(m.achievementDetail()!!))
-        m.press(NxButton.RIGHT); assertEquals(PageKind.AchievementDetail(2), m.state.page.kind); assertEquals("content://b2l", m.badgePath(m.achievementDetail()!!)); assertEquals("Achievements", m.state.page.title)
-        m.press(NxButton.RIGHT); assertEquals(PageKind.AchievementDetail(1), m.state.page.kind)
+        assertNull(m.press(NxButton.A)); assertEquals(PageKind.Achievements, m.state.page.kind)   // no detail, no message
+        assertNull(m.press(NxButton.RIGHT)); assertEquals(PageKind.Achievements, m.state.page.kind)
+        assertEquals("content://b1", m.badgePath(m.achievementOf(m.state.page.rows[0])!!))
+        assertEquals("content://b2l", m.badgePath(m.achievementOf(m.state.page.rows[1])!!))   // the locked badge
         assertEquals(MenuEffect.ToggleMute(1), m.press(NxButton.X))
-        m.press(NxButton.B); assertEquals(PageKind.Achievements, m.state.page.kind)
+        m.press(NxButton.B); assertEquals(PageKind.Root, m.state.page.kind)
     }
     @Test fun an_unrecognised_game_has_no_achievements_tab() {
         val m = model()
@@ -1291,7 +1289,7 @@ class InGameMenuModelTest {
         assertEquals(MenuEffect.ToggleMute(1), m.press(NxButton.X))
         assertEquals(PageKind.Achievements, m.state.page.kind)
         assertEquals("[M] A1", m.state.page.rows[0].label)
-        assertEquals(listOf(Hint(NxButton.A, "Details"), Hint(NxButton.Y, "Locked only"), Hint(NxButton.X, "Mute"), Hint(NxButton.B, "Back")),
+        assertEquals(listOf(Hint(NxButton.Y, "Locked only"), Hint(NxButton.X, "Mute"), Hint(NxButton.B, "Back")),
             hintsFor(m.state.page, m.state.page.rows[0], infoTruncated = true))
     }
 
@@ -1358,9 +1356,9 @@ class InGameMenuModelTest {
     }
 
     private val p1 = PlayerSlotRow("k1", "8BitDo Pro 2", connected = true)
-    private val padA = PlayerPadRow("k1", "8BitDo Pro 2", playing = true)
-    private val padB = PlayerPadRow("k2", "Xbox Wireless Controller", playing = true)
-    private val padC = PlayerPadRow("k3", "Retroid Pocket", playing = false)
+    private val padA = PlayerPadRow("k1", "8BitDo Pro 2")
+    private val padB = PlayerPadRow("k2", "Xbox Wireless Controller")
+    private val padC = PlayerPadRow("k3", "Retroid Pocket")   // benched (its slot set to Empty) or not: a candidate all the same
 
     private fun InGameMenuModel.openPlayers(): InGameMenuModel {
         press(NxButton.RIGHT); toTab(GamePanelTab.PLAYERS); press(NxButton.A)   // A on the tab row opens the full page
@@ -1382,12 +1380,12 @@ class InGameMenuModelTest {
         m.press(NxButton.RIGHT); m.toTab(GamePanelTab.PLAYERS)
         m.press(NxButton.DOWN)                                                   // Player 1
         assertEquals(MenuEffect.SetPlayer(0, "k2"), m.press(NxButton.A))
-        m.press(NxButton.DOWN); m.press(NxButton.DOWN)                           // 8BitDo Pro 2 (pad rows after the slots)
-        assertEquals(MenuEffect.SetPlaying("k1", false), m.press(NxButton.A))
+        m.press(NxButton.DOWN); m.press(NxButton.DOWN)                           // stays on Player 2: no pad rows after the slots
+        assertEquals(PanelFocus.Item(1), m.state.panelFocus)
         assertEquals(PageKind.Root, m.state.page.kind)
     }
 
-    @Test fun players_page_lists_slots_then_pads() {
+    @Test fun players_page_lists_only_the_slots() {
         val m = model()
         m.setPlayers(
             listOf(p1, PlayerSlotRow("k9", "DualSense", connected = false), PlayerSlotRow(null, "", connected = false)),
@@ -1396,20 +1394,20 @@ class InGameMenuModelTest {
         m.openPlayers()
         assertEquals(PageKind.Players, m.state.page.kind)
         val rows = m.state.page.rows.map { assertIs<MenuRow.Option>(it) }
-        assertEquals(listOf("Player 1", "Player 2", "Player 3", "8BitDo Pro 2", "Xbox Wireless Controller", "Retroid Pocket"), rows.map { it.label })
-        assertEquals(listOf("8BitDo Pro 2", "DualSense (disconnected)", "Empty", "Playing", "Playing", "Not playing"), rows.map { it.valueLabel })
+        assertEquals(listOf("Player 1", "Player 2", "Player 3"), rows.map { it.label })
+        assertEquals(listOf("8BitDo Pro 2", "DualSense (disconnected)", "Empty"), rows.map { it.valueLabel })
         assertEquals(InGameMenuModel.PLAYERS_FOOTER, m.state.page.footer)
     }
 
-    @Test fun left_right_on_a_player_row_cycles_empty_and_the_playing_pads() {
+    @Test fun left_right_on_a_player_row_cycles_empty_and_every_pad() {
         val m = model()
         m.setPlayers(listOf(p1, PlayerSlotRow(null, "", connected = false)), listOf(padA, padB, padC))
         m.openPlayers()
-        // Player 1 holds k1; candidates are [Empty, k1, k2] (k3 is Not playing).
+        // Player 1 holds k1; candidates are [Empty, k1, k2, k3]: a benched pad too (the host puts it back in play).
         assertEquals(MenuEffect.SetPlayer(0, "k2"), m.press(NxButton.RIGHT))
-        assertEquals(MenuEffect.SetPlayer(0, null), m.press(NxButton.LEFT))
+        assertEquals(MenuEffect.SetPlayer(0, null), m.press(NxButton.LEFT))     // Empty: the host benches k1
         m.press(NxButton.DOWN)                                                   // Player 2, Empty
-        assertEquals(MenuEffect.SetPlayer(1, "k2"), m.press(NxButton.LEFT))     // wraps to the last candidate
+        assertEquals(MenuEffect.SetPlayer(1, "k3"), m.press(NxButton.LEFT))     // wraps to the last candidate
     }
 
     @Test fun a_held_slot_cycles_from_empty() {
@@ -1417,16 +1415,6 @@ class InGameMenuModelTest {
         m.setPlayers(listOf(PlayerSlotRow("k9", "DualSense", connected = false), PlayerSlotRow(null, "", connected = false)), listOf(padA))
         m.openPlayers()
         assertEquals(MenuEffect.SetPlayer(0, "k1"), m.press(NxButton.RIGHT))
-    }
-
-    @Test fun left_right_on_a_pad_row_toggles_playing() {
-        val m = model()
-        m.setPlayers(listOf(p1, PlayerSlotRow(null, "", connected = false)), listOf(padA, padC))
-        m.openPlayers()
-        m.press(NxButton.DOWN); m.press(NxButton.DOWN)                           // 8BitDo Pro 2
-        assertEquals(MenuEffect.SetPlaying("k1", false), m.press(NxButton.RIGHT))
-        m.press(NxButton.DOWN)                                                   // Retroid Pocket
-        assertEquals(MenuEffect.SetPlaying("k3", true), m.press(NxButton.LEFT))
     }
 
     @Test fun set_players_refreshes_the_open_page_keeping_the_row() {
@@ -1492,7 +1480,7 @@ class InGameMenuModelTest {
     @Test fun panel_header_and_a_new_console_tag_bump_the_panel_version() {
         val m = model()
         val v0 = m.state.panelVersion
-        m.setPanelHeader(GamePanelHeader("Tetris", null, plainTag, 0L, 0L, null, "12:01", 80))
+        m.setPanelHeader(GamePanelHeader("Tetris", null, plainTag, 0L, null, "12:01", 80))
         assertTrue(m.state.panelVersion > v0)
         assertEquals("12:01", m.panelState().header.clockText)
         val v1 = m.state.panelVersion

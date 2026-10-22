@@ -2,6 +2,7 @@ package com.nxredux.mobile.ui
 
 import com.nxredux.mobile.achievements.*
 import com.nxredux.mobile.ui.nx.NxColors
+import com.nxredux.mobile.ui.nx.NxRichRow
 import com.nxredux.mobile.ui.nx.NxTone
 import com.nxredux.mobile.ui.nx.raRarityPercent
 import com.nxredux.mobile.ui.nx.toneColor
@@ -35,9 +36,9 @@ class RaUiTest {
         assertEquals(RaSubtitle("12/40 unlocked · 2 pending sync", RaTone.PENDING), raGameSubtitle(RaGameView("h", 1, "G", null, 12, 40, 2)))
         assertEquals(RaSubtitle("0/40 unlocked", RaTone.LOCKED), raGameSubtitle(RaGameView("h", 1, "G", null, 0, 40, 0)))
         val a = RaAchievement(1, "A", "d", 5, "b", RaAchievementState.LOCKED, null, null, 0f, 0f, null)
-        assertEquals(RaSubtitle("Locked · 5 pts", RaTone.LOCKED), raAchievementSubtitle(a))
-        assertEquals(RaSubtitle("Unlocked · 5 pts", RaTone.UNLOCKED), raAchievementSubtitle(a.copy(state = RaAchievementState.UNLOCKED)))
-        assertEquals(RaSubtitle("Pending sync · 5 pts", RaTone.PENDING), raAchievementSubtitle(a.copy(state = RaAchievementState.PENDING)))
+        // No state words: the title, the points as its pill, the description under it (none when blank or worth no points).
+        assertEquals(NxRichRow("A", "d", thumbnail = null, titleBadge = "5"), raAchievementRow(a, emptyMap()))
+        assertEquals(NxRichRow("A", null, thumbnail = null, titleBadge = null), raAchievementRow(a.copy(description = " ", points = 0), emptyMap()))
         assertEquals(listOf(RaAction.ACHIEVEMENTS, RaAction.SYNC, RaAction.SETTINGS), raRows(RaState.Idle(status)))
         assertEquals(emptyList(), raRows(RaState.Authenticating))
     }

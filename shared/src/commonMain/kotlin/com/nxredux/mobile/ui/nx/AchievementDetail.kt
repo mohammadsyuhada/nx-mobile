@@ -43,11 +43,13 @@ internal fun achievementBadgeSize(available: Dp, textHeight: Dp): Dp =
 
 /**
  * One achievement in full, NX Redux style: a centred column with the badge ([badgePath], the locked variant while
- * locked), the bold name, the description, then dim lines for points, unlock state (time, pending sync, or progress),
- * unlock rate, type and whether its notifications are muted. Sizes are the shared roles of the list label of the space it
+ * locked), the bold name, the description, then dim lines for points, when it was unlocked or a locked one's progress
+ * (no bare state word: the badge shows it, [achievementStateLine]), unlock rate, type and whether its notifications are
+ * muted. Sizes are the shared roles of the list label of the space it
  * gets: the name a headline, the description and the info lines the secondary size. The text keeps its size and the
  * badge takes the height left (up to [AchievementBadgeMax]), so the page fits without scrolling; it only scrolls where
- * even the smallest badge does not fit. Shared by the in-game menu and the Tools achievement browser (page and pane).
+ * even the smallest badge does not fit. Shared by the game list's achievements panel and the Tools achievement browser
+ * (page and pane).
  */
 @Composable
 fun AchievementDetail(a: RaAchievement, badgePath: String?, muted: Boolean, modifier: Modifier = Modifier, textShare: Float = 1f) {
@@ -60,23 +62,25 @@ fun AchievementDetail(a: RaAchievement, badgePath: String?, muted: Boolean, modi
         val body = NxTextSizes.secondary(label)
         val padV = 8.dp
         val room = if (bounded) maxHeight - padV * 2 else Dp.Infinity
+        val align = TextAlign.Center
+        val lines: @Composable () -> Unit = {
+            DetailLine(a.title, colors.listText, name, FontWeight.Bold, align)
+            if (a.description.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                DetailLine(a.description, colors.listText, body, align = align)
+            }
+            Spacer(Modifier.height(8.dp))
+            DetailLine("${a.points} points", colors.hint, body, align = align)
+            stateLine(a)?.let { DetailLine(it, colors.hint, body, align = align) }
+            DetailLine("${raRarityPercent(a.rarity)}% unlock rate", colors.hint, body, align = align)
+            a.type?.let { DetailLine("[${it.label}]", colors.hint, body, align = align) }
+            if (muted) DetailLine("Muted", colors.hint, body, align = align)
+        }
         Box(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = padV), contentAlignment = Alignment.Center) {
             Layout(
                 content = {
                     NxBadge(badgePath, AchievementBadgeMax, corner = 12.dp)
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        DetailLine(a.title, colors.listText, name, FontWeight.Bold)
-                        if (a.description.isNotBlank()) {
-                            Spacer(Modifier.height(4.dp))
-                            DetailLine(a.description, colors.listText, body)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        DetailLine("${a.points} points", colors.hint, body)
-                        DetailLine(stateLine(a), colors.hint, body)
-                        DetailLine("${raRarityPercent(a.rarity)}% unlock rate", colors.hint, body)
-                        a.type?.let { DetailLine("[${it.label}]", colors.hint, body) }
-                        if (muted) DetailLine("Muted", colors.hint, body)
-                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) { lines() }
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) { measurables, constraints ->
@@ -96,12 +100,17 @@ fun AchievementDetail(a: RaAchievement, badgePath: String?, muted: Boolean, modi
     }
 }
 
-private fun stateLine(a: RaAchievement): String = when {
-    a.state == RaAchievementState.UNLOCKED -> a.unlockedAt?.let { "Unlocked ${formatUnlockTime(it * 1000)}" } ?: "Unlocked"
-    a.state == RaAchievementState.PENDING -> "Pending sync"
-    !a.progress.isNullOrBlank() -> "Progress: ${a.progress}"
-    else -> "Locked"
+/**
+ * The detail's progress line, without a bare state word (the badge shows locked or not): when an unlocked one was
+ * unlocked, a locked one's progress; nothing for a pending one, a locked one without progress, or an unknown time.
+ */
+internal fun achievementStateLine(a: RaAchievement, unlockTime: (Long) -> String): String? = when {
+    a.state == RaAchievementState.UNLOCKED -> a.unlockedAt?.let { "Unlocked ${unlockTime(it * 1000)}" }
+    a.state == RaAchievementState.LOCKED && !a.progress.isNullOrBlank() -> "Progress: ${a.progress}"
+    else -> null
 }
+
+private fun stateLine(a: RaAchievement): String? = achievementStateLine(a, ::formatUnlockTime)
 
 /** Exactly two decimals, without `String.format` (not in commonMain): 12.5 -> "12.50", 3.14159 -> "3.14", 0 -> "0.00". */
 fun raRarityPercent(value: Float): String {
@@ -110,7 +119,7 @@ fun raRarityPercent(value: Float): String {
 }
 
 @Composable
-private fun DetailLine(text: String, color: Color, size: TextUnit, weight: FontWeight = FontWeight.SemiBold) {
+private fun DetailLine(text: String, color: Color, size: TextUnit, weight: FontWeight = FontWeight.SemiBold, align: TextAlign = TextAlign.Center) {
     Text(
         text = text,
         color = color,
@@ -118,6 +127,6 @@ private fun DetailLine(text: String, color: Color, size: TextUnit, weight: FontW
         fontWeight = weight,
         fontSize = size,
         lineHeight = NxTextSizes.line(size),
-        textAlign = TextAlign.Center,
+        textAlign = align,
     )
 }

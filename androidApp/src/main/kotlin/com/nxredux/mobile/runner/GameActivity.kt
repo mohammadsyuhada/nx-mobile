@@ -104,10 +104,6 @@ import com.nxredux.mobile.cheats.CheatSet
 import com.nxredux.mobile.cheats.DolphinCheats
 import com.nxredux.mobile.gametime.GameTimeRecorder
 import com.nxredux.mobile.gametime.GameTimeService
-import com.nxredux.mobile.gametime.GameTotal
-import com.nxredux.mobile.gametime.PanelPlayTime
-import com.nxredux.mobile.gametime.systemLocalCalendar
-import com.nxredux.mobile.gametime.GameSession as PlaySession
 import com.nxredux.mobile.library.ArcadeCompanions
 import com.nxredux.mobile.library.NaomiSets
 import com.nxredux.mobile.library.Names
@@ -615,11 +611,10 @@ class GameActivity : ComponentActivity() {
     // and what it draws ([panelState], rebuilt by [refreshDualPanel] while it is up).
     private var dualPanelTab = GamePanelTab.SHORTCUTS
     private val dualPanel = mutableStateOf<GamePanelState?>(null)
-    private var panelWasShown = false            // at the last syncPanel: it re-reads the discs and play time as the panel comes up
+    private var panelWasShown = false            // at the last syncPanel: it re-reads the discs as the panel comes up
     // The game panel's data, shared by the in-game menu's panel and the dual-screen one.
     private var discs: Pair<Int, Int>? = null    // the core's (current disc 0-based, count), once asked ([refreshDiscs])
-    private var playTimeBase: Pair<GameTotal?, List<PlaySession>>? = null   // the store's figures for this game ([refreshPlayTime])
-    private var sliceStartedAt: Long? = null     // the open game-time slice's start (wall clock); null while none runs
+    private var playTotalMs = 0L                 // this game's total play time before this launch ([readPlayTotal], once)
     private var panelClockJob: Job? = null       // the header's minute tick while a panel shows ([syncPanelClock])
     // The header's clock text and battery level, read once a minute (the first header of each minute) for every refresh.
     private var panelClockMinute = -1L
@@ -758,6 +753,7 @@ class GameActivity : ComponentActivity() {
             else @Suppress("DEPRECATION") setTaskDescription(ActivityManager.TaskDescription(recentsLabel))
         }
         setContentView(R.layout.activity_game)
+        readPlayTotal()   // before this launch's own slices land: the header's total stays as it was
         volumeControlStream = AudioManager.STREAM_MUSIC   // volume keys set the game's (media) volume, even between sounds
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.goImmersive()
@@ -896,8 +892,7 @@ class GameActivity : ComponentActivity() {
         if (isN3ds) syncN3dsCursor()
         secondScreens.start()   // the collector shows the presentation again
         // onStop closed the session: back in the foreground, a new one on the same game (background time is not play)
-        gameTime?.let { if (!isFinishing && !quitting) { it.resume(); startGameTimeTicker(it); sliceStartedAt = System.currentTimeMillis() } }
-        refreshPlayTime()   // the slice onStop closed is in the store now
+        gameTime?.let { if (!isFinishing && !quitting) { it.resume(); startGameTimeTicker(it) } }
     }
 
     /** Main thread. Before onStop's auto state: keep it for onStop. After it: queue it behind that state. */
@@ -918,7 +913,6 @@ class GameActivity : ComponentActivity() {
         gameTime?.pause()   // the session ends here: a kill in the background loses nothing, a return opens a new one
         gameTimeTicker?.cancel()
         gameTimeTicker = null
-        sliceStartedAt = null
         panelClockJob?.cancel(); panelClockJob = null   // onResume's syncDual starts it again
         // Leaving via Home/recents: the process may be killed in the background, so keep the spot. Also when
         // finishing without a quit: sharing the menu's task, a launch of the singleTask menu (app icon, notification)
@@ -1059,7 +1053,6 @@ class GameActivity : ComponentActivity() {
     private fun endGameTime() {
         gameTimeTicker?.cancel(); gameTimeTicker = null
         gameTime?.end(); gameTime = null
-        sliceStartedAt = null
     }
 
     private suspend fun startEmulator() {
@@ -1076,7 +1069,7 @@ class GameActivity : ComponentActivity() {
         val players = CoreRegistry.playersFor(tag, descriptor)
         playerCount = players
         // netplay: no slots, so every pad and the touch pad drive native port 0, the engine's local word.
-        slots = if (players > 1 && np == null) PlayerSlots(players, AndroidAppSettings(this).benchedPads.map(::DeviceKey).toSet()) else null
+        slots = if (players > 1 && np == null) PlayerSlots(players) else null
         // onCreate laid out before the slots existed: a pad benched in an earlier game counted there. Lay out again (only
         // when a benched pad is attached: one player, slots null, never re-lays out here).
         if (layoutControllerNames() != controllerNames()) applyLayout(resources.configuration.orientation)
@@ -1531,9 +1524,8 @@ class GameActivity : ComponentActivity() {
                     val rec = withContext(Dispatchers.IO) { GameTimeService.recorder(this@GameActivity) }
                     rec.start(path, tag, name)
                     gameTime = rec
-                    sliceStartedAt = System.currentTimeMillis()
                     // Ready while stopped (onStop already ran): close it at once, as onStop would; onStart resumes it.
-                    if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) { rec.pause(); sliceStartedAt = null }
+                    if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) rec.pause()
                     startGameTimeTicker(rec)
                 }
             }
@@ -1849,9 +1841,9 @@ class GameActivity : ComponentActivity() {
             loggedControllers = attached
             NxLog.i(TAG_LOG, "controllers: $attached")
         }
-        // The hints follow any attached pad (a Not playing one still drives the menu).
+        // The hints follow any attached pad (a benched one still drives the menu).
         controllerConnected.value = pads.isNotEmpty()
-        // What the layout goes by: a multiplayer game's Not playing pads leave the on-screen pad up for Player 1.
+        // What the layout goes by: a multiplayer game's benched pads leave the on-screen pad up for Player 1.
         val names = layoutControllerNames(pads)
         val tt = tabletop(names)
         if (tt != null) {
@@ -1897,7 +1889,7 @@ class GameActivity : ComponentActivity() {
         game.requestLayout()
         updatePadVisibility()
         syncN3dsCore()
-        menuView?.layoutParams = menuLayoutParams(orientation)
+        menuView?.layoutParams = menuLayoutParams(orientation, overPanel = mainPanelShown())
         notificationsView?.layoutParams = menuLayoutParams(orientation)
         // The DS layouts follow the new area (gameContainer's size listener does too, once it is laid out).
         game.post { relayoutFrontend() }
@@ -2036,7 +2028,7 @@ class GameActivity : ComponentActivity() {
         }
         game.requestLayout()
         updatePadVisibility()
-        menuView?.layoutParams = menuLayoutParams(orientation)
+        menuView?.layoutParams = menuLayoutParams(orientation, overPanel = mainPanelShown())
         notificationsView?.layoutParams = menuLayoutParams(orientation)
         game.post { relayoutFrontend() }
     }
@@ -2116,7 +2108,7 @@ class GameActivity : ComponentActivity() {
 
     /**
      * The names of the [pads] that count as attached for the layout (the on-screen pad, the band rule, tabletop, DS touch
-     * mode; the hint glyphs follow every pad): in a multiplayer game not the Not playing ones ([PadPresence]); one player, all.
+     * mode; the hint glyphs follow every pad): in a multiplayer game not the benched ones ([PadPresence]); one player, all.
      */
     private fun layoutControllerNames(pads: List<InputDevice> = controllers()): List<String> =
         PadPresence.attached(pads, slots?.outOfPlay) { DeviceKey(it.descriptor) }.map { it.name }
@@ -2133,6 +2125,7 @@ class GameActivity : ComponentActivity() {
         val below = notificationsView?.let { root.indexOfChild(it) }?.takeIf { it >= 0 } ?: -1
         root.addView(view, below, lp)
         padViews += view
+        placeMainPanelHost()   // a Panel pill alone stays above the pads re-added here
     }
 
     // ------------------------------------------------------------------ frontend (display) settings
@@ -2989,11 +2982,11 @@ class GameActivity : ComponentActivity() {
         if (wasOnMain != mainPanelShown()) {
             updatePadVisibility()
             if (mainPanelShown()) releaseAllGameInput()   // the pad went from under the fingers: nothing it held may stick
+            menuView?.layoutParams = menuLayoutParams(resources.configuration.orientation, overPanel = mainPanelShown())
         }
         // Re-read as it comes up; while up, each RA event, player, disc and setting change refreshes it.
         if (shown && !panelWasShown) {
             refreshDiscs()
-            refreshPlayTime()
         }
         panelWasShown = shown
         if (shown) refreshDualPanel() else dualPanel.value = null
@@ -3021,23 +3014,55 @@ class GameActivity : ComponentActivity() {
                         when {
                             panel != null -> Box(Modifier.fillMaxSize().background(LocalNxColors.current.background)
                                 .windowInsetsPadding(WindowInsets.displayCutout)) { panel() }
-                            mainPanelPill.value -> PanelPill("Panel", Modifier.padding(10.dp)) { panelUp = true; syncDual() }
+                            // Bottom-right, where the panel's Game pill sits (clear of a cutout on those sides): the
+                            // two switch pills land on one spot.
+                            mainPanelPill.value -> PanelPill(
+                                "Panel", Modifier.windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.End + WindowInsetsSides.Bottom)).padding(10.dp),
+                            ) { panelUp = true; syncDual() }
                         }
                     }
                 }
             }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-            // Right above gameContainer: the pads, the menu and the notifications are added after it.
-            val root = findViewById<FrameLayout>(R.id.root)
-            root.addView(host, root.indexOfChild(findViewById(R.id.gameContainer)) + 1)
             mainPanelHost = host
         }
         host.isClickable = content != null   // the panel's empty parts swallow touches; the pill alone lets them through
         host.layoutParams = if (content != null) {
             FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         } else {
-            FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.END)
         }
-        host.visibility = View.VISIBLE
+        placeMainPanelHost()
+        syncMainPanelHost()
+    }
+
+    /**
+     * Where the main panel's host sits among the root's children: the panel right above gameContainer (under the pads,
+     * which it hides anyway); the Panel pill alone right above the pads, whose right cluster would cover it in landscape,
+     * and still under the menu and the notifications. Moved only when its place changed.
+     */
+    private fun placeMainPanelHost() {
+        val host = mainPanelHost ?: return
+        val root = findViewById<FrameLayout>(R.id.root)
+        val pillOnly = mainPanel.value == null && mainPanelPill.value
+        val current = root.indexOfChild(host)
+        // The other children's places as if the host were out of the root.
+        fun without(i: Int) = if (current in 0 until i) i - 1 else i
+        val game = without(root.indexOfChild(findViewById(R.id.gameContainer)))
+        val lastPad = padViews.maxOfOrNull { without(root.indexOfChild(it)) } ?: -1
+        val target = if (pillOnly) maxOf(game, lastPad) + 1 else game + 1
+        if (current == target) return
+        if (current >= 0) root.removeView(host)
+        root.addView(host, target)
+    }
+
+    /**
+     * The main panel's host shows with the panel or the pill; but not under the open in-game menu, which then draws the
+     * same header and panel in its place (with the list beside it), so the touch screen never shows two.
+     */
+    private fun syncMainPanelHost() {
+        val host = mainPanelHost ?: return
+        val shown = if (mainPanel.value != null) !menuOpen else mainPanelPill.value
+        host.visibility = if (shown) View.VISIBLE else View.GONE
     }
 
     /** The game panel, live on [dualPanel], touch-only; [gamePill]: the DS/3DS Game pill. */
@@ -3066,7 +3091,6 @@ class GameActivity : ComponentActivity() {
             badges = b?.badges.orEmpty(),
             players = players?.first.orEmpty(),
             playerPads = players?.second.orEmpty(),
-            touchOnly = true,
             showGamePill = dualMode == DualMode.PANEL_UP,
         )
     }
@@ -3078,8 +3102,8 @@ class GameActivity : ComponentActivity() {
 
     /**
      * A touch on the dual-screen panel: Swap disc, Second screen and the Players rows as the in-game menu's own effects
-     * (the menu, if open over the game, follows), a tab, or the Game pill flipping the DS/3DS screen back. An achievement
-     * opens nothing here (no detail page on the touch screen).
+     * (the menu, if open over the game, follows), a tab, or the Game pill flipping the DS/3DS screen back. Achievement
+     * rows ask for nothing.
      */
     private fun onGamePanelEvent(e: GamePanelEvent) {
         if (quitting) return
@@ -3090,9 +3114,7 @@ class GameActivity : ComponentActivity() {
                 menuModel?.let(::publishSecondScreen)
             }
             is GamePanelEvent.SelectTab -> { dualPanelTab = e.tab; refreshDualPanel() }
-            is GamePanelEvent.OpenAchievement -> Unit
             is GamePanelEvent.SetPlayer -> handle(MenuEffect.SetPlayer(e.slot, e.key))
-            is GamePanelEvent.SetPlaying -> handle(MenuEffect.SetPlaying(e.key, e.playing))
             GamePanelEvent.ShowGame -> { panelUp = false; syncDual() }
         }
     }
@@ -3141,45 +3163,42 @@ class GameActivity : ComponentActivity() {
     }
 
     /**
-     * Reads this game's play time from the store on IO ([PanelPlayTime]'s inputs: its group's total and closed plays),
-     * then refreshes the headers. A game with no library path (game time not recorded) keeps 0.
+     * Reads this game's total play time from the store on IO, once as the game starts (no running count: the header shows
+     * the total before this launch), then refreshes the headers. A game with no library path (game time not recorded) keeps 0.
      */
-    private fun refreshPlayTime() {
+    private fun readPlayTotal() {
         val path = intent.getStringExtra(EXTRA_GAME_PATH) ?: return
         lifecycleScope.launch {
-            val base = try {
+            val total = try {
                 val data = withContext(Dispatchers.IO) { GameTimeService.data(this@GameActivity) } ?: return@launch
-                val total = data.byPath()[path]
-                total to (total?.let { data.sessions(it.gameId).sessions } ?: emptyList())
+                data.byPath()[path]?.totalMs ?: 0L
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
                 NxLog.w("GameActivity", "could not read play time", e)
                 return@launch
             }
-            playTimeBase = base
+            playTotalMs = total
             refreshPanelHeader()
         }
     }
 
     /**
-     * Both panels' header: the title, the launcher's box art (null: the console logo), play time today and in total (the
-     * running slice included), the clock and the battery (read at the first header of each minute: the minute tick, a
+     * Both panels' header: the title, the launcher's box art (null: the console logo), the total play time before this
+     * launch ([readPlayTotal]), the clock and the battery (read at the first header of each minute: the minute tick, a
      * panel coming up; other refreshes reuse them). The achievement count is each panel's own.
      */
     private fun panelHeader(): GamePanelHeader {
         val now = System.currentTimeMillis()
-        val (total, plays) = playTimeBase ?: (null to emptyList())
-        val time = PanelPlayTime.of(total, plays, systemLocalCalendar().dayStart(now), sliceStartedAt, now)
         // A shared-storage ref as its plain path: the game screen's image loader may not have the app's ref mapper.
         val art = intent.getStringExtra(EXTRA_ART_PATH)?.let { FileRefs.artPath(it) ?: it }
         val minute = now / 60_000L
         if (minute != panelClockMinute) {
             panelClockMinute = minute
-            panelClock = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(now))
+            panelClock = android.text.format.DateFormat.getTimeFormat(this).format(java.util.Date(now))   // the phone's 12/24-hour setting
             panelBattery = batteryPercent()
         }
-        return GamePanelHeader(intent.getStringExtra(EXTRA_TITLE) ?: "Paused", art, layoutTag(), time.todayMs, time.totalMs, null, panelClock, panelBattery)
+        return GamePanelHeader(intent.getStringExtra(EXTRA_TITLE) ?: "Paused", art, layoutTag(), playTotalMs, null, panelClock, panelBattery)
     }
 
     /** The battery level from the sticky battery broadcast (no receiver is kept); null when it can't be read. */
@@ -3191,7 +3210,7 @@ class GameActivity : ComponentActivity() {
         return if (level >= 0 && scale > 0) level * 100 / scale else null
     }
 
-    /** The header again (clock, battery, the running play time) in the open menu and the dual-screen panel. */
+    /** The header again (clock, battery, the play total once read) in the open menu and the dual-screen panel. */
     private fun refreshPanelHeader() {
         menuModel?.let { it.setPanelHeader(panelHeader()); menuState.value = it.state }
         refreshDualPanel()
@@ -3206,7 +3225,6 @@ class GameActivity : ComponentActivity() {
             while (true) {
                 delay(60_000L - System.currentTimeMillis() % 60_000L)
                 refreshPanelHeader()
-                refreshPlayTime()   // a slice closed meanwhile (a stop and start) lands in the store's figures
             }
         }
     }
@@ -3663,10 +3681,11 @@ class GameActivity : ComponentActivity() {
         publishSecondScreen(model)
         applyAchievements(model)
         model.setPanelHeader(panelHeader())
+        // Over the dual-screen panel: the menu's panel opens on the tab it showed (a tab change has no effect to handle).
+        if (mainPanelShown()) model.panelEvent(GamePanelEvent.SelectTab(dualPanelTab))
         menuModel = model
         // Multi-disc content (an m3u, a multi-disc PBP): the core reports its discs through the disk-control interface.
         refreshDiscs()
-        refreshPlayTime()
         syncPanelClock()
         menuState.value = model.state
         menuAxes.reset()
@@ -3713,9 +3732,8 @@ class GameActivity : ComponentActivity() {
                             onDismiss = { if (!quitting) menuModel?.let { val e = it.press(NxButton.B); menuState.value = it.state; handle(e) } },
                             onChange = { d -> if (!quitting) menuModel?.let { val e = it.press(if (d > 0) NxButton.RIGHT else NxButton.LEFT); menuState.value = it.state; handle(e) } },
                             onPress = ::onMenuPress,
-                            achievementDetail = menuModel?.achievementDetail(),
                             badgePath = { a -> menuModel?.badgePath(a) },
-                            muted = { id -> id in (achievements?.muted ?: emptySet()) },
+                            rowAchievement = { r -> menuModel?.achievementOf(r) },   // the Achievements page's rows as the panel's
                             onInfoTruncated = { info, t -> if (!quitting) menuModel?.let { it.setInfoTruncated(info, t); menuState.value = it.state } },
                             // Two panes on a wide area (the unfolded Fold, a phone in landscape), as Settings.
                             onSplit = { split -> menuModel?.split = split },
@@ -3724,6 +3742,8 @@ class GameActivity : ComponentActivity() {
                             panel = menuModel?.panelState(),
                             onPanelEvent = { ev -> if (!quitting) menuModel?.let { m -> val e = m.panelEvent(ev); menuState.value = m.state; handle(e) } },
                             onPanelColumns = { c -> menuModel?.panelColumns = c },
+                            // In the dual-screen panel's place: opaque, as the panel it replaces.
+                            opaque = mainPanel.value != null,
                         )
                     }
                     }
@@ -3731,16 +3751,19 @@ class GameActivity : ComponentActivity() {
             }
         }
         menuView = overlay
-        root.addView(overlay, menuLayoutParams(resources.configuration.orientation))
+        root.addView(overlay, menuLayoutParams(resources.configuration.orientation, overPanel = mainPanelShown()))
+        syncMainPanelHost()
         updatePadVisibility()
     }
 
     /**
      * Portrait: confine the modal to the top game area so the bottom controls stay visible and can drive
      * the menu (the whole height when the band is dropped). Landscape: cover the whole screen. Re-applied by
-     * [applyLayout] (rotation, controller change) while the menu is open.
+     * [applyLayout] (rotation, controller change) while the menu is open. [overPanel]: the menu takes the place of the
+     * dual-screen panel, which fills the window (no pad below): the whole window too.
      */
-    private fun menuLayoutParams(orientation: Int): FrameLayout.LayoutParams {
+    private fun menuLayoutParams(orientation: Int, overPanel: Boolean = false): FrameLayout.LayoutParams {
+        if (overPanel) return FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         // Tabletop: confined above the hinge, the controls below still drive it.
         tabletop()?.let { tt -> return FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, tt.gameBottom, Gravity.TOP) }
         return if (orientation == Configuration.ORIENTATION_PORTRAIT) {
@@ -3756,8 +3779,11 @@ class GameActivity : ComponentActivity() {
         menuOpen = false
         menuRouter.releaseAll()
         stickRouter.onMenuToggled()
+        // The dual-screen panel comes back on the tab the menu's panel left.
+        menuState.value?.panelTab?.takeIf { mainPanelShown() && it != dualPanelTab }?.let { dualPanelTab = it; refreshDualPanel() }
         menuView?.let { findViewById<FrameLayout>(R.id.root).removeView(it) }
         menuView = null
+        syncMainPanelHost()
         menuModel = null
         menuState.value = null
         syncPanelClock()
@@ -3842,6 +3868,7 @@ class GameActivity : ComponentActivity() {
             MenuEffect.SaveForGame -> saveOptions(game = true)
             MenuEffect.RestoreDefaults -> restoreOptions()
             is MenuEffect.SetPlayer -> slots?.let { s ->
+                val benchedBefore = s.outOfPlay
                 s.assign(effect.slot, effect.key?.let(::DeviceKey)).forEach { port ->
                     releasePort(port)
                     // The rumble follows the pad now in the slot (none: silent; port 0 falls back to the phone).
@@ -3849,18 +3876,15 @@ class GameActivity : ComponentActivity() {
                     rumbles.getOrNull(port)?.useDevice(id)
                 }
                 connectDolphinPorts()   // a slot filled here is connected; one emptied stays so (no unplug prompt)
-                menuModel?.let(::publishPlayers)
-                refreshDualPanel()
-            }
-            is MenuEffect.SetPlaying -> slots?.let { s ->
-                s.setOutOfPlay(DeviceKey(effect.key), out = !effect.playing)?.let { port ->
-                    releasePort(port)
-                    rumbles.getOrNull(port)?.useDevice(null)
+                if (s.outOfPlay != benchedBefore) {
+                    // Empty benched the pad that was there (for this session only), or a benched pad was chosen: the
+                    // layout again as on a connect or disconnect (a benched pad does not hide the on-screen pad,
+                    // [layoutControllerNames]), which republishes the Players page and the panel.
+                    onInputDevicesChanged()
+                } else {
+                    menuModel?.let(::publishPlayers)
+                    refreshDualPanel()
                 }
-                AndroidAppSettings(this).benchedPads = s.outOfPlay.map { it.value }.toSet()
-                // As on a connect or disconnect: the layout again (a Not playing pad does not hide the on-screen pad,
-                // [layoutControllerNames]) and the Players page republished.
-                onInputDevicesChanged()
             }
         }
     }
@@ -4680,7 +4704,7 @@ class GameActivity : ComponentActivity() {
     /**
      * The port [device]'s input goes to: 0 for a one-player core, the on-screen pad or a non-pad device; else its
      * player slot, claimed when [claim] (a key-down, an axis past half) and it has none. Null drops the input: every
-     * slot is taken, or the pad is Not playing.
+     * slot is taken, or the pad is benched (its slot set to Empty on the Players page).
      */
     private fun portFor(device: InputDevice?, claim: Boolean): Int? {
         val s = slots ?: return 0
@@ -4725,7 +4749,7 @@ class GameActivity : ComponentActivity() {
                 is SlotView.Playing -> PlayerSlotRow(v.key.value, name(v.key), connected = true)
                 is SlotView.Held -> PlayerSlotRow(v.key.value, name(v.key), connected = false)
             }
-        } to keys.map { k -> PlayerPadRow(k.value, name(k), playing = k !in s.outOfPlay) }
+        } to keys.map { k -> PlayerPadRow(k.value, name(k)) }
     }
 
     /** The connected physical pads, one per descriptor (a pad may show as several input devices). */
@@ -4746,7 +4770,7 @@ class GameActivity : ComponentActivity() {
         if (keyCode == KeyEvent.KEYCODE_BACK) { if (event.repeatCount == 0) backPressed(); return true }
         val first = event.repeatCount == 0
         val button = PadKeymap.buttonFor(keyCode)
-        // Any pad can pause, before the slot lookup: also one with no slot (table full) or set Not playing. It claims nothing.
+        // Any pad can pause, before the slot lookup: also one with no slot (table full) or benched. It claims nothing.
         if (button == NxButton.MENU) { if (first) toggleMenu(); return true }
         val port = portFor(event.device, claim = true) ?: return true   // no slot: dropped
         // Wii: the left-stick click recentres the phone's motion, the right-stick click is HOME ([pressWiiHome]); neither

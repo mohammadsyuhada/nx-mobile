@@ -74,6 +74,9 @@ object NxTextSizes {
     /** The in-game options page's info area and its line height. */
     val menuInfo: TextUnit = 13.sp
     val menuInfoLine: TextUnit = 17.sp
+    /** The same in portrait, smaller so another row fits above the on-screen pad. */
+    val menuInfoPortrait: TextUnit = 11.sp
+    val menuInfoLinePortrait: TextUnit = 14.sp
 
     /** The in-game notices (toasts, the progress pill). */
     val notice: TextUnit = 15.sp

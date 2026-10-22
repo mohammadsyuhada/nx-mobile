@@ -1,8 +1,9 @@
 package com.nxredux.mobile.ui.nx
 
+import com.nxredux.mobile.achievements.RaAchievement
+import com.nxredux.mobile.achievements.RaAchievementState
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -46,9 +47,11 @@ class GamePanelModelTest {
         assertTrue(shortcuts(connected = false).none { it.shortcut == Shortcut.SECOND_SCREEN })
         val on = shortcuts(connected = true, on = true).single { it.shortcut == Shortcut.SECOND_SCREEN }
         assertTrue(on.enabled)
-        assertEquals("On", on.value)
+        assertNull(on.value)   // a toggle: no On/Off words, its fill says it
         assertEquals(true, on.on)
-        assertEquals("Off", shortcuts(connected = true, on = false).single { it.shortcut == Shortcut.SECOND_SCREEN }.value)
+        val off = shortcuts(connected = true, on = false).single { it.shortcut == Shortcut.SECOND_SCREEN }
+        assertNull(off.value)
+        assertEquals(false, off.on)
         // Netplay hides only Swap disc.
         assertTrue(shortcuts(connected = true, netplay = true).any { it.shortcut == Shortcut.SECOND_SCREEN })
     }
@@ -77,18 +80,22 @@ class GamePanelModelTest {
         assertNull(GamePanelModel.eventFor(list.single { it.shortcut == Shortcut.SWAP_DISC }.copy(enabled = false)))
     }
 
-    @Test fun player_tap_cycles_to_next_playing_pad() {
+    @Test fun player_tap_cycles_empty_and_every_connected_pad() {
         val slots = listOf(PlayerSlotRow("a", "Pad A", true), PlayerSlotRow(null, "", false))
-        val pads = listOf(PlayerPadRow("a", "Pad A", true), PlayerPadRow("b", "Pad B", true), PlayerPadRow("c", "Pad C", false))
+        val pads = listOf(PlayerPadRow("a", "Pad A"), PlayerPadRow("b", "Pad B"), PlayerPadRow("c", "Pad C"))
         assertEquals(GamePanelEvent.SetPlayer(0, "b"), GamePanelModel.nextPlayer(0, slots, pads))
         assertEquals(GamePanelEvent.SetPlayer(1, "a"), GamePanelModel.nextPlayer(1, slots, pads))
-        assertEquals(GamePanelEvent.SetPlayer(0, null), GamePanelModel.nextPlayer(0, listOf(PlayerSlotRow("b", "Pad B", true)), pads))
-        assertFalse(GamePanelModel.nextPlayer(0, slots, pads).key == "c")   // a not-playing pad is skipped
+        // After the last pad (a benched one included), Empty again.
+        assertEquals(GamePanelEvent.SetPlayer(0, null), GamePanelModel.nextPlayer(0, listOf(PlayerSlotRow("c", "Pad C", true)), pads))
     }
 
-    @Test fun pad_tap_toggles_playing() {
-        assertEquals(GamePanelEvent.SetPlaying("a", false), GamePanelModel.togglePlaying(PlayerPadRow("a", "Pad A", playing = true)))
-        assertEquals(GamePanelEvent.SetPlaying("c", true), GamePanelModel.togglePlaying(PlayerPadRow("c", "Pad C", playing = false)))
+    @Test fun cycle_player_steps_both_ways_and_a_held_slot_starts_from_empty() {
+        val slots = listOf(PlayerSlotRow("a", "Pad A", true), PlayerSlotRow("z", "Gone", false))
+        val pads = listOf(PlayerPadRow("a", "Pad A"), PlayerPadRow("c", "Benched C"))
+        assertEquals("c", GamePanelModel.cyclePlayer(0, 1, slots, pads))
+        assertEquals(null, GamePanelModel.cyclePlayer(0, -1, slots, pads))
+        assertEquals("a", GamePanelModel.cyclePlayer(1, 1, slots, pads))   // "z" is not connected: from Empty
+        assertEquals("c", GamePanelModel.cyclePlayer(1, -1, slots, pads))  // wraps to the last pad
     }
 
     @Test fun disc_toast_is_one_based() {
@@ -101,5 +108,21 @@ class GamePanelModelTest {
         assertEquals(2, GamePanelModel.nextDisc(1, 3))
         assertEquals(0, GamePanelModel.nextDisc(2, 3))
         assertEquals(0, GamePanelModel.nextDisc(5, 3))   // a stale index out of range wraps too
+    }
+
+    private fun achievement(state: RaAchievementState, points: Int = 10) =
+        RaAchievement(1, "First Barrel", "Jump a barrel", points, "b", state, null, null, 0f, 0f, null)
+
+    @Test fun points_badge_only_with_points() {
+        assertEquals("10", GamePanelModel.pointsBadge(achievement(RaAchievementState.LOCKED, points = 10)))
+        assertNull(GamePanelModel.pointsBadge(achievement(RaAchievementState.UNLOCKED, points = 0)))
+    }
+
+    @Test fun header_lines_total_only_and_ra_only_with_a_set() {
+        val h = GamePanelHeader("Tetris", null, "GB", 4 * 3_600_000L + 12 * 60_000L, null, "9:00", null)
+        assertEquals("Total 4h 12m", GamePanelModel.timeLine(h))
+        assertNull(GamePanelModel.raLine(h))
+        assertNull(GamePanelModel.raLine(h.copy(ra = 0 to 0)))   // a summary with no achievements: no line, no room
+        assertEquals("Achievements 3 / 40", GamePanelModel.raLine(h.copy(ra = 3 to 40)))
     }
 }

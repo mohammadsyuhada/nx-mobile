@@ -131,7 +131,7 @@ class InGameMenuSplitTest {
 
     @Test fun aTapOnTheRootsHighlightedRowBesideAPanelPageComesBackToTheRoot() {
         val m = model()
-        m.setPlayers(listOf(PlayerSlotRow("a", "Pad A", connected = true), PlayerSlotRow(null, "", connected = false)), listOf(PlayerPadRow("a", "Pad A", playing = true)))
+        m.setPlayers(listOf(PlayerSlotRow("a", "Pad A", connected = true), PlayerSlotRow(null, "", connected = false)), listOf(PlayerPadRow("a", "Pad A")))
         val continueRow = m.state.page.rows.indexOfFirst { it.label == "Continue" }
         m.select(continueRow)
         m.panelEvent(GamePanelEvent.SelectTab(GamePanelTab.PLAYERS))
@@ -142,5 +142,24 @@ class InGameMenuSplitTest {
         assertNull(m.tapParent(PageKind.Root, continueRow))
         assertEquals(listOf(PageKind.Root), m.state.stack.map { it.kind })
         assertEquals(continueRow, m.state.page.selected)
+    }
+
+    @Test fun root_list_narrower_in_portrait() {
+        assertTrue(rootListShare(portrait = true) < rootListShare(portrait = false))
+        assertEquals(0.42f, rootListShare(portrait = false))
+    }
+
+    @Test fun root_list_top_pad_centres_first_pill_on_tab_words() {
+        val short = 24.dp
+        assertEquals(menuTabWordCentre() - short / 2, rootListTopPad(short))
+        assertEquals(0.dp, rootListTopPad(80.dp))   // a taller row starts right under the header
+    }
+
+    @Test fun portrait_rows_are_never_taller_than_landscape_rows() {
+        val own = menuRowHeight(400.dp, null)
+        assertEquals(400.dp / nxRowCountFor(400.dp), own)
+        val land = 360.dp / nxRowCountFor(360.dp)
+        assertEquals(minOf(own, land), menuRowHeight(400.dp, 360.dp))
+        assertTrue(menuRowHeight(400.dp, 360.dp) <= own)
     }
 }

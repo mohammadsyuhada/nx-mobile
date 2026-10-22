@@ -77,17 +77,21 @@ internal fun SettingsSplitScreen(state: AppState, s: Screen, selection: State<Li
  * The two-pane frame on a wide landscape window ([settingsSplit]): [left] in [SETTINGS_SPLIT_LEFT] of the width, a 1 dp
  * divider at 8%, [right] in the rest, then [over] drawn over both panes (a dialog's scrim covers the whole window).
  * Both panes' hint bars keep their height, so their rows stay level when only the focused one shows hints. Used by the
- * two-pane Settings, the column browsers (RetroAchievements, Game Tracker, Artwork) and the in-game menu.
+ * two-pane Settings, the column browsers (RetroAchievements, Game Tracker, Artwork) and the in-game menu, which passes its
+ * own [leftShare] and no [divider] (its list sits beside the game panel as one surface).
  */
 @Composable
-internal fun SplitPanes(left: @Composable () -> Unit, right: @Composable () -> Unit, over: @Composable () -> Unit = {}) {
+internal fun SplitPanes(
+    left: @Composable () -> Unit, right: @Composable () -> Unit, over: @Composable () -> Unit = {},
+    leftShare: Float = SETTINGS_SPLIT_LEFT, divider: Boolean = true,
+) {
     val colors = LocalNxColors.current
     Box(Modifier.fillMaxSize()) {
         CompositionLocalProvider(LocalNxHintBarKeepHeight provides true) {
             Row(Modifier.fillMaxSize()) {
-                Box(Modifier.weight(SETTINGS_SPLIT_LEFT).fillMaxHeight()) { left() }
-                Box(Modifier.width(1.dp).fillMaxHeight().background(colors.listText.copy(alpha = DIVIDER_ALPHA)))
-                Box(Modifier.weight(1f - SETTINGS_SPLIT_LEFT).fillMaxHeight()) { right() }
+                Box(Modifier.weight(leftShare).fillMaxHeight()) { left() }
+                if (divider) Box(Modifier.width(1.dp).fillMaxHeight().background(colors.listText.copy(alpha = DIVIDER_ALPHA)))
+                Box(Modifier.weight(1f - leftShare).fillMaxHeight()) { right() }
             }
         }
         over()

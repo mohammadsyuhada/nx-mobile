@@ -45,7 +45,6 @@ import com.nxredux.mobile.ui.nx.NxButton
 import com.nxredux.mobile.ui.nx.NxModalPanelColor
 import com.nxredux.mobile.ui.nx.NxModalScrimColor
 import com.nxredux.mobile.ui.nx.NxRichList
-import com.nxredux.mobile.ui.nx.NxRichRow
 import com.nxredux.mobile.ui.nx.NxTextSizes
 import com.nxredux.mobile.ui.nx.nxListLabelSize
 import com.nxredux.mobile.ui.nx.nxTextScale
@@ -132,7 +131,7 @@ private fun ColumnScope.RaPanelBody(p: RaPanel, onRow: (Int) -> Unit, onButton: 
                     p.detail && a != null -> AchievementDetail(a, raBadgeModel(c.badges, a), muted = false, modifier = Modifier.fillMaxSize(), textShare = 0.8f)
                     else -> {
                         val rows = remember(c.achievements, c.badges) {
-                            c.achievements.map { r -> raAchievementSubtitle(r).let { NxRichRow(r.title, it.text, thumbnail = raBadgeModel(c.badges, r), subtitleTone = it.tone.toNxTone()) } }
+                            c.achievements.map { r -> raAchievementRow(r, c.badges) }
                         }
                         NxRichList(rows, p.row, onSelect = onRow, onOpen = onRow, modifier = Modifier.fillMaxSize().padding(start = 8.dp), labelSize = label)
                     }

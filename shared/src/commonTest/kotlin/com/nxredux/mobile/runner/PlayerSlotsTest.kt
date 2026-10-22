@@ -71,30 +71,44 @@ class PlayerSlotsTest {
         assertEquals(listOf(SlotView.Held(b), SlotView.Playing(a)), s.slots())   // the swap keeps b held in a's old slot
     }
 
-    @Test fun out_of_play_frees_the_slot_and_blocks_claims_until_back_in_play() {
-        val s = PlayerSlots(players = 2, outOfPlay = setOf(c))
-        assertNull(s.claim(c))
+    @Test fun emptying_a_slot_benches_the_pad_that_was_in_it() {
+        val s = PlayerSlots(players = 2)
         s.claim(a); s.claim(b)
-        assertEquals(0, s.setOutOfPlay(a, true))
-        assertEquals(setOf(a, c), s.outOfPlay)
+        assertEquals(setOf(0), s.assign(0, null))
+        assertEquals(setOf(a), s.outOfPlay)
         assertEquals(SlotView.Empty, s.slots()[0])
-        assertNull(s.claim(a))
-        assertNull(s.setOutOfPlay(a, false))                   // back in play: claims again on its next press
-        assertEquals(0, s.claim(a)!!.port)
+        assertNull(s.claim(a))                                 // its presses no longer claim the free slot
+        assertEquals(emptySet(), s.assign(0, null))            // already empty: nothing more benched
+        assertEquals(setOf(a), s.outOfPlay)
     }
 
-    @Test fun a_pad_back_in_play_with_every_slot_taken_gets_none() {
-        val s = PlayerSlots(players = 2, outOfPlay = setOf(c))
-        s.claim(a); s.claim(b)
-        s.setOutOfPlay(c, false)
-        assertNull(s.claim(c))                                 // never steals a connected player's slot
+    @Test fun emptying_a_held_slot_benches_its_disconnected_pad() {
+        val s = PlayerSlots(players = 2)
+        s.claim(a); s.disconnected(a)
+        s.assign(0, null)
+        assertNull(s.claim(a))                                 // back, it does not take the slot again by itself
     }
 
-    @Test fun a_not_playing_pad_does_not_count_as_attached_in_a_multiplayer_game() {
+    @Test fun choosing_a_benched_pad_unbenches_it_and_assigns_it() {
+        val s = PlayerSlots(players = 2)
+        s.claim(c); s.claim(a)
+        s.assign(0, null)                                      // c benched
+        assertNull(s.claim(c))
+        assertEquals(setOf(0), s.assign(0, c))
+        assertEquals(emptySet(), s.outOfPlay)
+        assertEquals(listOf(SlotView.Playing(c), SlotView.Playing(a)), s.slots())
+        assertEquals(PlayerSlots.Claim(0, joined = false), s.claim(c))
+    }
+
+    @Test fun a_new_session_starts_with_no_pad_benched() {
+        assertEquals(emptySet(), PlayerSlots(players = 2).outOfPlay)   // the bench is not kept across launches
+    }
+
+    @Test fun a_benched_pad_does_not_count_as_attached_in_a_multiplayer_game() {
         assertEquals(listOf(b), PadPresence.attached(listOf(a, b), outOfPlay = setOf(a)) { it })
     }
 
-    @Test fun every_pad_not_playing_leaves_none_attached() {
+    @Test fun every_pad_benched_leaves_none_attached() {
         assertEquals(emptyList(), PadPresence.attached(listOf(a, b), outOfPlay = setOf(a, b)) { it })   // the touch pad shows
     }
 

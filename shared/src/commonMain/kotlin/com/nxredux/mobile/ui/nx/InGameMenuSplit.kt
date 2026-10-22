@@ -26,8 +26,7 @@ data class MenuPanes(val left: MenuPage, val right: MenuPaneContent, val focusLe
  * The panes [state] draws as when the menu splits, or null for a page drawn whole (an Adjust strip, a Message). On the
  * root the root is focused on the left and the right is the game panel ([InGameMenuModel.panelState]), but for Save /
  * Load, which show the slot card. Deeper (a column browser, as the RetroAchievements levels) the top page is focused on
- * the right and the page under it dimmed on the left, its highlighted row the one that opened the top (an
- * AchievementDetail beside the achievements list).
+ * the right and the page under it dimmed on the left, its highlighted row the one that opened the top.
  */
 fun menuPanes(state: MenuState): MenuPanes? {
     val top = state.page

@@ -13,21 +13,22 @@ enum class Shortcut(val label: String) {
 }
 
 /**
- * One shortcut button: [enabled] false is drawn dimmed and does nothing; [value] is the display text, "2/3" for discs,
- * "On"/"Off" for the second screen; [on] is the second screen's setting (null for the other shortcuts).
+ * One shortcut button: [enabled] false is drawn dimmed and does nothing; [value] is the display text under the label
+ * ("2/3" for discs); [on] makes it a toggle (the second screen's setting; null for the action shortcuts), drawn as a
+ * quick-settings tile: filled while on, outlined while off, with no On/Off words.
  */
 data class ShortcutState(val shortcut: Shortcut, val label: String, val enabled: Boolean, val value: String? = null, val on: Boolean? = null)
 
 /**
- * The header on every tab: the game's [title], its box art ([artPath]; null draws the [consoleTag]'s logo), play time
- * today and in total, the (unlocked, total) RetroAchievements count ([ra] null: no set, no count), and the host's
- * [clockText] and [batteryPercent] (null: unknown), since the game hides the status bar.
+ * The header on every tab: the game's [title], its box art ([artPath]; null draws the [consoleTag]'s logo), its total
+ * play time before this launch ([totalMs], read once as the game starts; no running count), the (unlocked, total)
+ * RetroAchievements count ([ra] null: no set, no count), and the host's [clockText] and [batteryPercent] (null:
+ * unknown), since the game hides the status bar.
  */
 data class GamePanelHeader(
     val title: String,
     val artPath: String?,
     val consoleTag: String,
-    val todayMs: Long,
     val totalMs: Long,
     val ra: Pair<Int, Int>?,
     val clockText: String,
@@ -43,9 +44,8 @@ sealed interface PanelFocus {
 /**
  * What the game panel shows: the [header], the visible [tabs] and the current [tab], the Shortcuts tab's [shortcuts],
  * this game's [achievements] with the downloaded [badges] (file name → image model), and the Players tab's [players]
- * and [playerPads] (the Players page's types). [touchOnly]: the dual-screen panel, with achievement descriptions in
- * the rows and no controller focus. [focus]: where the controller is (null: not in the panel). [showGamePill]: the
- * DS/3DS panel-up Game pill (bottom-right), which sends [GamePanelEvent.ShowGame].
+ * and [playerPads] (the Players page's types: the slots, and the pads a slot can be set to). [focus]: where the controller is (null: not in the panel). [showGamePill]:
+ * the DS/3DS panel-up Game pill (bottom-right), which sends [GamePanelEvent.ShowGame].
  */
 data class GamePanelState(
     val header: GamePanelHeader,
@@ -56,7 +56,6 @@ data class GamePanelState(
     val badges: Map<String, String>,
     val players: List<PlayerSlotRow>,
     val playerPads: List<PlayerPadRow>,
-    val touchOnly: Boolean,
     val focus: PanelFocus? = null,
     val showGamePill: Boolean = false,
 )
@@ -68,12 +67,8 @@ sealed interface GamePanelEvent {
     /** The global Second screen setting to [on]. */
     data class SetSecondScreen(val on: Boolean) : GamePanelEvent
     data class SelectTab(val tab: GamePanelTab) : GamePanelEvent
-    /** Achievement [id]'s detail (the in-game menu only; the dual-screen panel ignores it). */
-    data class OpenAchievement(val id: Int) : GamePanelEvent
     /** Put pad [key] in player [slot] (0-based); null empties it. */
     data class SetPlayer(val slot: Int, val key: String?) : GamePanelEvent
-    /** Pad [key] plays (or is ignored in multiplayer games), as the Players page's pad rows flip it. */
-    data class SetPlaying(val key: String, val playing: Boolean) : GamePanelEvent
     /** The Game pill: the DS/3DS screen comes back to the second display. */
     data object ShowGame : GamePanelEvent
 }
@@ -87,6 +82,9 @@ object GamePanelModel {
         if (playerSlots > 1) add(GamePanelTab.PLAYERS)
     }
 
+    /** The points badge at the end of an achievement's name; none for one worth no points. */
+    fun pointsBadge(a: RaAchievement): String? = a.points.takeIf { it > 0 }?.toString()
+
     /** [current] while it is still shown; Shortcuts once it has gone (RA signed out, a pad unplugged). */
     fun resolveTab(current: GamePanelTab, tabs: List<GamePanelTab>): GamePanelTab =
         if (current in tabs) current else GamePanelTab.SHORTCUTS
@@ -97,7 +95,7 @@ object GamePanelModel {
      */
     fun shortcuts(discCount: Int, discIndex: Int, secondConnected: Boolean, secondOn: Boolean, netplay: Boolean): List<ShortcutState> = buildList {
         if (discCount > 1 && !netplay) add(ShortcutState(Shortcut.SWAP_DISC, Shortcut.SWAP_DISC.label, true, "${discIndex + 1}/$discCount"))
-        if (secondConnected) add(ShortcutState(Shortcut.SECOND_SCREEN, Shortcut.SECOND_SCREEN.label, true, if (secondOn) "On" else "Off", on = secondOn))
+        if (secondConnected) add(ShortcutState(Shortcut.SECOND_SCREEN, Shortcut.SECOND_SCREEN.label, true, on = secondOn))
         for (s in FUTURE) add(ShortcutState(s, s.label, enabled = false))
     }
 
@@ -108,15 +106,19 @@ object GamePanelModel {
         Shortcut.FAST_FORWARD, Shortcut.REWIND, Shortcut.SCREENSHOT, Shortcut.RESET -> null
     }
 
-    /** A tap on player [slot]: its next pad among Empty and the playing pads, as the Players page steps it. */
-    fun nextPlayer(slot: Int, players: List<PlayerSlotRow>, pads: List<PlayerPadRow>): GamePanelEvent.SetPlayer {
-        val candidates = listOf<String?>(null) + pads.filter { it.playing }.map { it.key }
+    /**
+     * Player [slot]'s value [delta] steps on (wrapping) among Empty and every connected pad, benched ones included (picking
+     * one puts it back in play); a held slot's pad, not among them, steps from Empty.
+     */
+    fun cyclePlayer(slot: Int, delta: Int, players: List<PlayerSlotRow>, pads: List<PlayerPadRow>): String? {
+        val candidates = listOf<String?>(null) + pads.map { it.key }
         val at = candidates.indexOf(players.getOrNull(slot)?.key).coerceAtLeast(0)
-        return GamePanelEvent.SetPlayer(slot, candidates[(at + 1) % candidates.size])
+        return candidates[(at + delta).mod(candidates.size)]
     }
 
-    /** A tap on pad [pad]'s row: it plays or stops playing, as the Players page flips it. */
-    fun togglePlaying(pad: PlayerPadRow): GamePanelEvent.SetPlaying = GamePanelEvent.SetPlaying(pad.key, !pad.playing)
+    /** A tap on player [slot]: its next value ([cyclePlayer]), as RIGHT on the Players page steps it. */
+    fun nextPlayer(slot: Int, players: List<PlayerSlotRow>, pads: List<PlayerPadRow>): GamePanelEvent.SetPlayer =
+        GamePanelEvent.SetPlayer(slot, cyclePlayer(slot, 1, players, pads))
 
     /** A player slot's value, worded as the Players page words it. */
     fun playerValue(s: PlayerSlotRow): String = when {
@@ -131,9 +133,11 @@ object GamePanelModel {
     /** The toast a Swap disc tap shows: "Disc 2 of 3" ([index] 0-based). */
     fun discToast(index: Int, count: Int): String = "Disc ${index + 1} of $count"
 
-    /** The header's play line: "Today 23m 4s · Total 4h 12m". */
-    fun timeLine(h: GamePanelHeader): String =
-        "Today ${GameTimeFormat.duration(h.todayMs)} · Total ${GameTimeFormat.duration(h.totalMs)}"
+    /** The header's achievement line, "Achievements 3 / 40"; none without a set (no count, or a total of 0). */
+    fun raLine(h: GamePanelHeader): String? = h.ra?.takeIf { it.second > 0 }?.let { (unlocked, total) -> "Achievements $unlocked / $total" }
+
+    /** The header's play line: "Total 4h 12m". */
+    fun timeLine(h: GamePanelHeader): String = "Total ${GameTimeFormat.duration(h.totalMs)}"
 
     private val FUTURE = listOf(Shortcut.FAST_FORWARD, Shortcut.REWIND, Shortcut.SCREENSHOT, Shortcut.RESET)
 }

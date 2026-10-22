@@ -32,10 +32,8 @@ sealed interface PageKind {
     data class Adjust(val key: String) : PageKind
     data object CoreOptions : PageKind
     data object Cheats : PageKind
-    /** This game's RetroAchievements set, one Option row per achievement. */
+    /** This game's RetroAchievements set, one Option row per achievement (no detail page: A does nothing on a row). */
     data object Achievements : PageKind
-    /** One achievement's detail (no rows); LEFT/RIGHT step through the Achievements page's visible list. */
-    data class AchievementDetail(val id: Int) : PageKind
     data class Category(val key: String) : PageKind
     data object SaveChanges : PageKind
     /** Quit's choice: Save & Quit (the resume point) or Quit (the last resume point stays), drawn as a dialog ([menuDialog]). */
@@ -64,8 +62,11 @@ sealed interface MenuRow {
 /** A player slot for the Players page ([InGameMenuModel.setPlayers]): [key] null = Empty; [connected] false = held for [name]. */
 data class PlayerSlotRow(val key: String?, val name: String, val connected: Boolean)
 
-/** A connected physical pad for the Players page; [name] already numbered when two share one ([com.nxredux.mobile.runner.PadNames]). */
-data class PlayerPadRow(val key: String, val name: String, val playing: Boolean)
+/**
+ * A connected physical pad, one a player slot can be set to (benched ones included: choosing one puts it back in play);
+ * [name] already numbered when two share one ([com.nxredux.mobile.runner.PadNames]).
+ */
+data class PlayerPadRow(val key: String, val name: String)
 
 /** One menu screen. [footer] is the page's static text (status line, or the message of a Message page). */
 data class MenuPage(
@@ -131,10 +132,11 @@ sealed interface MenuEffect {
     data class SetSecondScreen(val on: Boolean) : MenuEffect
     /** Flip achievement [id]'s notification mute (already flipped in the model); the host persists it. */
     data class ToggleMute(val id: Int) : MenuEffect
-    /** Put pad [key] in player [slot] (0-based), swapping as the host's slot model does; null empties it. */
+    /**
+     * Put pad [key] in player [slot] (0-based), swapping as the host's slot model does and back in play if benched; null
+     * empties it, benching the pad that was there (persisted by the host).
+     */
     data class SetPlayer(val slot: Int, val key: String?) : MenuEffect
-    /** Pad [key] plays or sits out ("Not playing"); persisted by the host at once. */
-    data class SetPlaying(val key: String, val playing: Boolean) : MenuEffect
     data object SaveForConsole : MenuEffect
     data object SaveForGame : MenuEffect
     data object RestoreDefaults : MenuEffect
@@ -251,7 +253,7 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         if (state.page.kind is PageKind.Adjust) return pressAdjust(button)
         if (state.panelFocus != null) return pressPanel(button)
         if ((button == NxButton.L1 || button == NxButton.R1) && panelShown()) { stepTab(if (button == NxButton.L1) -1 else 1); return null }
-        if (state.page.kind == PageKind.Achievements || state.page.kind is PageKind.AchievementDetail) {
+        if (state.page.kind == PageKind.Achievements) {
             when (button) {
                 NxButton.Y -> { achievementsLockedOnly = !achievementsLockedOnly; refreshAchievementsPage(); return null }
                 NxButton.X -> selectedAchievementId()?.let { return toggleMute(it) }
@@ -310,8 +312,8 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
             is MenuRow.Slot -> if (row.action == SlotAction.SAVE) MenuEffect.SaveSlot(state.slotIndex + 1) else MenuEffect.LoadSlot(state.slotIndex + 1)
             is MenuRow.Submenu -> openSubmenu(row.target)
             is MenuRow.Option -> {
-                val achievement = if (state.page.kind == PageKind.Achievements) achievementFor(row.key) else null
-                if (achievement != null) push(achievementDetailPage(achievement))
+                // An achievement row opens nothing (its description is on the row).
+                if (state.page.kind == PageKind.Achievements && achievementFor(row.key) != null) Unit
                 else if (row.visual) push(adjustPage(row.key))
                 else if (row.info.isNotBlank()) push(message(row.label, row.info))
                 null
@@ -322,16 +324,12 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
     /** The action of the top page's highlighted row, or null for another row. */
     private fun selectedAction(): MenuAction? = (state.page.rows.getOrNull(state.page.selected) as? MenuRow.Action)?.action
 
-    /** The top page sits on the root and came from the game panel: no root row opens Achievements, Players or a detail. */
+    /** The top page sits on the root and came from the game panel: no root row opens Achievements or Players. */
     private fun fromPanel(): Boolean = state.stack.size == 2 &&
-        (state.page.kind == PageKind.Achievements || state.page.kind == PageKind.Players || state.page.kind is PageKind.AchievementDetail)
+        (state.page.kind == PageKind.Achievements || state.page.kind == PageKind.Players)
 
-    /** [row] of the top page opens a page of rows: a submenu, or an achievement (its detail). */
-    private fun opensPage(row: MenuRow?): Boolean = when (row) {
-        is MenuRow.Submenu -> true
-        is MenuRow.Option -> state.page.kind == PageKind.Achievements && achievementFor(row.key) != null
-        else -> false
-    }
+    /** [row] of the top page opens a page of rows: a submenu. */
+    private fun opensPage(row: MenuRow?): Boolean = row is MenuRow.Submenu
 
     /**
      * A tap on row [index] of the dimmed left pane, the page of kind [parent] under the top one ([menuPanes]): that level
@@ -437,10 +435,6 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         fixPanel()
     }
 
-    /** The achievement shown by the top AchievementDetail page, or null. */
-    fun achievementDetail(): RaAchievement? =
-        (state.page.kind as? PageKind.AchievementDetail)?.let { k -> achievements?.firstOrNull { it.id == k.id } }
-
     /** The badge image model for [a] (the greyed `_lock` variant while locked); null until downloaded. */
     fun badgePath(a: RaAchievement): String? =
         RaBadgeFolders.fileName(a.badge, a.state == RaAchievementState.LOCKED)?.let(badges::get)
@@ -489,8 +483,8 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
     }
 
     /**
-     * The host's player slots and connected pads. Called when the menu opens and after every [MenuEffect.SetPlayer] /
-     * [MenuEffect.SetPlaying] the host applied; refreshes the panel and an open Players page, keeping their rows.
+     * The host's player slots and connected pads. Called when the menu opens and after every [MenuEffect.SetPlayer] the
+     * host applied; refreshes the panel and an open Players page, keeping their rows.
      */
     fun setPlayers(slots: List<PlayerSlotRow>, pads: List<PlayerPadRow>) {
         playerSlots = slots
@@ -508,19 +502,12 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
                 else -> "${s.name} (disconnected)"
             }
             MenuRow.Option("Player ${i + 1}", "$PLAYER_KEY_PREFIX$i", value)
-        } + playerPads.map { MenuRow.Option(it.name, "$PAD_KEY_PREFIX${it.key}", if (it.playing) PLAYING else NOT_PLAYING, PAD_INFO) },
+        },
         footer = PLAYERS_FOOTER,
     )
 
-    private fun changePlayer(slot: Int, delta: Int): MenuEffect? {
-        val candidates = listOf<String?>(null) + playerPads.filter { it.playing }.map { it.key }
-        val at = candidates.indexOf(playerSlots.getOrNull(slot)?.key).coerceAtLeast(0)
-        val next = candidates[((at + delta) % candidates.size + candidates.size) % candidates.size]
-        return MenuEffect.SetPlayer(slot, next)
-    }
-
-    private fun togglePlaying(key: String): MenuEffect? =
-        playerPads.firstOrNull { it.key == key }?.let { MenuEffect.SetPlaying(key, !it.playing) }
+    private fun changePlayer(slot: Int, delta: Int): MenuEffect =
+        MenuEffect.SetPlayer(slot, GamePanelModel.cyclePlayer(slot, delta, playerSlots, playerPads))
 
     /** Rebuilds the root page, keeping the selection on the row with the same label (root labels are unique), and the panel. */
     private fun refreshRoot() {
@@ -562,10 +549,10 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
     private fun buildPanelState(): GamePanelState {
         val tabs = panelTabs()
         val ra = achievementSummary.takeIf { GamePanelTab.ACHIEVEMENTS in tabs }
-        val header = panelHeader ?: GamePanelHeader(gameTitle, null, frontendTag, 0L, 0L, null, "", null)
+        val header = panelHeader ?: GamePanelHeader(gameTitle, null, frontendTag, 0L, null, "", null)
         return GamePanelState(
             header.copy(ra = ra), tabs, GamePanelModel.resolveTab(state.panelTab, tabs), panelShortcuts(), panelAchievements(),
-            badges, playerSlots, playerPads, touchOnly = false, focus = state.panelFocus,
+            badges, playerSlots, playerPads, focus = state.panelFocus,
         )
     }
 
@@ -590,9 +577,7 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
             if (event.tab in panelTabs()) state = state.copy(panelTab = event.tab, panelFocus = state.panelFocus?.let { PanelFocus.Tabs })
             null
         }
-        is GamePanelEvent.OpenAchievement -> { achievements?.firstOrNull { it.id == event.id }?.let { push(achievementDetailPage(it)) }; null }
         is GamePanelEvent.SetPlayer -> MenuEffect.SetPlayer(event.slot, event.key)
-        is GamePanelEvent.SetPlaying -> MenuEffect.SetPlaying(event.key, event.playing)
         GamePanelEvent.ShowGame -> null
     }
 
@@ -612,7 +597,7 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
     private fun panelItemCount(tab: GamePanelTab): Int = when (tab) {
         GamePanelTab.SHORTCUTS -> panelShortcuts().size
         GamePanelTab.ACHIEVEMENTS -> panelAchievements().size
-        GamePanelTab.PLAYERS -> playerSlots.size + playerPads.size
+        GamePanelTab.PLAYERS -> playerSlots.size
     }
 
     /**
@@ -673,21 +658,15 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
             is GamePanelEvent.SetSecondScreen -> Shortcut.SECOND_SCREEN
             else -> null
         }?.let { s -> panelShortcuts().indexOfFirst { it.shortcut == s } }
-        GamePanelTab.ACHIEVEMENTS -> (event as? GamePanelEvent.OpenAchievement)?.let { e -> panelAchievements().indexOfFirst { it.id == e.id } }
-        GamePanelTab.PLAYERS -> when (event) {
-            is GamePanelEvent.SetPlayer -> event.slot
-            is GamePanelEvent.SetPlaying -> playerPads.indexOfFirst { it.key == event.key }.takeIf { it >= 0 }?.let { playerSlots.size + it }
-            else -> null
-        }
+        GamePanelTab.ACHIEVEMENTS -> null   // its rows ask for nothing
+        GamePanelTab.PLAYERS -> (event as? GamePanelEvent.SetPlayer)?.slot
     }?.takeIf { it >= 0 }
 
-    /** What A on item [index] of [tab] asks for, as a tap there would ([GamePanel]); null for a disabled shortcut. */
+    /** What A on item [index] of [tab] asks for, as a tap there would ([GamePanel]); null for a disabled shortcut or an achievement. */
     private fun panelItemEvent(tab: GamePanelTab, index: Int): GamePanelEvent? = when (tab) {
         GamePanelTab.SHORTCUTS -> panelShortcuts().getOrNull(index)?.let(GamePanelModel::eventFor)
-        GamePanelTab.ACHIEVEMENTS -> panelAchievements().getOrNull(index)?.let { GamePanelEvent.OpenAchievement(it.id) }
-        GamePanelTab.PLAYERS ->
-            if (index < playerSlots.size) GamePanelModel.nextPlayer(index, playerSlots, playerPads)
-            else playerPads.getOrNull(index - playerSlots.size)?.let(GamePanelModel::togglePlaying)
+        GamePanelTab.ACHIEVEMENTS -> null
+        GamePanelTab.PLAYERS -> if (index < playerSlots.size) GamePanelModel.nextPlayer(index, playerSlots, playerPads) else null
     }
 
     /**
@@ -748,7 +727,7 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
             PageKind.SaveChanges -> push(saveChangesPage())
             is PageKind.Category -> push(categoryPage(target.key))
             // Achievements and Players open from the game panel only ([openTabPage]).
-            PageKind.Achievements, PageKind.Players, is PageKind.Adjust, is PageKind.AchievementDetail, PageKind.Root, PageKind.Message,
+            PageKind.Achievements, PageKind.Players, is PageKind.Adjust, PageKind.Root, PageKind.Message,
             PageKind.QuitGame -> Unit
         }
         return null
@@ -760,16 +739,13 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         return null
     }
 
-    private fun change(delta: Int): MenuEffect? = if (state.page.kind is PageKind.AchievementDetail) {
-        stepAchievement(delta); null
-    } else when (val row = state.page.rows.getOrNull(state.page.selected)) {
+    private fun change(delta: Int): MenuEffect? = when (val row = state.page.rows.getOrNull(state.page.selected)) {
         is MenuRow.Slot -> {
             state = state.copy(slotIndex = ((state.slotIndex + delta) % slotCount + slotCount) % slotCount)
             null
         }
         is MenuRow.Option -> when {
             row.key.startsWith(PLAYER_KEY_PREFIX) -> changePlayer(row.key.removePrefix(PLAYER_KEY_PREFIX).toInt(), delta)
-            row.key.startsWith(PAD_KEY_PREFIX) -> togglePlaying(row.key.removePrefix(PAD_KEY_PREFIX))
             row.key == DISC_KEY -> changeDisc(delta)
             state.page.kind == PageKind.Cheats -> toggleCheat(row.key)
             isSettingsPage(state.page.kind) -> changeFrontend(row.key, delta)
@@ -856,7 +832,8 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         return MenuPage(PageKind.Achievements, ACHIEVEMENTS_LABEL, rows, footer = if (rows.isEmpty()) NO_LOCKED else "")
     }
 
-    private fun achievementDetailPage(a: RaAchievement) = MenuPage(PageKind.AchievementDetail(a.id), "Achievements", emptyList())   // the name is the page's headline
+    /** The achievement an Achievements page row stands for (the page draws it as an [AchievementRow]); null for any other row. */
+    fun achievementOf(row: MenuRow): RaAchievement? = (row as? MenuRow.Option)?.let { achievementFor(it.key) }
 
     private fun achievementFor(key: String): RaAchievement? {
         if (!key.startsWith(ACH_KEY_PREFIX)) return null
@@ -864,33 +841,16 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         return achievements?.firstOrNull { it.id == id }
     }
 
-    /** The detail page's achievement, else the selected row's on the Achievements page. */
-    private fun selectedAchievementId(): Int? = when (val k = state.page.kind) {
-        is PageKind.AchievementDetail -> k.id
-        PageKind.Achievements -> (state.page.rows.getOrNull(state.page.selected) as? MenuRow.Option)?.let { achievementFor(it.key)?.id }
-        else -> null
-    }
+    /** The selected row's achievement on the Achievements page. */
+    private fun selectedAchievementId(): Int? =
+        if (state.page.kind != PageKind.Achievements) null
+        else (state.page.rows.getOrNull(state.page.selected) as? MenuRow.Option)?.let { achievementFor(it.key)?.id }
 
     /** Flips the mute locally so the `[M]` marker updates now; the host persists it via the effect. */
     private fun toggleMute(id: Int): MenuEffect {
         muted = if (id in muted) muted - id else muted + id
         refreshAchievementsPage()
         return MenuEffect.ToggleMute(id)
-    }
-
-    /** Detail LEFT/RIGHT: the previous/next visible achievement, wrapping; the list beneath follows the selection. */
-    private fun stepAchievement(delta: Int) {
-        val id = (state.page.kind as? PageKind.AchievementDetail)?.id ?: return
-        val visible = visibleAchievements()
-        if (visible.isEmpty()) return
-        val at = visible.indexOfFirst { it.id == id }
-        val next = if (at < 0) visible.first() else visible[((at + delta) % visible.size + visible.size) % visible.size]
-        val nextKey = "$ACH_KEY_PREFIX${next.id}"
-        val below = state.stack.dropLast(1).map { p ->
-            val row = p.rows.indexOfFirst { (it as? MenuRow.Option)?.key == nextKey }
-            if (p.kind == PageKind.Achievements && row >= 0) p.copy(selected = row) else p
-        }
-        state = state.copy(stack = below + achievementDetailPage(next))
     }
 
     /**
@@ -1111,13 +1071,9 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         const val DISC_INFO = "Left and right change the disc in the drive,\nas opening the lid and swapping it would."
         const val PLAYERS_LABEL = "Players"
         const val PLAYER_KEY_PREFIX = "nx:player:"
-        const val PAD_KEY_PREFIX = "nx:pad:"
         // Presses while the menu is open never claim a slot.
         const val PLAYERS_FOOTER = "Close the menu, then press a button\non a new controller to join."
         private const val EMPTY = "Empty"
-        private const val PLAYING = "Playing"
-        private const val NOT_PLAYING = "Not playing"
-        private const val PAD_INFO = "Not playing: this controller is ignored\nin multiplayer games until it plays again."
         const val CHEATS_LABEL = "Cheats"
         const val CHEATS_INFO = "Toggle cheats for this game"
         const val CHEAT_KEY_PREFIX = "cheat:"

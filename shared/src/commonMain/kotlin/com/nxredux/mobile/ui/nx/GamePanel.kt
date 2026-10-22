@@ -35,7 +35,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -44,9 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.nxredux.mobile.achievements.RaAchievement
-import com.nxredux.mobile.ui.raAchievementSubtitle
 import com.nxredux.mobile.ui.raBadgeModel
-import com.nxredux.mobile.ui.toNxTone
 import org.jetbrains.compose.resources.painterResource
 
 /**
@@ -54,40 +59,50 @@ import org.jetbrains.compose.resources.painterResource
  * clock and battery), the tab words with the underline ([MenuTabRow]), then the current tab: Shortcuts as hollow pill
  * buttons in a grid (4 columns, 2 when narrow; disabled ones dimmed and inert), Achievements as badge rows, Players as
  * the Players page's rows. The controller's [GamePanelState.focus] sits on the accent pill (the tab row's capsule on
- * Tabs). The Game pill (DS/3DS panel-up) sits bottom-right. The dual-screen panel and the in-game menu share it.
+ * Tabs). The Game pill (DS/3DS panel-up) sits bottom-right. The dual-screen panel and the in-game menu share it; the
+ * menu draws the header itself across its top ([GamePanelHeaderBar]) and the panel with [showHeader] off, on its own
+ * surface ([opaque] off: no black box of the panel's own).
  */
 @Composable
-fun GamePanel(state: GamePanelState, onEvent: (GamePanelEvent) -> Unit, modifier: Modifier = Modifier) {
+fun GamePanel(
+    state: GamePanelState, onEvent: (GamePanelEvent) -> Unit, modifier: Modifier = Modifier, showHeader: Boolean = true, opaque: Boolean = true,
+) {
     val colors = LocalNxColors.current
     val tab = GamePanelModel.resolveTab(state.tab, state.tabs)
     val tabs = state.tabs.ifEmpty { listOf(GamePanelTab.SHORTCUTS) }
     val focused = (state.focus as? PanelFocus.Item)?.index
     // The lists' bottom room: clear of the Game pill when it is drawn.
     val bottom = if (state.showGamePill) GP_LIST_BOTTOM else GP_LIST_END
-    Box(modifier.fillMaxSize().background(colors.background)) {
+    Box(modifier.fillMaxSize().then(if (opaque) Modifier.background(colors.background) else Modifier)) {
         Column(Modifier.fillMaxSize()) {
-            PanelHeader(state.header)
+            if (showHeader) GamePanelHeaderBar(state.header)
             MenuTabRow(
                 tabs.map { it.label }, tabs.indexOf(tab).coerceAtLeast(0), onTab = { onEvent(GamePanelEvent.SelectTab(tabs[it])) },
                 focused = state.focus == PanelFocus.Tabs,
             )
-            when (tab) {
-                GamePanelTab.SHORTCUTS -> ShortcutsTab(state.shortcuts, focused, bottom, onEvent)
-                GamePanelTab.ACHIEVEMENTS -> AchievementsTab(state.achievements, state.badges, state.touchOnly, focused, bottom, onEvent)
-                GamePanelTab.PLAYERS -> PlayersTab(state.players, state.playerPads, focused, bottom, onEvent)
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when (tab) {
+                    GamePanelTab.SHORTCUTS -> ShortcutsTab(state.shortcuts, focused, bottom, onEvent)
+                    GamePanelTab.ACHIEVEMENTS -> AchievementsTab(state.achievements, state.badges, focused, bottom)
+                    GamePanelTab.PLAYERS -> PlayersTab(state.players, state.playerPads, focused, bottom, onEvent)
+                }
             }
         }
         if (state.showGamePill) PanelPill("Game", Modifier.align(Alignment.BottomEnd).padding(GP_PILL_MARGIN)) { onEvent(GamePanelEvent.ShowGame) }
     }
 }
 
-/** Art (or the console logo) on the left, title and the time / achievement lines beside it, clock and battery top-right. */
+/**
+ * The panel's header: art (or the console logo) on the left, title and the time / achievement lines beside it, clock and
+ * battery top-right. Full width at the top of the dual-screen panel and of the in-game menu, at the same place in both.
+ */
 @Composable
-private fun PanelHeader(h: GamePanelHeader) {
+fun GamePanelHeaderBar(h: GamePanelHeader) {
     val colors = LocalNxColors.current
     val font = LocalNxFont.current
     Row(
-        Modifier.fillMaxWidth().padding(start = GP_GUTTER, end = GP_GUTTER, top = 12.dp, bottom = 4.dp),
+        // The room under it is the header's own, so the menu and the dual-screen panel put what follows at one place.
+        Modifier.fillMaxWidth().padding(start = GP_GUTTER, end = GP_GUTTER, top = 12.dp, bottom = GP_HEADER_BOTTOM),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Box(Modifier.size(GP_ART).clip(RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
@@ -97,11 +112,12 @@ private fun PanelHeader(h: GamePanelHeader) {
                 logo != null -> Image(painterResource(logo), contentDescription = null, modifier = Modifier.fillMaxSize().padding(4.dp), colorFilter = ColorFilter.tint(colors.listText))
             }
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        // Centred on the art (the clock stays top-right); the achievement line only for a game with a set.
+        Column(Modifier.weight(1f).align(Alignment.CenterVertically), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(h.title, color = colors.listText, fontFamily = font, fontSize = GP_TITLE_SIZE, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(GamePanelModel.timeLine(h), color = colors.hint, fontFamily = font, fontSize = GP_SMALL_SIZE, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            h.ra?.let { (unlocked, total) ->
-                Text("Achievements $unlocked / $total", color = colors.hint, fontFamily = font, fontSize = GP_SMALL_SIZE, maxLines = 1)
+            GamePanelModel.raLine(h)?.let {
+                Text(it, color = colors.hint, fontFamily = font, fontSize = GP_SMALL_SIZE, maxLines = 1)
             }
         }
         Column(horizontalAlignment = Alignment.End) {
@@ -137,82 +153,105 @@ private fun ShortcutsTab(shortcuts: List<ShortcutState>, focused: Int?, bottom: 
 /** The shortcut grid's columns in a panel [width] wide: 4, or 2 under [GP_NARROW] (the in-game menu steps by them). */
 internal fun gamePanelColumns(width: Dp): Int = if (width < GP_NARROW) 2 else 4
 
-/** A hollow pill ([nxButtonRing]): the label, its value under it; at 0.35 alpha and not clickable while disabled. */
+/**
+ * A hollow pill ([nxButtonRing]): the label, its value under it; at 0.35 alpha and not clickable while disabled. A toggle
+ * ([ShortcutState.on]) that is on is a filled quick-settings tile instead (the list text colour, dark words). The
+ * controller's pill ([selected]) gets an accent ring a gap outside it, so it reads on an outlined and a filled pill
+ * alike (an accent fill would look like an on toggle with a light accent).
+ */
 @Composable
 private fun ShortcutPill(s: ShortcutState, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val colors = LocalNxColors.current
     val font = LocalNxFont.current
+    val filled = s.on == true
     // The controller's pill scrolls into view in the grid's scroll.
     val into = remember { BringIntoViewRequester() }
     LaunchedEffect(selected) { if (selected) into.bringIntoView() }
+    val shape = RoundedCornerShape(50)
     Column(
-        modifier.bringIntoViewRequester(into).alpha(if (s.enabled) 1f else GP_DISABLED_ALPHA).heightIn(min = GP_PILL_HEIGHT).clip(RoundedCornerShape(50))
-            .then(if (selected) Modifier.background(colors.accent) else Modifier.nxButtonRing(colors))
+        modifier.bringIntoViewRequester(into).heightIn(min = GP_PILL_HEIGHT)
+            // Drawn outside the pill, in the grid's spacing (so the focus moving never resizes one), and before the dimming
+            // (an alpha layer would clip it to the pill and fade it on a disabled one).
+            .then(if (selected) Modifier.drawBehind { focusRing(colors.accent) } else Modifier)
+            .alpha(if (s.enabled) 1f else GP_DISABLED_ALPHA)
+            .clip(shape)
+            .then(if (filled) Modifier.background(colors.listText) else Modifier.nxButtonRing(colors))
             .then(if (s.enabled) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            s.label, color = if (selected) colors.onAccent else colors.listText, fontFamily = font, fontSize = GP_LABEL_SIZE,
+            s.label, color = if (filled) colors.background else colors.listText, fontFamily = font, fontSize = GP_LABEL_SIZE,
             maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
         )
         s.value?.let {
-            Text(it, color = if (selected) colors.onAccentMuted else colors.hint, fontFamily = font, fontSize = GP_SMALL_SIZE, maxLines = 1)
+            Text(it, color = if (filled) colors.background else colors.hint, fontFamily = font, fontSize = GP_SMALL_SIZE, maxLines = 1)
         }
     }
 }
 
-/**
- * Badge, title and its state line ("Unlocked · 10 pts" green, "Pending sync" amber, "Locked" dim). [touchOnly] (the
- * dual-screen panel): the description sits under the title and a tap does nothing (no detail page there).
- */
+/** The controller's ring round a shortcut pill: [GP_FOCUS_RING] wide, [GP_FOCUS_GAP] outside its rounded edge. */
+private fun DrawScope.focusRing(color: Color) {
+    val out = (GP_FOCUS_GAP + GP_FOCUS_RING / 2).toPx()
+    val h = size.height + out * 2
+    drawRoundRect(
+        color, topLeft = Offset(-out, -out), size = Size(size.width + out * 2, h), cornerRadius = CornerRadius(h / 2),
+        style = Stroke(GP_FOCUS_RING.toPx()),
+    )
+}
+
+/** The achievements as [AchievementRow]s; they open nothing (the description is on the row). */
 @Composable
-private fun AchievementsTab(
-    list: List<RaAchievement>, badges: Map<String, String>, touchOnly: Boolean, focused: Int?, bottom: Dp, onEvent: (GamePanelEvent) -> Unit,
-) {
-    val colors = LocalNxColors.current
-    val font = LocalNxFont.current
+private fun AchievementsTab(list: List<RaAchievement>, badges: Map<String, String>, focused: Int?, bottom: Dp) {
     LazyColumn(
         Modifier.fillMaxSize(), state = rememberFocusedListState(focused),
         contentPadding = PaddingValues(start = GP_LIST_GUTTER, end = GP_LIST_GUTTER, top = 6.dp, bottom = bottom),
     ) {
         itemsIndexed(list, key = { _, a -> a.id }) { i, a ->
-            val selected = focused == i
-            val sub = raAchievementSubtitle(a)
-            PanelListRow(selected, if (touchOnly) Modifier else Modifier.clickable { onEvent(GamePanelEvent.OpenAchievement(a.id)) }) {
-                Box(Modifier.size(GP_BADGE).clip(RoundedCornerShape(3.dp)).background(colors.main.copy(alpha = 0.13f))) {
-                    raBadgeModel(badges, a)?.let { AsyncImage(model = it, contentDescription = null, modifier = Modifier.fillMaxSize()) }
-                }
-                Column(Modifier.weight(1f)) {
-                    RowText(a.title, selected)
-                    if (touchOnly && a.description.isNotEmpty()) Text(
-                        a.description, color = if (selected) colors.onAccentMuted else colors.hint, fontFamily = font, fontSize = GP_SMALL_SIZE,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Text(sub.text, maxLines = 1, fontFamily = font, fontSize = GP_SMALL_SIZE, color = colors.toneColor(sub.tone.toNxTone(), selected))
-            }
+            AchievementRow(a.title, a, raBadgeModel(badges, a), focused == i, Modifier)
         }
     }
 }
 
 /**
- * As the Players page: "Player N" with its pad (a tap steps it to the next playing pad, [GamePanelModel.nextPlayer]),
- * then each connected pad with Playing / Not playing (a tap flips it, [GamePanelModel.togglePlaying]).
+ * One achievement row, the panel's Achievements tab's and the in-game Achievements page's: the [badge] (its locked
+ * variant while locked, [raBadgeModel]: the badge alone says unlocked or not), then [title] with the points in a small
+ * pill ([GamePanelModel.pointsBadge]) over the description (2 lines at most); on the accent pill while [selected].
+ */
+@Composable
+internal fun AchievementRow(title: String, a: RaAchievement, badge: String?, selected: Boolean, modifier: Modifier) {
+    val colors = LocalNxColors.current
+    PanelListRow(selected, modifier) {
+        Box(Modifier.size(GP_BADGE).clip(RoundedCornerShape(3.dp)).background(colors.main.copy(alpha = 0.13f))) {
+            badge?.let { AsyncImage(model = it, contentDescription = null, modifier = Modifier.fillMaxSize()) }
+        }
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                RowText(title, selected, Modifier.weight(1f, fill = false))
+                GamePanelModel.pointsBadge(a)?.let { NxCountPill(it, selected, GP_BADGE_TEXT_SIZE) }
+            }
+            if (a.description.isNotEmpty()) Text(
+                a.description, color = if (selected) colors.onAccentMuted else colors.hint, fontFamily = LocalNxFont.current, fontSize = GP_SMALL_SIZE,
+                maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/**
+ * As the Players page: "Player N" with its pad; a tap steps it to the next of Empty and every connected pad
+ * ([GamePanelModel.nextPlayer]): Empty benches the pad that was there, a benched pad chosen plays again.
  */
 @Composable
 private fun PlayersTab(players: List<PlayerSlotRow>, pads: List<PlayerPadRow>, focused: Int?, bottom: Dp, onEvent: (GamePanelEvent) -> Unit) {
-    // Item indices are the focus indices: the slots, then the pads (no header item).
+    // Item indices are the focus indices: the slots (no header item).
     LazyColumn(
         Modifier.fillMaxSize(), state = rememberFocusedListState(focused),
         contentPadding = PaddingValues(start = GP_LIST_GUTTER, end = GP_LIST_GUTTER, top = 6.dp, bottom = bottom),
     ) {
         itemsIndexed(players) { i, s ->
             PlayerRow("Player ${i + 1}", GamePanelModel.playerValue(s), focused == i, Modifier.clickable { onEvent(GamePanelModel.nextPlayer(i, players, pads)) })
-        }
-        itemsIndexed(pads, key = { _, p -> "pad:" + p.key }) { j, p ->
-            PlayerRow(p.name, if (p.playing) "Playing" else "Not playing", focused == players.size + j, Modifier.clickable { onEvent(GamePanelModel.togglePlaying(p)) })
         }
     }
 }
@@ -222,7 +261,7 @@ private fun PlayersTab(players: List<PlayerSlotRow>, pads: List<PlayerPadRow>, f
  * whole, or a jump to it when it is off screen.
  */
 @Composable
-private fun rememberFocusedListState(focused: Int?): LazyListState {
+internal fun rememberFocusedListState(focused: Int?): LazyListState {
     val state = rememberLazyListState()
     LaunchedEffect(focused) {
         val i = focused ?: return@LaunchedEffect
@@ -239,6 +278,12 @@ private fun rememberFocusedListState(focused: Int?): LazyListState {
         }
     }
     return state
+}
+
+/** A row with only its [label], in the panel rows' frame: the Achievements page's fallback for a row without an achievement. */
+@Composable
+internal fun PlainPanelRow(label: String, selected: Boolean, modifier: Modifier) {
+    PanelListRow(selected, modifier) { RowText(label, selected, Modifier.weight(1f)) }
 }
 
 @Composable
@@ -303,11 +348,15 @@ private val GP_LIST_BOTTOM = 52.dp   // the last row clears the Game pill
 private val GP_LIST_END = 8.dp       // without the pill
 private val GP_PILL_MARGIN = 10.dp
 private val GP_ART = 64.dp
+private val GP_HEADER_BOTTOM = 16.dp   // between the header and the tabs (and the menu's list beside them)
 private val GP_BADGE = 32.dp
 private val GP_ROW_HEIGHT = 44.dp
 private val GP_PILL_HEIGHT = 52.dp
+private val GP_FOCUS_RING = 2.dp     // the controller's ring round a shortcut pill
+private val GP_FOCUS_GAP = 3.dp      // between that ring and the pill
 private val GP_NARROW = 360.dp       // narrower: the shortcut grid goes to 2 columns
 private const val GP_DISABLED_ALPHA = 0.35f
 private val GP_TITLE_SIZE = 17.sp
 private val GP_LABEL_SIZE = 15.sp
 private val GP_SMALL_SIZE = 13.sp
+private val GP_BADGE_TEXT_SIZE = 11.sp   // the points pill

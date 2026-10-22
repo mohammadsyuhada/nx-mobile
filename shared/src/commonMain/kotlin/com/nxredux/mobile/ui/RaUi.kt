@@ -12,7 +12,9 @@ import com.nxredux.mobile.achievements.RaState
 import com.nxredux.mobile.achievements.RaSyncStep
 import com.nxredux.mobile.ui.nx.Hint
 import com.nxredux.mobile.ui.nx.HintTouch
+import com.nxredux.mobile.ui.nx.GamePanelModel
 import com.nxredux.mobile.ui.nx.NxButton
+import com.nxredux.mobile.ui.nx.NxRichRow
 import com.nxredux.mobile.ui.nx.NxTone
 
 /**
@@ -139,6 +141,14 @@ fun raProgressFraction(state: RaState): Float? = when (state) {
     else -> null
 }
 
+/**
+ * An achievement as a rich-list row (the game list's panel, the Tools game page): the badge (its "_lock" variant while locked, [raBadgeModel]: the badge alone
+ * says unlocked or not), the title with its points in a pill ([GamePanelModel.pointsBadge]), the description under it.
+ * No state words, as the in-game panel's Achievements tab.
+ */
+fun raAchievementRow(a: RaAchievement, badges: Map<String, String>): NxRichRow =
+    NxRichRow(a.title, a.description.ifBlank { null }, thumbnail = raBadgeModel(badges, a), titleBadge = GamePanelModel.pointsBadge(a))
+
 /** How a browser subtitle reads: unlocked (green), pending sync (amber) or locked / plain (dim). */
 enum class RaTone { UNLOCKED, PENDING, LOCKED }
 
@@ -156,13 +166,6 @@ fun RaTone.toNxTone(): NxTone = when (this) {
 fun raGameSubtitle(g: RaGameView): RaSubtitle =
     if (g.pending > 0) RaSubtitle("${g.unlocked}/${g.total} unlocked · ${g.pending} pending sync", RaTone.PENDING)
     else RaSubtitle("${g.unlocked}/${g.total} unlocked", RaTone.LOCKED)
-
-/** An achievement row: its state and points, green when unlocked, amber while pending, dim while locked. */
-fun raAchievementSubtitle(a: RaAchievement): RaSubtitle = when (a.state) {
-    RaAchievementState.UNLOCKED -> RaSubtitle("Unlocked · ${a.points} pts", RaTone.UNLOCKED)
-    RaAchievementState.PENDING -> RaSubtitle("Pending sync · ${a.points} pts", RaTone.PENDING)
-    RaAchievementState.LOCKED -> RaSubtitle("Locked · ${a.points} pts", RaTone.LOCKED)
-}
 
 /** The badge image model for [a] from its game's listing: the greyed variant while locked; null until downloaded. */
 fun raBadgeModel(badges: Map<String, String>, a: RaAchievement): String? =

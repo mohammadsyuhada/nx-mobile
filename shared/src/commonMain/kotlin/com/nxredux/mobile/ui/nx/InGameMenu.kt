@@ -17,9 +17,11 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -48,6 +50,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -56,8 +59,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.nxredux.mobile.achievements.RaAchievement
+import com.nxredux.mobile.ui.SETTINGS_SPLIT_LEFT
 import com.nxredux.mobile.ui.SplitPanes
 import com.nxredux.mobile.ui.UNFOCUSED_ALPHA
 
@@ -78,18 +83,21 @@ data class SlotUi(
  * hardware controllers all drive the host's model. A tap on a message page, or on the hint bar of any
  * non-root page, calls [onDismiss]; a tap on the selected option row's value calls [onChange] with +1
  * (touch equivalent of RIGHT). On an Adjust page only a bottom strip is drawn; the rest stays transparent
- * so the paused frame shows. Its CHANGE hint calls [onChange] with +1 and its NEXT hint sends DOWN to
- * [onPress] (see [adjustHintButton]). An AchievementDetail page draws [achievementDetail] (the model's
- * `achievementDetail()`) with its badge from [badgePath] and the [muted] marker; a tap on it calls [onDismiss].
+ * so the paused frame shows ([opaque]: the header on the background above it instead). Its CHANGE hint calls [onChange]
+ * with +1 and its NEXT hint sends DOWN to [onPress] (see [adjustHintButton]). The Achievements page draws its rows as
+ * the panel's ([rowAchievement] each row's achievement, its badge from [badgePath]); they open nothing.
  *
- * Beside the root list sits the game [panel] ([GamePanel]; its taps go to [onPanelEvent], its shortcut columns as drawn
- * to [onPanelColumns]), but for Save / Load, which show their slot card. While the controller is in the panel
- * ([MenuState.panelFocus]) the root list is dimmed.
+ * The [panel]'s header ([GamePanelHeaderBar]) spans the top of every page, in place of a page title (the page's name
+ * without a panel). Beside the root list sits the rest of the game panel ([GamePanel]; its taps go to [onPanelEvent], its shortcut columns as drawn to
+ * [onPanelColumns]), but for Save / Load, which show their slot card. While the controller is in the panel
+ * ([MenuState.panelFocus]) the root list is dimmed. [opaque]: on the theme's background instead of the wash over the
+ * paused frame (over the dual-screen panel, whose place the menu takes: the list seems to slide in beside it).
  *
- * On a wide window ([inGameMenuSplit] on [LocalWindowSize], the Settings rule, reported through [onSplit])
- * the menu draws as two panes ([menuPanes]) under the one title and over the one hint bar: the root beside the panel
- * (or the slot card), a deeper page beside its dimmed parent (a tap there calls [onParentTap] with the parent's kind).
- * Adjust strips and message pages stay whole. Narrow, the root keeps the panel in its right column.
+ * On a wide window ([inGameMenuSplit] on [LocalWindowSize], the Settings rule, reported through [onSplit]) the menu draws
+ * as two panes ([menuPanes]) under the one header and over the one hint bar: the root beside the panel (or the slot
+ * card), a deeper page beside its dimmed parent (a tap there calls [onParentTap] with the parent's kind). Adjust strips
+ * and message pages stay whole. Otherwise (portrait) the root keeps the panel in its right column and a deeper page takes
+ * the whole width, with its name in the title row over it.
  */
 @Composable
 fun InGameMenu(
@@ -101,33 +109,36 @@ fun InGameMenu(
     onDismiss: () -> Unit = {},
     onChange: (Int) -> Unit = {},
     onPress: (NxButton) -> Unit = {},
-    achievementDetail: RaAchievement? = null,
     badgePath: (RaAchievement) -> String? = { null },
-    muted: (Int) -> Boolean = { false },
+    rowAchievement: (MenuRow) -> RaAchievement? = { null },
     onInfoTruncated: (String, Boolean) -> Unit = { _, _ -> },
     onSplit: (Boolean) -> Unit = {},
     onParentTap: (PageKind, Int) -> Unit = { _, _ -> },
     panel: GamePanelState? = null,
     onPanelEvent: (GamePanelEvent) -> Unit = {},
     onPanelColumns: (Int) -> Unit = {},
+    opaque: Boolean = false,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
-        // The lists' row rule: the root rows' text is the Tools lists' label size.
-        val rowHeight = maxHeight / nxRowCountFor(maxHeight)
-        // The window (the host's [LocalWindowSize]), as Settings decides; the menu's own area without one.
-        val split = inGameMenuSplit(LocalWindowSize.current.takeIf { it != DpSize.Zero } ?: DpSize(maxWidth, maxHeight))
+        val window = LocalWindowSize.current.takeIf { it != DpSize.Zero } ?: DpSize(maxWidth, maxHeight)
+        // The lists' row rule: the root rows' text is the Tools lists' label size; in portrait no bigger than the same
+        // window turned to landscape would draw it ([menuRowHeight]).
+        val rowHeight = menuRowHeight(maxHeight, if (LocalPortrait.current) minOf(window.width, window.height) else null)
+        // The window, as Settings decides; the menu's own area without one.
+        val split = inGameMenuSplit(window)
         // After every composition, so the model's input agrees with the panes drawn from the first frame.
         SideEffect { onSplit(split) }
         // A dialog page (Quit's) draws over the page under it, which takes no input meanwhile (the scrim covers it).
         val (under, dialog) = menuDialog(state)
         if (under.page.kind is PageKind.Adjust) {
-            AdjustContent(under.page, rowHeight, onDismiss, onChange, onPress)
+            // Over the dual-screen panel (opaque) the picture is on the other display: the header over the strip instead.
+            AdjustContent(under.page, rowHeight, onDismiss, onChange, onPress, header = panel?.header?.takeIf { opaque })
         } else {
-            val detail = AchievementDetailUi(achievementDetail, badgePath, muted)
+            val detail = AchievementsUi(badgePath, rowAchievement)
             val panes = if (split) menuPanes(under) else null
             val splitUi = panes?.let { SplitUi(it, onParentTap) }
             val panelUi = panel?.let { PanelUi(it, onPanelEvent, onPanelColumns) }
-            InGameMenuContent(under, slots, rowHeight, onSelect, onActivate, onDismiss, onChange, onPress, detail, onInfoTruncated, splitUi, panelUi)
+            InGameMenuContent(under, slots, rowHeight, onSelect, onActivate, onDismiss, onChange, onPress, detail, onInfoTruncated, splitUi, panelUi, opaque)
         }
         if (dialog != null) {
             // Only a tap opens it (a pad's A / X quit on the row itself), so no key hints.
@@ -153,13 +164,14 @@ private class SplitUi(val panes: MenuPanes, val onParentTap: (PageKind, Int) -> 
 /** The root's game panel ([GamePanel]): what it draws, its taps, and the shortcut columns it drew. */
 private class PanelUi(val state: GamePanelState, val onEvent: (GamePanelEvent) -> Unit, val onColumns: (Int) -> Unit)
 
-/** The panel in [modifier]'s box, reporting the shortcut grid's columns at that width ([gamePanelColumns]) for the model's UP/DOWN. */
+/** The panel (its header drawn across the menu's top instead) in [modifier]'s box, reporting the shortcut grid's columns at that width ([gamePanelColumns]) for the model's UP/DOWN. */
 @Composable
 private fun MenuGamePanel(panel: PanelUi, modifier: Modifier) {
     BoxWithConstraints(modifier) {
         val columns = gamePanelColumns(maxWidth)
         SideEffect { panel.onColumns(columns) }
-        GamePanel(panel.state, panel.onEvent, Modifier.fillMaxSize())
+        // The header is the menu's, across its top; the body sits on the menu's surface with the list.
+        GamePanel(panel.state, panel.onEvent, Modifier.fillMaxSize(), showHeader = false, opaque = false)
     }
 }
 
@@ -173,10 +185,11 @@ private fun InGameMenuContent(
     onDismiss: () -> Unit,
     onChange: (Int) -> Unit,
     onPress: (NxButton) -> Unit,
-    detail: AchievementDetailUi,
+    detail: AchievementsUi,
     onInfoTruncated: (String, Boolean) -> Unit,
     split: SplitUi?,
     panel: PanelUi?,
+    opaque: Boolean,
 ) {
     val page = state.page
     // The save-slot card's text: the list label size at the menu's row height.
@@ -185,21 +198,23 @@ private fun InGameMenuContent(
     Column(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9000000))
+            .background(if (opaque) LocalNxColors.current.background else MenuWash)
             .pointerInput(Unit) { detectTapGestures { /* swallow */ } }
             // The wash covers the camera cutout; the content stays clear of it on whichever side it is.
             .windowInsetsPadding(WindowInsets.displayCutout),
     ) {
-        // The standard page title (the game list's and every Tools/Settings page's): the game on the root, the page's name below.
-        NxPageTitle(page.title)
+        // The game header on every page, where the dual-screen panel draws it; without a panel the standard page title.
+        if (panel != null) GamePanelHeaderBar(panel.state.header) else NxPageTitle(page.title)
         if (split != null) {
             SplitBody(state, split, panel, slots, rowHeight, slotTextSize, onSelect, onActivate, onDismiss, onChange, detail, onInfoTruncated, Modifier.weight(1f))
         } else when (page.kind) {
             PageKind.Root -> RootBody(state, panel, slots, rowHeight, slotTextSize, onSelect, onActivate, onChange, Modifier.weight(1f))
             PageKind.Message -> MessageBody(page, onDismiss, Modifier.weight(1f))
-            is PageKind.AchievementDetail -> AchievementDetailBody(detail, onDismiss, Modifier.weight(1f))
-            // Keyed by page so each page gets its own scroll position.
-            else -> key(page.kind) { RowsBody(page, rowHeight, onSelect, onActivate, onChange, onInfoTruncated, Modifier.weight(1f)) }
+            PageKind.Achievements -> AchievementsBody(page, detail, onSelect, Modifier.weight(1f))
+            // Keyed by page so each page gets its own scroll position; whole width, so its name shows in the title row.
+            else -> key(page.kind) {
+                RowsBody(page, rowHeight, onSelect, onActivate, onChange, onInfoTruncated, Modifier.weight(1f), title = TitleRow.NAMED)
+            }
         }
         // In landscape the menu covers the pad, so each hint is a tap target that sends its button (see
         // [menuHintButton]); off the root page a tap on the bar's empty space is Back.
@@ -231,9 +246,11 @@ private fun RootBody(
     val page = state.page
     val slotIndex = state.slotIndex
     val showSlots = page.rows.getOrNull(page.selected) is MenuRow.Slot
+    val listShare = rootListShare(LocalPortrait.current)
     // The labels start [MenuPillPadding] into their pills, where the page title's first letter sits ([nxListInset]).
-    Row(modifier.fillMaxWidth().padding(start = nxListInset() - MenuPillPadding, end = 20.dp, top = 8.dp, bottom = 8.dp)) {
-        Box(Modifier.weight(0.42f).fillMaxHeight().alpha(rootListAlpha(state)), contentAlignment = Alignment.CenterStart) {
+    // No top room: the panel's tab row sits right under the header, as in the dual-screen panel, the list's first row beside it.
+    Row(modifier.fillMaxWidth().padding(start = nxListInset() - MenuPillPadding, end = 20.dp, bottom = 8.dp)) {
+        Box(Modifier.weight(listShare).fillMaxHeight().alpha(rootListAlpha(state)), contentAlignment = Alignment.TopStart) {
             RootList(page, rowHeight, onSelect, onActivate, onChange)
         }
         // Always reserve the right column so the list keeps a fixed width and doesn't shift
@@ -246,15 +263,37 @@ private fun RootBody(
                 textSize = slotTextSize,
                 onTap = { onActivate(page.selected) },
                 onChange = onChange,
-                modifier = Modifier.weight(0.58f).fillMaxHeight().padding(start = 12.dp),
+                modifier = Modifier.weight(1f - listShare).fillMaxHeight().padding(start = 12.dp),
             )
         } else if (panel != null) {
-            MenuGamePanel(panel, Modifier.weight(0.58f).fillMaxHeight().padding(start = 12.dp))
+            MenuGamePanel(panel, Modifier.weight(1f - listShare).fillMaxHeight().padding(start = 12.dp))
         } else {
-            Spacer(Modifier.weight(0.58f).fillMaxHeight())
+            Spacer(Modifier.weight(1f - listShare).fillMaxHeight())
         }
     }
 }
+
+/**
+ * The menu's list row pitch for an area [height] high (the Tools lists' rule); with [landscapeHeight] (portrait: the
+ * window's short side, the area turned to landscape) never above what that would give, so a portrait page's text is
+ * no bigger than landscape's.
+ */
+internal fun menuRowHeight(height: Dp, landscapeHeight: Dp?): Dp {
+    val own = height / nxRowCountFor(height)
+    return landscapeHeight?.let { minOf(own, it / nxRowCountFor(it)) } ?: own
+}
+
+/**
+ * The root list's share of the root's width beside the panel: narrower in [portrait], so the panel gets the room; still
+ * wide enough for the longest root row (Continue, the Disc row with its `<  1/2  >`) at the default text size.
+ */
+internal fun rootListShare(portrait: Boolean): Float = if (portrait) 0.36f else 0.42f
+
+/**
+ * The room above the root list's first row, so its pill's centre sits level with the panel's tab words beside it
+ * ([menuTabWordCentre]); none when the row is already taller.
+ */
+internal fun rootListTopPad(rowHeight: Dp): Dp = (menuTabWordCentre() - rowHeight / 2).coerceAtLeast(0.dp)
 
 /** The root list dims ([UNFOCUSED_ALPHA]) while the controller is in the panel; a tap on it still brings the focus back. */
 private fun rootListAlpha(state: MenuState): Float = if (state.panelFocus != null) UNFOCUSED_ALPHA else 1f
@@ -276,7 +315,8 @@ private fun RootList(page: MenuPage, pageRowHeight: Dp, onSelect: (Int) -> Unit,
         selectedIndex = page.selected,
         onSelect = onSelect,
         onOpen = onActivate,
-        modifier = Modifier.fillMaxWidth().height(rowHeight * page.rows.size.coerceAtLeast(1))
+        // Level with the panel's tab row: its first pill centred on the tab words.
+        modifier = Modifier.padding(top = rootListTopPad(rowHeight)).fillMaxWidth().height(rowHeight * page.rows.size.coerceAtLeast(1))
             .then(if (onSlot) Modifier.slotSwipe(onChange) else Modifier),
         rowHeightOverride = rowHeight,
         pillPaddingOverride = MenuPillPadding,
@@ -300,7 +340,7 @@ private fun SplitBody(
     onActivate: (Int) -> Unit,
     onDismiss: () -> Unit,
     onChange: (Int) -> Unit,
-    detail: AchievementDetailUi,
+    detail: AchievementsUi,
     onInfoTruncated: (String, Boolean) -> Unit,
     modifier: Modifier,
 ) {
@@ -308,12 +348,15 @@ private fun SplitBody(
     val noInfo: (String, Boolean) -> Unit = { _, _ -> }
     Box(modifier.fillMaxWidth()) {
         SplitPanes(
+            // No divider: the list and the panel (or the page) are one surface.
+            leftShare = SETTINGS_SPLIT_LEFT,
+            divider = false,
             left = {
                 if (panes.focusLeft) {
                     PaneBody(panes.left, rowHeight, onSelect, onActivate, onChange, onInfoTruncated, detail, onDismiss, Modifier.alpha(rootListAlpha(state)))
                 } else {
                     val tap: (Int) -> Unit = { i -> split.onParentTap(panes.left.kind, i) }
-                    PaneBody(panes.left, rowHeight, tap, tap, {}, noInfo, detail, {}, Modifier.alpha(UNFOCUSED_ALPHA))
+                    PaneBody(panes.left, rowHeight, tap, tap, {}, noInfo, detail, {}, Modifier.alpha(UNFOCUSED_ALPHA), title = TitleRow.NONE)
                 }
             },
             right = {
@@ -324,7 +367,7 @@ private fun SplitBody(
                     MenuPaneContent.Slots -> SlotPreview(
                         slot = slots.getOrNull(state.slotIndex), slotIndex = state.slotIndex, slotCount = slots.size,
                         textSize = slotTextSize, onTap = { onActivate(state.page.selected) }, onChange = onChange,
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 8.dp),
+                        modifier = Modifier.fillMaxSize().padding(start = 16.dp, end = 20.dp, top = 8.dp, bottom = 8.dp),   // level with the panel's gutter
                     )
                     is MenuPaneContent.Page -> PaneBody(right.page, rowHeight, onSelect, onActivate, onChange, onInfoTruncated, detail, onDismiss, Modifier)
                 }
@@ -333,7 +376,7 @@ private fun SplitBody(
     }
 }
 
-/** One pane's page: the root list, an achievement's detail, or a page of options rows. */
+/** One pane's page: the root list, the Achievements page, or a page of options rows (with [title]'s row). */
 @Composable
 private fun PaneBody(
     page: MenuPage,
@@ -342,25 +385,33 @@ private fun PaneBody(
     onActivate: (Int) -> Unit,
     onChange: (Int) -> Unit,
     onInfoTruncated: (String, Boolean) -> Unit,
-    detail: AchievementDetailUi,
+    detail: AchievementsUi,
     onDismiss: () -> Unit,
     modifier: Modifier,
+    title: TitleRow = TitleRow.ARROWS,
 ) {
     when (page.kind) {
+        // At the top, its first row beside the panel's tab row.
         PageKind.Root -> Box(
-            modifier.fillMaxSize().padding(start = nxListInset() - MenuPillPadding, end = 12.dp, top = 8.dp, bottom = 8.dp),
-            contentAlignment = Alignment.CenterStart,
+            modifier.fillMaxSize().padding(start = nxListInset() - MenuPillPadding, end = 12.dp, bottom = 8.dp),
+            contentAlignment = Alignment.TopStart,
         ) { RootList(page, rowHeight, onSelect, onActivate, onChange) }
-        is PageKind.AchievementDetail -> AchievementDetailBody(detail, onDismiss, modifier.fillMaxSize())
-        else -> key(page.kind) { RowsBody(page, rowHeight, onSelect, onActivate, onChange, onInfoTruncated, modifier.fillMaxSize()) }
+        PageKind.Achievements -> AchievementsBody(page, detail, onSelect, modifier.fillMaxSize())
+        else -> key(page.kind) { RowsBody(page, rowHeight, onSelect, onActivate, onChange, onInfoTruncated, modifier.fillMaxSize(), title) }
     }
 }
+
+/** The wash over the paused frame behind the menu's pages: dark enough that the game shows only faintly. */
+private val MenuWash = Color(0xEB000000)
 
 /** Horizontal padding inside a label pill on the root list and the adjust strip (the rows pages use [NxOptionsRow]). */
 private val MenuPillPadding = 10.dp
 
-/** Height of the band above/below a scrolling list that holds its scroll chevron. */
-private val ArrowBand = 10.dp
+/** The rows page's title row (its name, the scroll arrows), drawn in the room over the rows: it takes none of theirs. */
+private val PageTitleRow = 18.dp
+
+/** The extra space a named title row ([TitleRow.NAMED]) keeps from the game header above it. */
+private val NamedTitleGap = 12.dp
 
 /** The scroll position of a rows page; [key] is the (selection, rows per page, row count) it was last fitted to. */
 private class RowsWindow {
@@ -369,10 +420,11 @@ private class RowsWindow {
 }
 
 /**
- * Full-width rows in a window of whole rows, centred vertically when they all fit, with a reserved
- * description area below (the selected row's info, else the page footer) so the list never jumps.
- * When the list scrolls, chevrons above/below show there are more rows; a vertical drag moves the window
- * a row at a time, while selection changes scroll it the minimum to keep the selected row visible.
+ * Full-width rows in a window of whole rows, from the top (level with the root list), with a reserved
+ * description area below (the selected row's info, else the page footer) so the list never jumps. Over the rows, in the
+ * room above them, a slim title row: the page's name, and up / down arrows lit while there are more rows that way (a tap
+ * scrolls a row); the rows themselves take the whole height. A vertical drag moves the window a row at a time, while
+ * selection changes scroll it the minimum to keep the selected row visible.
  */
 @Composable
 private fun RowsBody(
@@ -383,6 +435,7 @@ private fun RowsBody(
     onChange: (Int) -> Unit,
     onInfoTruncated: (String, Boolean) -> Unit,
     modifier: Modifier,
+    title: TitleRow = TitleRow.ARROWS,
 ) {
     val density = LocalDensity.current
     // Options rows as on the Settings pages: a list row's pitch, the label one step under the list's, the value smaller.
@@ -391,8 +444,12 @@ private fun RowsBody(
     val labelSize = nxOptionsLabelSize(listText)
     val valueSize = nxOptionsValueSize(listText)
     val innerPad = NxOptionsInnerPad
-    val descLine = NxTextSizes.menuInfoLine
-    val descHeight = with(density) { (descLine * InfoLines).toDp() } + 12.dp
+    // Portrait reserves less for the description (fewer, smaller lines), so more rows fit above the pad.
+    val portrait = LocalPortrait.current
+    val descSize = if (portrait) NxTextSizes.menuInfoPortrait else NxTextSizes.menuInfo
+    val descLine = if (portrait) NxTextSizes.menuInfoLinePortrait else NxTextSizes.menuInfoLine
+    val infoLines = if (portrait) INFO_LINES_PORTRAIT else INFO_LINES
+    val descHeight = with(density) { (descLine * infoLines).toDp() } + if (portrait) 8.dp else 12.dp
     val rowInfo = (page.rows.getOrNull(page.selected) as? MenuRow.Option)?.info?.takeIf { it.isNotBlank() }
     val info = page.rows.getOrNull(page.selected)?.info?.takeIf { it.isNotBlank() } ?: page.footer
     val window = remember { RowsWindow() }
@@ -400,13 +457,16 @@ private fun RowsBody(
     // The row margin leaves the labels [innerPad] further in, where the page title's first letter sits ([nxListInset]).
     val sidePad = NxOptionsSidePad
     Column(modifier.fillMaxWidth()) {
+        // At the top, as the root list and the panel: the first row level with the list's first row beside it.
         BoxWithConstraints(
-            Modifier.weight(1f).fillMaxWidth().padding(start = sidePad, end = sidePad, top = 4.dp),
-            contentAlignment = Alignment.Center,
+            // A named title (a whole-width page) gets room of its own under the header, so the two don't touch.
+            Modifier.weight(1f).fillMaxWidth()
+                .padding(start = sidePad, end = sidePad, top = rootListTopPad(itemHeight) + if (title == TitleRow.NAMED) NamedTitleGap else 0.dp),
+            contentAlignment = Alignment.TopCenter,
         ) {
             val count = page.rows.size
             val scrolling = count > (maxHeight / itemHeight).toInt()
-            val perPage = if (scrolling) maxOf(1, ((maxHeight - ArrowBand * 2) / itemHeight).toInt()) else count
+            val perPage = if (scrolling) maxOf(1, (maxHeight / itemHeight).toInt()) else count
             val maxStart = maxOf(0, count - perPage)
             val fitKey = Triple(page.selected, perPage, count)
             // A new fit (selection, page size or row count) moves the window the minimum; otherwise it stays where a drag
@@ -419,12 +479,13 @@ private fun RowsBody(
             }
             val end = minOf(count, start + perPage)
             val rowPx = with(density) { itemHeight.toPx() }
+            // The page's name only on a whole-width page (two panes show where you are by the dimmed parent); no row at
+            // all on that dimmed parent.
+            if (title != TitleRow.NONE) PageTitle(
+                page.title.takeIf { title == TitleRow.NAMED }, more = if (scrolling) (start > 0) to (end < count) else null,
+                onStep = { d -> window.scroll = (start + d).coerceIn(0, maxStart) },
+            )
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (scrolling) {
-                    Box(Modifier.height(ArrowBand), contentAlignment = Alignment.Center) {
-                        if (start > 0) NxScrollArrow(up = true, width = rowHeight * 0.8f)
-                    }
-                }
                 Column(
                     Modifier.fillMaxWidth().height(itemHeight * (end - start))
                         .pointerInput(maxStart, rowPx) {
@@ -452,19 +513,53 @@ private fun RowsBody(
                         }
                     }
                 }
-                if (scrolling) {
-                    Box(Modifier.height(ArrowBand), contentAlignment = Alignment.Center) {
-                        if (end < count) NxScrollArrow(up = false, width = rowHeight * 0.8f)
-                    }
-                }
             }
         }
         Box(Modifier.fillMaxWidth().height(descHeight), contentAlignment = Alignment.Center) {
             // An option's description reports whether it was cut off: X then shows it whole.
-            if (info.isNotBlank()) FooterText(info, descLine, onTruncated = if (info == rowInfo) { t -> onInfoTruncated(info, t) } else null)
+            if (info.isNotBlank()) FooterText(info, descSize, descLine, infoLines, onTruncated = if (info == rowInfo) { t -> onInfoTruncated(info, t) } else null)
         }
     }
 }
+
+/** What a rows page draws in the room over its rows: its name and the scroll arrows, the arrows alone, or nothing. */
+private enum class TitleRow { NAMED, ARROWS, NONE }
+
+/**
+ * A rows page's title row, [PageTitleRow] high and laid out as zero high just above the rows (in the room over them, the
+ * header's gap): the page's [title] (null: none) in the hint colour, and while it scrolls ([more]: rows above, rows below)
+ * up / down arrows at the right, each lit while there is more that way; a tap on one steps the window ([onStep] -1 / +1).
+ */
+@Composable
+private fun PageTitle(title: String?, more: Pair<Boolean, Boolean>?, onStep: (Int) -> Unit) {
+    val colors = LocalNxColors.current
+    Row(
+        Modifier
+            // Zero high where it sits, drawn its own height above: outermost, so the whole row moves up.
+            .layout { measurable, constraints ->
+                val p = measurable.measure(constraints.copy(minHeight = 0))
+                layout(p.width, 0) { p.place(0, -p.height) }
+            }
+            .fillMaxWidth().height(PageTitleRow).padding(start = NxOptionsInnerPad, end = NxOptionsInnerPad),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            title.orEmpty(), color = colors.hint, fontFamily = LocalNxFont.current, fontSize = PageTitleSize, lineHeight = PageTitleSize,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+        )
+        more?.let { (above, below) ->
+            for ((up, lit) in listOf(true to above, false to below)) {
+                Box(
+                    Modifier.size(PageTitleRow * 1.6f, PageTitleRow).clickable(enabled = lit) { onStep(if (up) -1 else 1) },
+                    contentAlignment = Alignment.Center,
+                ) { NxScrollArrow(up, PageArrowWidth, opacity = if (lit) 0.8f else NX_SCROLL_ARROW_ALPHA) }
+            }
+        }
+    }
+}
+
+private val PageTitleSize = 13.sp
+private val PageArrowWidth = 16.dp
 
 /**
  * A rows-page row as an options row: an option shows its value (`< value >` while selected); a submenu and an action a
@@ -534,22 +629,39 @@ private fun MessageBody(page: MenuPage, onDismiss: () -> Unit, modifier: Modifie
     }
 }
 
-/** What the achievement detail page draws: the top page's achievement and the host's badge/mute lookups. */
-private class AchievementDetailUi(
-    val achievement: RaAchievement?,
+/** What the Achievements page draws: the host's badge lookup, and the achievement each of its rows stands for. */
+private class AchievementsUi(
     val badgePath: (RaAchievement) -> String?,
-    val muted: (Int) -> Boolean,
+    val rowAchievement: (MenuRow) -> RaAchievement?,
 )
 
+/**
+ * The Achievements page: its rows as the panel's ([AchievementRow]: badge, name with the points pill, description), the
+ * row's label kept (its `[M]` mute marker); a tap selects it (X then mutes it), nothing opens. Empty (Locked only with
+ * none left), the page's footer in the middle.
+ */
 @Composable
-private fun AchievementDetailBody(detail: AchievementDetailUi, onDismiss: () -> Unit, modifier: Modifier) {
-    val dismiss by rememberUpdatedState(onDismiss)
-    // Like a message page, the detail has no rows: a tap anywhere on it goes back (touch equivalent of B).
-    Box(modifier.fillMaxWidth().pointerInput(Unit) { detectTapGestures { dismiss() } }, contentAlignment = Alignment.Center) {
-        val a = detail.achievement ?: return@Box
-        AchievementDetail(a, detail.badgePath(a), detail.muted(a.id))
+private fun AchievementsBody(page: MenuPage, detail: AchievementsUi, onSelect: (Int) -> Unit, modifier: Modifier) {
+    if (page.rows.isEmpty()) {
+        Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Text(page.footer, color = LocalNxColors.current.hint, fontFamily = LocalNxFont.current, fontSize = NxTextSizes.menuInfoLine, textAlign = TextAlign.Center)
+        }
+        return
+    }
+    LazyColumn(
+        modifier.fillMaxWidth(), state = rememberFocusedListState(page.selected),
+        contentPadding = PaddingValues(horizontal = NxOptionsSidePad, vertical = 8.dp),
+    ) {
+        itemsIndexed(page.rows) { i, row ->
+            val selected = i == page.selected
+            val tap = Modifier.clickable { onSelect(i) }
+            // A row with no achievement behind it (a host without the lookup) still shows and takes the selection.
+            val a = detail.rowAchievement(row)
+            if (a != null) AchievementRow(row.label, a, detail.badgePath(a), selected, tap) else PlainPanelRow(row.label, selected, tap)
+        }
     }
 }
+
 
 /**
  * Adjust mode: one strip at the bottom of the menu area (label left on the accent, `<  value  >` right on the Secondary
@@ -564,6 +676,7 @@ private fun AdjustContent(
     onDismiss: () -> Unit,
     onChange: (Int) -> Unit,
     onPress: (NxButton) -> Unit,
+    header: GamePanelHeader? = null,
 ) {
     val row = page.rows.firstOrNull() as? MenuRow.Option ?: return
     val selection = nxOptionsSelection(LocalNxColors.current)
@@ -572,7 +685,9 @@ private fun AdjustContent(
     val valueSize = NxTextSizes.secondary(fontSize)
     val pillHeight = rowHeight * 0.84f
     val dismiss by rememberUpdatedState(onDismiss)
-    Column(Modifier.fillMaxSize()) {
+    val background = LocalNxColors.current.background
+    Column(Modifier.fillMaxSize().then(if (header != null) Modifier.background(background).windowInsetsPadding(WindowInsets.displayCutout) else Modifier)) {
+        header?.let { GamePanelHeaderBar(it) }
         Box(Modifier.weight(1f).fillMaxWidth().pointerInput(Unit) { detectTapGestures { dismiss() } })
         Column(
             Modifier.fillMaxWidth()
@@ -651,18 +766,19 @@ private fun AdjustArrow(text: String, size: TextUnit, color: Color, onClick: () 
 }
 
 /** Lines kept below the options list for the selected row's info (nx-redux keeps two; the phone fits three). */
-private const val InfoLines = 3
+private const val INFO_LINES = 3
+private const val INFO_LINES_PORTRAIT = 2
 
 @Composable
-private fun FooterText(text: String, lineHeight: TextUnit, onTruncated: ((Boolean) -> Unit)? = null) {
+private fun FooterText(text: String, fontSize: TextUnit, lineHeight: TextUnit, maxLines: Int = INFO_LINES, onTruncated: ((Boolean) -> Unit)? = null) {
     Text(
         text = text,
         color = LocalNxColors.current.hint,
         fontFamily = LocalNxFont.current,
         fontWeight = FontWeight.SemiBold,
-        fontSize = NxTextSizes.menuInfo,
+        fontSize = fontSize,
         lineHeight = lineHeight,
-        maxLines = InfoLines,
+        maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
         textAlign = TextAlign.Center,
         onTextLayout = { r -> onTruncated?.invoke(r.hasVisualOverflow || (r.lineCount > 0 && r.isLineEllipsized(r.lineCount - 1))) },
@@ -688,16 +804,14 @@ internal fun hintsFor(
 private fun pageHints(page: MenuPage, row: MenuRow?, infoTruncated: Boolean, panelFocus: PanelFocus?, panelTab: GamePanelTab?): List<Hint> = when {
     panelFocus != null -> buildList {
         add(Hint(NxButton.L1, "Tab"))
-        if (panelFocus is PanelFocus.Item) add(Hint(NxButton.A, "Select"))
+        if (panelFocus is PanelFocus.Item) { if (panelTab != GamePanelTab.ACHIEVEMENTS) add(Hint(NxButton.A, "Select")) }   // its rows open nothing
         else if (panelTab == GamePanelTab.ACHIEVEMENTS || panelTab == GamePanelTab.PLAYERS) add(Hint(NxButton.A, "Open"))
         add(Hint(NxButton.B, "Back"))
         add(Hint(NxButton.R1, "Tab"))
     }
     page.kind is PageKind.Adjust -> listOf(Hint(NxButton.LEFT, "Change"), Hint(NxButton.UP, "Next"), Hint(NxButton.B, "Done"))
     page.kind == PageKind.Message -> listOf(Hint(NxButton.B, "Back"))
-    page.kind is PageKind.AchievementDetail -> listOf(Hint(NxButton.LEFT, "Next"), Hint(NxButton.X, "Mute"), Hint(NxButton.B, "Back"))
-    page.kind == PageKind.Achievements && row != null ->
-        listOf(Hint(NxButton.A, "Details"), Hint(NxButton.Y, "Locked only"), Hint(NxButton.X, "Mute"), Hint(NxButton.B, "Back"))
+    page.kind == PageKind.Achievements && row != null -> listOf(Hint(NxButton.Y, "Locked only"), Hint(NxButton.X, "Mute"), Hint(NxButton.B, "Back"))
     // Filtered to nothing ("Everything unlocked."): Y still brings the full list back.
     page.kind == PageKind.Achievements -> listOf(Hint(NxButton.Y, "Locked only"), Hint(NxButton.B, "Back"))
     page.rows.isEmpty() -> listOf(Hint(NxButton.B, "Back"))   // e.g. an empty Cheats page: A does nothing
@@ -734,12 +848,21 @@ private fun optionHints(row: MenuRow.Option, infoTruncated: Boolean): List<Hint>
  */
 internal fun menuHintButton(hint: NxButton): NxButton = if (hint == NxButton.LEFT) NxButton.RIGHT else hint
 
+/** The slot card's widest (a tablet, the unfolded Fold): the screenshot keeps its aspect within it. */
+private val SlotCardMax = 480.dp
+private val SlotCardPadSide = 8.dp
+private val SlotCardPadTop = 3.dp
+private val SlotCardPadBottom = 5.dp
+private val SlotDotsStrip = 18.dp   // the dot pager's row: 6 above the 9 dp selected dot, 3 below
+
 /** How far one controller UP/DOWN scrolls a message page. */
 private val MessageScrollStep = 66.dp
 
 /**
  * Screenshot preview of the chosen slot + a dot pager + the slot's label/timestamp. A sideways swipe steps the slot
  * ([slotSwipe], [onChange]); a tap saves or loads it ([onTap]), as a second tap on the highlighted Save / Load row.
+ * Top-left in its box (level with the list's first row), at most [SlotCardMax] wide; the screenshot shrinks to fit the
+ * height, so the date and the dots always show.
  */
 @Composable
 private fun SlotPreview(
@@ -755,15 +878,25 @@ private fun SlotPreview(
     val thumb = slot?.thumbPath
     val aspect = slot?.aspect ?: (4f / 3f)
     val small = NxTextSizes.secondary(textSize)
+    val occupied = slot?.occupied == true
     // A white "polaroid" card that hugs the screenshot (photo box uses the shot's own aspect, so no
     // black padding). The top strip shows the save's date/time; the bottom strip holds the dot pager.
-    Box(modifier, contentAlignment = Alignment.Center) {
+    BoxWithConstraints(modifier, contentAlignment = Alignment.TopStart) {
+        // The card's own strips, fixed; the screenshot takes the rest of the width (capped), then of the height.
+        val topStrip = if (occupied) with(LocalDensity.current) { small.toDp() } + 4.dp else 5.dp
+        val chromeHeight = SlotCardPadTop + topStrip + SlotDotsStrip + SlotCardPadBottom
+        var photoW = minOf(maxWidth, SlotCardMax) - SlotCardPadSide * 2
+        var photoH = photoW / aspect
+        if (maxHeight.value.isFinite() && photoH + chromeHeight > maxHeight) {
+            photoH = (maxHeight - chromeHeight).coerceAtLeast(0.dp)
+            photoW = photoH * aspect
+        }
         Column(
-            Modifier.fillMaxWidth().slotSwipe(onChange).pointerInput(Unit) { detectTapGestures { tap() } }
+            Modifier.width(photoW + SlotCardPadSide * 2).slotSwipe(onChange).pointerInput(Unit) { detectTapGestures { tap() } }
                 .clip(RoundedCornerShape(12.dp)).background(LocalNxColors.current.main)
-                .padding(start = 8.dp, end = 8.dp, top = 3.dp, bottom = 5.dp),
+                .padding(start = SlotCardPadSide, end = SlotCardPadSide, top = SlotCardPadTop, bottom = SlotCardPadBottom),
         ) {
-            if (slot?.occupied == true) {
+            if (slot != null && occupied) {
                 Text(
                     text = slot.subtitle,
                     color = Color(0xFF3A3A3A),
@@ -780,7 +913,7 @@ private fun SlotPreview(
                 Spacer(Modifier.height(5.dp))
             }
             Box(
-                Modifier.fillMaxWidth().aspectRatio(aspect).clip(RoundedCornerShape(3.dp)).background(Color.Black),
+                Modifier.size(photoW, photoH).clip(RoundedCornerShape(3.dp)).background(Color.Black),
                 contentAlignment = Alignment.Center,
             ) {
                 if (thumb != null) {
@@ -801,7 +934,7 @@ private fun SlotPreview(
                 }
             }
             Box(
-                Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 3.dp),
+                Modifier.fillMaxWidth().height(SlotDotsStrip),
                 contentAlignment = Alignment.Center,
             ) {
                 Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
