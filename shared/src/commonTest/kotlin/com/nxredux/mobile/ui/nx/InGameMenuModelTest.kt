@@ -833,7 +833,7 @@ class InGameMenuModelTest {
         m.setSecondScreen(connected = true, on = true)
         assertEquals(listOf(Shortcut.SWAP_DISC, Shortcut.SECOND_SCREEN), m.panelState().shortcuts.take(2).map { it.shortcut })
         m.press(NxButton.RIGHT); m.press(NxButton.DOWN)
-        assertEquals(MenuEffect.ChangeDisc(1), m.press(NxButton.A))
+        assertEquals(MenuEffect.ChangeDisc(1, toast = true), m.press(NxButton.A))   // the panel's swap says "Disc N of M"
         assertEquals("2/3", m.panelState().shortcuts[0].value)
         assertEquals("2/3", assertIs<MenuRow.Option>(m.state.page.rows[1]).valueLabel)   // the root's Disc row follows
         m.press(NxButton.RIGHT)
@@ -841,7 +841,33 @@ class InGameMenuModelTest {
         assertEquals("Off", m.panelState().shortcuts[1].value)
         // A tap acts as A.
         assertEquals(MenuEffect.SetSecondScreen(true), m.panelEvent(GamePanelEvent.SetSecondScreen(true)))
-        assertEquals(MenuEffect.ChangeDisc(2), m.panelEvent(GamePanelEvent.SwapDisc))
+        assertEquals(MenuEffect.ChangeDisc(2, toast = true), m.panelEvent(GamePanelEvent.SwapDisc))
+    }
+
+    @Test fun a_tap_on_a_panel_item_moves_the_controller_focus_there() {
+        val m = model()
+        m.setDiscs(current = 0, count = 3)
+        m.setSecondScreen(connected = true, on = true)
+        m.press(NxButton.RIGHT); m.press(NxButton.DOWN)
+        assertEquals(PanelFocus.Item(0), m.state.panelFocus)
+        m.panelEvent(GamePanelEvent.SetSecondScreen(false))
+        assertEquals(PanelFocus.Item(1), m.state.panelFocus)
+        m.panelEvent(GamePanelEvent.SwapDisc)
+        assertEquals(PanelFocus.Item(0), m.state.panelFocus)
+        // Players: a slot is its row, a pad the row after the slots.
+        m.setPlayers(listOf(p1, PlayerSlotRow(null, "", connected = false)), listOf(padA))
+        m.toTab(GamePanelTab.PLAYERS)
+        m.panelEvent(GamePanelEvent.SetPlaying("k1", playing = false))
+        assertEquals(PanelFocus.Item(2), m.state.panelFocus)
+        m.panelEvent(GamePanelEvent.SetPlayer(1, "k1"))
+        assertEquals(PanelFocus.Item(1), m.state.panelFocus)
+    }
+
+    @Test fun a_tap_on_the_panel_leaves_the_focus_on_the_list() {
+        val m = model()
+        m.setDiscs(current = 0, count = 3)
+        m.panelEvent(GamePanelEvent.SwapDisc)
+        assertNull(m.state.panelFocus)
     }
 
     @Test fun a_lost_second_screen_clamps_the_panel_focus() {

@@ -621,6 +621,10 @@ class GameActivity : ComponentActivity() {
     private var playTimeBase: Pair<GameTotal?, List<PlaySession>>? = null   // the store's figures for this game ([refreshPlayTime])
     private var sliceStartedAt: Long? = null     // the open game-time slice's start (wall clock); null while none runs
     private var panelClockJob: Job? = null       // the header's minute tick while a panel shows ([syncPanelClock])
+    // The header's clock text and battery level, read once a minute (the first header of each minute) for every refresh.
+    private var panelClockMinute = -1L
+    private var panelClock = ""
+    private var panelBattery: Int? = null
     // The panel (or the Panel pill) in the game's own window, while the picture is on the second display.
     private var mainPanelHost: FrameLayout? = null
     private val mainPanel = mutableStateOf<(@Composable () -> Unit)?>(null)
@@ -3099,7 +3103,7 @@ class GameActivity : ComponentActivity() {
      */
     private fun swapDisc() {
         val view = retroView ?: return
-        if (!gameReady || netplay != null) return
+        if (!gameReady || resumePending || netplay != null) return
         val (current, count) = discs ?: return
         if (count < 2) return
         val next = GamePanelModel.nextDisc(current, count)
@@ -3107,11 +3111,16 @@ class GameActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             runCatching { view.changeDisk(next) }.onFailure { NxLog.w("GameActivity", "disc change failed", it) }
         }
-        val text = GamePanelModel.discToast(next, count)
-        val p = presentation
-        if (p != null && pictureOn == PictureOn.SECOND) p.toast(text) else toast(text)
+        discToast(next, count)
         menuModel?.let { it.setDiscs(next, count); menuState.value = it.state }
         refreshDualPanel()
+    }
+
+    /** The Swap disc toast ("Disc N of M") on the picture's display. */
+    private fun discToast(index: Int, count: Int) {
+        val text = GamePanelModel.discToast(index, count)
+        val p = presentation
+        if (p != null && pictureOn == PictureOn.SECOND) p.toast(text) else toast(text)
     }
 
     /**
@@ -3155,7 +3164,8 @@ class GameActivity : ComponentActivity() {
 
     /**
      * Both panels' header: the title, the launcher's box art (null: the console logo), play time today and in total (the
-     * running slice included), the clock and the battery. The achievement count is each panel's own.
+     * running slice included), the clock and the battery (read at the first header of each minute: the minute tick, a
+     * panel coming up; other refreshes reuse them). The achievement count is each panel's own.
      */
     private fun panelHeader(): GamePanelHeader {
         val now = System.currentTimeMillis()
@@ -3163,8 +3173,13 @@ class GameActivity : ComponentActivity() {
         val time = PanelPlayTime.of(total, plays, systemLocalCalendar().dayStart(now), sliceStartedAt, now)
         // A shared-storage ref as its plain path: the game screen's image loader may not have the app's ref mapper.
         val art = intent.getStringExtra(EXTRA_ART_PATH)?.let { FileRefs.artPath(it) ?: it }
-        val clock = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(now))
-        return GamePanelHeader(intent.getStringExtra(EXTRA_TITLE) ?: "Paused", art, layoutTag(), time.todayMs, time.totalMs, null, clock, batteryPercent())
+        val minute = now / 60_000L
+        if (minute != panelClockMinute) {
+            panelClockMinute = minute
+            panelClock = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(now))
+            panelBattery = batteryPercent()
+        }
+        return GamePanelHeader(intent.getStringExtra(EXTRA_TITLE) ?: "Paused", art, layoutTag(), time.todayMs, time.totalMs, null, panelClock, panelBattery)
     }
 
     /** The battery level from the sticky battery broadcast (no receiver is kept); null when it can't be read. */
@@ -3812,6 +3827,8 @@ class GameActivity : ComponentActivity() {
             }
             is MenuEffect.ChangeDisc -> retroView?.let { view ->
                 discs = discs?.let { effect.index to it.second }
+                // The menu panel's Swap disc says so, as the dual-screen panel's does; the Disc row shows it in place.
+                if (effect.toast) discs?.let { (index, count) -> discToast(index, count) }
                 refreshDualPanel()
                 lifecycleScope.launch(Dispatchers.IO) {
                     runCatching { view.changeDisk(effect.index) }.onFailure { NxLog.w("GameActivity", "disc change failed", it) }

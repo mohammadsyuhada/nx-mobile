@@ -128,4 +128,19 @@ class InGameMenuSplitTest {
         assertNull(m.tapParent(PageKind.Root, quit))
         assertEquals(1, m.state.stack.size)
     }
+
+    @Test fun aTapOnTheRootsHighlightedRowBesideAPanelPageComesBackToTheRoot() {
+        val m = model()
+        m.setPlayers(listOf(PlayerSlotRow("a", "Pad A", connected = true), PlayerSlotRow(null, "", connected = false)), listOf(PlayerPadRow("a", "Pad A", playing = true)))
+        val continueRow = m.state.page.rows.indexOfFirst { it.label == "Continue" }
+        m.select(continueRow)
+        m.panelEvent(GamePanelEvent.SelectTab(GamePanelTab.PLAYERS))
+        m.press(NxButton.RIGHT); m.press(NxButton.A)        // the Players tab's full page, beside the root
+        assertEquals(listOf(PageKind.Root, PageKind.Players), m.state.stack.map { it.kind })
+        assertEquals(continueRow, m.state.stack[0].selected)
+        // Continue is highlighted but not open: the tap comes back to the root on it, as on any other row.
+        assertNull(m.tapParent(PageKind.Root, continueRow))
+        assertEquals(listOf(PageKind.Root), m.state.stack.map { it.kind })
+        assertEquals(continueRow, m.state.page.selected)
+    }
 }
