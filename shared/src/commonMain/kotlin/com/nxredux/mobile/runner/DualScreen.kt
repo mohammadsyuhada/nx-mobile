@@ -159,3 +159,16 @@ object DualScreen {
         return listOf(NdsRegion(screen, src, dst, shaded = true, touch = screen == NdsScreen.BOTTOM))
     }
 }
+
+/**
+ * The density the Compose UI on a second display lays out at. A big monitor (a 4K or 2560x1600 USB-C display) at its own
+ * density is thousands of dp wide and everything looks tiny: when the short side is wider than [SHORT_SIDE_DP] dp the
+ * density is raised so the short side is exactly [SHORT_SIDE_DP] dp; a handheld's second screen keeps its own.
+ */
+object SecondScreenScale {
+    const val SHORT_SIDE_DP = 720f
+
+    /** The density for a display of [widthPx] x [heightPx] at [density] (px per dp); [density] when the size is unknown. */
+    fun density(widthPx: Int, heightPx: Int, density: Float): Float =
+        if (widthPx <= 0 || heightPx <= 0) density else maxOf(density, minOf(widthPx, heightPx) / SHORT_SIDE_DP)
+}

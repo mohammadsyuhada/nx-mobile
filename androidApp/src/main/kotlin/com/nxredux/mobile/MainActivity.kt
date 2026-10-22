@@ -213,6 +213,10 @@ class MainActivity : ComponentActivity(), FolderPicker {
     private var bottomScreenPrompt: SecondScreenPresentation? = null
     /** The main menu's window on the second display ([syncMenuScreen]): the top screen, or the menu itself; null while not shown. */
     private var menuScreen: SecondScreenPresentation? = null
+    /** A failed [showMenuScreen] looks again shortly ([retryMenuScreen]): the game's own window may still be on the display. */
+    private val menuRetry = Runnable { menuRetryPending = false; syncMenuScreen() }
+    private var menuRetryPending = false
+    private var menuRetries = 0
     /** [menuScreen] has the menu ([App]) and this window the top screen ([MenuTopScreen]); read by both contents. */
     private val menuOnSecond = mutableStateOf(false)
     /** A game is starting ([LibretroRunner.beforeLaunch]): the second display stays clear for it until the menu resumes. */
@@ -458,9 +462,13 @@ class MainActivity : ComponentActivity(), FolderPicker {
         val display = secondScreens.current.value
         val active = inFront && settings.secondScreen && display != null && bottomScreenPrompt == null
         val wanted = display.takeIf { active && !launching }
+        if (wanted == null) cancelMenuRetry()
         if (menuScreen?.display?.displayId != wanted?.displayId) {
             hideMenuScreen()
-            if (wanted != null) showMenuScreen(wanted)
+            // One try per pending retry: the several syncs of a resume (start, resume, display change) must not each add a window.
+            if (wanted != null && !menuRetryPending) {
+                if (showMenuScreen(wanted)) menuRetries = 0 else retryMenuScreen()
+            }
         }
         state.onDualMenu(active && (launching || menuScreen != null))
         val shown = menuScreen ?: return
@@ -504,7 +512,23 @@ class MainActivity : ComponentActivity(), FolderPicker {
         )
     }
 
-    private fun showMenuScreen(display: Display) {
+    /** Back from a game, its presentation stays on the display for a moment and the system refuses a second one: try again, for about 3 s. */
+    private fun retryMenuScreen() {
+        if (menuRetries >= 12) return
+        menuRetries++
+        menuRetryPending = true
+        window.decorView.removeCallbacks(menuRetry)
+        window.decorView.postDelayed(menuRetry, 250)
+    }
+
+    private fun cancelMenuRetry() {
+        window.decorView.removeCallbacks(menuRetry)
+        menuRetryPending = false
+        menuRetries = 0
+    }
+
+    /** Whether the window is up; a failure is logged and [retryMenuScreen] looks again. */
+    private fun showMenuScreen(display: Display): Boolean {
         val p = SecondScreenPresentation(this, display)
         p.showPanel { MenuTopScreen(state) }   // the usual layout; [syncMenuScreen] swaps it when the menu goes here
         // The system dismisses it itself when the display's metrics change (or the display goes): forget it, leave dual
@@ -515,8 +539,8 @@ class MainActivity : ComponentActivity(), FolderPicker {
             if (!launching) state.onDualMenu(false)
             window.decorView.post { syncMenuScreen() }
         }
-        runCatching { p.show() }.onSuccess { menuScreen = p }
-            .onFailure { NxLog.w("NXAPP", "menu second screen: ${it.message}") }
+        return runCatching { p.show() }.onSuccess { menuScreen = p }
+            .onFailure { NxLog.w("NXAPP", "menu second screen: ${it.message}") }.isSuccess
     }
 
     private fun hideMenuScreen() {
@@ -619,6 +643,7 @@ class MainActivity : ComponentActivity(), FolderPicker {
 
     override fun onStop() {
         inFront = false
+        cancelMenuRetry()
         launching = false   // the game has the screen, or never came: onStart shows the menu's second screen again
         syncSecondScreen()   // takes the second screen's button and the menu's screen away
         secondScreens.stop()

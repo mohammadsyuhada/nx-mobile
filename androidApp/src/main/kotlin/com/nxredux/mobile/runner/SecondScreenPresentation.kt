@@ -3,6 +3,7 @@ package com.nxredux.mobile.runner
 import android.annotation.SuppressLint
 import android.app.Presentation
 import android.graphics.Color
+import android.graphics.Point
 import android.os.Build
 import android.os.Bundle
 import android.view.Display
@@ -22,12 +23,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
@@ -98,12 +102,19 @@ class SecondScreenPresentation(private val activity: ComponentActivity, display:
         }
         val composeView = ComposeView(context).apply {
             setContent {
-                theme {
-                    Box(Modifier.fillMaxSize()) {
-                        val content = panel
-                        when {
-                            content != null -> content()
-                            panelPill -> PanelPill("Panel", Modifier.align(Alignment.BottomEnd).padding(10.dp)) { onPanelPill() }
+                // A big monitor would lay out thousands of dp wide: scale up so its short side is 720 dp (handhelds unchanged).
+                // The presentation is re-created when the display's metrics change, so this is read once per window.
+                val size = Point().also { this@SecondScreenPresentation.display.getRealSize(it) }
+                val scaled = SecondScreenScale.density(size.x, size.y, context.resources.displayMetrics.density)
+                val current = LocalDensity.current
+                CompositionLocalProvider(LocalDensity provides Density(scaled, fontScale = current.fontScale)) {
+                    theme {
+                        Box(Modifier.fillMaxSize()) {
+                            val content = panel
+                            when {
+                                content != null -> content()
+                                panelPill -> PanelPill("Panel", Modifier.align(Alignment.BottomEnd).padding(10.dp)) { onPanelPill() }
+                            }
                         }
                     }
                 }
