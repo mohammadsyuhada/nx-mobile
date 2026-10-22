@@ -274,6 +274,7 @@ class GameActivity : ComponentActivity() {
         private const val DOLPHIN_ID = "dolphin"
         // Instance-state key: the slot to resume from when the system recreates this activity after a process kill.
         private const val KEY_RESUME_SLOT = "nx_resume_slot"
+        private const val KEY_NETPLAY_LOCAL = "nx_netplay_local"   // netplay link: the session had ended ([netplayLocal])
         private const val NDS_INSET_MARGIN_DP = 8f   // the PiP inset's margin inside the big screen
         private const val NDS_LABEL_MS = 1500L   // a DS hotkey's label ("Bottom screen", "Stylus on")
         private const val PLAYER_NOTICE_MS = 2500L   // "Player 2: <pad>" when a pad takes a player slot
@@ -388,8 +389,9 @@ class GameActivity : ComponentActivity() {
     private var relaunching = false
     @Volatile private var launchEnv: Map<String, String?> = emptyMap()   // Graphics API's core environment for this launch
     /**
-     * The core options this launch's Graphics API forced (SwanStation's renderer on Vulkan): locked for the session, so
-     * hidden from Core Options, never applied by a restore, and saved with their stored value ([CoreConfig.valuesToSave]).
+     * The core options this launch's Graphics API forced (SwanStation's renderer on Vulkan), and a netplay link session's
+     * (NetplayLinkOptions, still set once the game is local): locked for the session, so hidden from Core Options, never
+     * applied by a restore, and saved with their stored value ([CoreConfig.valuesToSave]).
      */
     @Volatile private var graphicsForcedOptions: Set<String> = emptySet()
 
@@ -685,8 +687,8 @@ class GameActivity : ComponentActivity() {
     // ---- netplay (Wi-Fi lockstep, see the "netplay" block) ----
     /**
      * netplay: this launch's session (read in onCreate from the EXTRA_NETPLAY_* extras); null for every other launch. In a
-     * session there are no save states or auto-resume, no cheats, achievements, Core Options or local multiplayer slots,
-     * and the menu is only "Leave netplay?".
+     * session there are no save states or auto-resume, no cheats, Core Options or local multiplayer slots, no achievements
+     * outside a link session ([NetplaySession.allowsAchievements]), and the menu is only "Leave netplay?".
      */
     private var netplay: NetplaySession? = null
     /** netplay: recreated after a process kill with a session's intent: that session is gone, nothing is started. */
@@ -698,6 +700,16 @@ class GameActivity : ComponentActivity() {
     private var netplayPillShown = false   // the countdown pill is the session's (hidden again on Clear)
     /** netplay: the session ended and the game plays on alone (the menu is then Continue / Quit). */
     private var netplayEnded = false
+    /**
+     * netplay link: the link session ended ([playLocally]), or this screen came back after a process kill with one that
+     * had: the game is a normal local launch from then on. The one switch the menu, the panel and the option guards
+     * read, through [netplayNow]; [netplay] itself stays for the launch's setup and onDestroy's release.
+     */
+    private var netplayLocal = false
+    /** netplay: the session this screen plays in now: [netplay], or null once a link session's game is a local one. */
+    private val netplayNow: NetplaySession? get() = netplay.takeUnless { netplayLocal }
+    /** netplay link: starts the cheat load a normal launch starts in startEmulator, once the game is local ([playLocally]). */
+    private var localCheats: (() -> Job)? = null
     /** netplay: this screen's id on the session copy it plays on ([NetplaySessionDir.claim]). */
     private val netplayOwner by lazy { java.util.UUID.randomUUID().toString() }
     /** netplay: the engine did not start; the game stays paused and silent behind the failure dialog (closeMenu too). */
@@ -782,12 +794,16 @@ class GameActivity : ComponentActivity() {
             override fun handleOnBackPressed() = backPressed()
         })
         // netplay: a session launches cold: no saved or requested resume slot.
-        netplay = netplaySessionFrom(
+        val launchSession = netplaySessionFrom(
             intent.getStringExtra(EXTRA_NETPLAY_ROLE), intent.getStringExtra(EXTRA_NETPLAY_PEER),
             intent.getStringExtra(EXTRA_CORE_ID) ?: "", intent.getStringExtra(EXTRA_NETPLAY_FOLDER_CORE),
             intent.getBooleanExtra(EXTRA_NETPLAY_EMPTY_SAVES, false),
             intent.getBooleanExtra(EXTRA_NETPLAY_USB, false),
         )
+        // netplay link: recreated after a process kill once its session had ended: the local game it had become, as a
+        // normal launch (its resume slot below), not a session.
+        netplayLocal = launchSession?.endsAsLocalGame == true && savedInstanceState?.getBoolean(KEY_NETPLAY_LOCAL) == true
+        netplay = launchSession.takeUnless { netplayLocal }
         netplayRestored = netplay != null && savedInstanceState != null
         if (netplay?.overUsb == true) netplayUsbToken = UsbCables.get(this).token()
         // Decided here, not after startEmulator's async setup, so a stop in between still records the slot.
@@ -943,6 +959,7 @@ class GameActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         putResumeSlot(outState)
+        if (netplayLocal) outState.putBoolean(KEY_NETPLAY_LOCAL, true)
         pendingOutState = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) outState else null
     }
 
@@ -1055,7 +1072,7 @@ class GameActivity : ComponentActivity() {
     private suspend fun startEmulator() {
         val coreFile = intent.getStringExtra(EXTRA_CORE_FILE) ?: return fail("No core given")
         // netplay: extras that make no session must not start an ordinary game on the real saves; a recreated session is over.
-        if (intent.hasExtra(EXTRA_NETPLAY_ROLE) && netplay == null) return fail(NetplayText.FAILED, NetplayText.FAILED)
+        if (intent.hasExtra(EXTRA_NETPLAY_ROLE) && netplay == null && !netplayLocal) return fail(NetplayText.FAILED, NetplayText.FAILED)
         if (netplayRestored) return fail(NetplayText.ENDED, NetplayText.FAILED)
         val np = netplay
         val tag = intent.getStringExtra(EXTRA_TAG) ?: "UNKNOWN"
@@ -1073,7 +1090,8 @@ class GameActivity : ComponentActivity() {
         // Kept for one player: a key held through the load keeps its recorded send.
         if (inputs.count != players) inputs = PortInputs(players)
         rumbles = Array(players) { RumbleMotor(this, gameRumble, phoneFallback = it == 0) }
-        cheatsSupported = np == null && (descriptor?.cheats ?: true)   // netplay: cheats would desync the other device
+        val cheatsOk = descriptor?.cheats ?: true
+        cheatsSupported = np == null && cheatsOk   // netplay: cheats would desync the other device
         // A SAF document URI, or a file ref with All files access: opened only through [refs], never Uri.parse.
         val content = ContentRef(intent.getStringExtra(EXTRA_CONTENT_URI) ?: return fail("No content given"))
         val romFileName = intent.getStringExtra(EXTRA_FILE_NAME)
@@ -1123,7 +1141,7 @@ class GameActivity : ComponentActivity() {
         // The file Dolphin loads, once known: an archive's unpacked disc names its built-in cheats (completed below).
         val dolphinContent = CompletableDeferred<String>()
         // Off the critical path: the menu shows the set once it lands, the first-frame apply waits for it.
-        cheatsLoad = if (np != null) null else lifecycleScope.launch {   // netplay: no cheats (a saved nx_cheats set included)
+        val loadCheats = { lifecycleScope.launch {
             val extensions = descriptor?.extensions.orEmpty()
             val resolvedSet = withContext(Dispatchers.IO) {
                 // PSP cheat files are named by serial ("[ULUS-10466]"), which the disc knows and the file name rarely does.
@@ -1139,7 +1157,10 @@ class GameActivity : ComponentActivity() {
             } else resolvedSet
             cheatSet = savedCheats?.let(combined::withSaved) ?: combined
             menuModel?.let { it.setCheats(cheatSet.entries, cheatsFolder, cheatSet.expected); menuState.value = it.state }
-        }
+        } }
+        cheatsLoad = if (np != null) null else loadCheats()   // netplay: no cheats (a saved nx_cheats set included)
+        // netplay link: the cheats come once the session has ended and the game is a local one.
+        if (np?.endsAsLocalGame == true) localCheats = { cheatsSupported = cheatsOk; loadCheats() }
         // Resolved and decoded before the view exists, so the first frame already has its overlay (the configured one;
         // with none stored the default is None).
         // A DS game starts split (every DS layout draws its screens as regions), which shows no overlay: none is
@@ -1358,7 +1379,8 @@ class GameActivity : ComponentActivity() {
             }
         }
         val savesDir = (sessionDir ?: File(sdRoot, paths.savesDir)).apply { mkdirs() }
-        if (np == null) prepareAchievements(tag, romFileName, content, inner)   // netplay: no achievements
+        // netplay: a link session's game is the player's own, so it gets achievements as a normal launch; lockstep has none.
+        if (np == null || np.allowsAchievements) prepareAchievements(tag, romFileName, content, inner)
 
         // A REAL_PATH core's copy into the cache gets the unpack's toast: only one that outlasts the delay shows it.
         var copyToast: android.widget.Toast? = null
@@ -1379,7 +1401,8 @@ class GameActivity : ComponentActivity() {
                 val graphics = GraphicsApiOptions.resolve(frontendValues[GraphicsApiOptions.KEY], descriptor?.vulkan, { LibretroDroid.isVulkanSupported() }, vulkanFailed)
                 launchedOnVulkan = graphics.preferVulkan
                 launchEnv = graphics.env
-                graphicsForcedOptions = graphics.forcedOptions.keys
+                // netplay link: the link options are this launch's too (a session's port, mode and peer): never saved.
+                graphicsForcedOptions = graphics.forcedOptions.keys + linkOptions.keys
                 GLRetroViewData(this@GameActivity).apply {
                     coreFilePath = coreFile
                     systemDirectory = systemDir.absolutePath
@@ -1611,7 +1634,7 @@ class GameActivity : ComponentActivity() {
         }
         // Debug builds: a file named simulate_vulkan_fail in the app's files dir makes a Vulkan launch take the fallback
         // as a failed bridge setup would (no phone at hand fails it): `adb shell run-as <package> touch files/simulate_vulkan_fail`.
-        if (BuildConfig.DEBUG && launchedOnVulkan && !intent.hasExtra(EXTRA_NETPLAY_ROLE) && File(filesDir, SIMULATE_VULKAN_FAIL).exists()) {
+        if (BuildConfig.DEBUG && launchedOnVulkan && (!intent.hasExtra(EXTRA_NETPLAY_ROLE) || netplayLocal) && File(filesDir, SIMULATE_VULKAN_FAIL).exists()) {
             relaunchOnGles()
         }
     }
@@ -1677,8 +1700,9 @@ class GameActivity : ComponentActivity() {
                     loadFailure(lines)?.let { fail(it); return@collect }
                 }
                 if (code == GLRetroView.ERROR_GL_NOT_COMPATIBLE && VulkanFallback.relaunchOnGles(launchedOnVulkan)) {
-                    // netplay: a relaunch would start without the session (it is gone), so the dialog says what to do.
-                    if (intent.hasExtra(EXTRA_NETPLAY_ROLE)) {
+                    // netplay: a relaunch would start without the session (it is gone), so the dialog says what to do. An
+                    // ended link session's relaunch ([netplayLocal]) is a plain launch, which relaunches as any other.
+                    if (intent.hasExtra(EXTRA_NETPLAY_ROLE) && !netplayLocal) {
                         fail("Vulkan could not start for this game on this device. Set Console Settings → Graphics API to OpenGL ES.")
                     } else {
                         relaunchOnGles()
@@ -1939,7 +1963,7 @@ class GameActivity : ComponentActivity() {
      */
     private fun captureN3dsSwap() {
         val view = retroView ?: return
-        if (netplay != null) return   // no core option changes mid-session, so none to undo
+        if (netplayNow != null) return   // no core option changes mid-session, so none to undo
         view.queueEvent {
             if (n3dsSwapBeforeSplit != null) return@queueEvent
             n3dsSwapBeforeSplit = runCatching {
@@ -1952,7 +1976,7 @@ class GameActivity : ComponentActivity() {
     /** 3DS leaving split: the swap values from before it ([captureN3dsSwap]) and the orientation's proportion are back. */
     private fun restoreN3dsScreen() {
         val view = retroView ?: return
-        if (netplay != null) return
+        if (netplayNow != null) return
         val stored = storedValues
         val proportion = N3dsOptions.stackedSmallProportion(isLandscape())
         view.queueEvent {
@@ -2477,7 +2501,7 @@ class GameActivity : ComponentActivity() {
 
     /** Sends Controller Type [setting] to the running core on the emulation thread (each player's port device or core option). */
     private fun sendSegaPad(setting: String) {
-        if (netplay != null) return   // netplay: the pad type is fixed for the session (startEmulator)
+        if (netplayNow != null) return   // netplay: the pad type is fixed for the session (startEmulator)
         val view = retroView
         val changes = SegaPadType.liveChanges(gameCoreId, setting, segaHeader, playerCount)
         val ports = changes.filterIsInstance<SegaPadChange.Port>()
@@ -3092,13 +3116,13 @@ class GameActivity : ComponentActivity() {
         val summary = b?.summary()
         val list = if (b != null && summary != null) b.list().sortedBy(appSettings.raSortOrder) else emptyList()
         val players = playerRows()
-        val tabs = GamePanelModel.tabs(raAvailable = list.isNotEmpty(), playerSlots = if (netplay != null) 0 else players?.first?.size ?: 0)
+        val tabs = GamePanelModel.tabs(raAvailable = list.isNotEmpty(), playerSlots = if (netplayNow != null) 0 else players?.first?.size ?: 0)
         val (disc, count) = discs ?: (0 to 0)
         return GamePanelState(
             header = panelHeader().copy(ra = summary.takeIf { GamePanelTab.ACHIEVEMENTS in tabs }),
             tabs = tabs,
             tab = GamePanelModel.resolveTab(dualPanelTab, tabs),
-            shortcuts = GamePanelModel.shortcuts(count, disc, secondScreens.current.value != null, appSettings.secondScreen, netplay != null),
+            shortcuts = GamePanelModel.shortcuts(count, disc, secondScreens.current.value != null, appSettings.secondScreen, netplayNow != null),
             achievements = list,
             badges = b?.badges.orEmpty(),
             players = players?.first.orEmpty(),
@@ -3137,7 +3161,7 @@ class GameActivity : ComponentActivity() {
      */
     private fun swapDisc() {
         val view = retroView ?: return
-        if (!gameReady || resumePending || netplay != null) return
+        if (!gameReady || resumePending || netplayNow != null) return
         val (current, count) = discs ?: return
         if (count < 2) return
         val next = GamePanelModel.nextDisc(current, count)
@@ -3162,7 +3186,7 @@ class GameActivity : ComponentActivity() {
      * menu and the dual-screen panel. Not before the game runs, nor in netplay (no disc swaps there).
      */
     private fun refreshDiscs() {
-        val view = retroView?.takeIf { gameReady && netplay == null } ?: return
+        val view = retroView?.takeIf { gameReady && netplayNow == null } ?: return
         lifecycleScope.launch {
             val (count, current) = withContext(Dispatchers.IO) {
                 runCatching { view.getAvailableDisks() to view.getCurrentDisk() }
@@ -3650,8 +3674,11 @@ class GameActivity : ComponentActivity() {
             initialSlot = (lastSlotCache ?: saveStates?.lastSlot()?.also { lastSlotCache = it } ?: 1) - 1,
         ).also {
             it.setStatus(configSource); it.cheatsAvailable = cheatsSupported
-            // netplay: the root is "Leave netplay?" only; Continue / Quit once the session has ended
-            if (netplay != null) { it.netplay = true; it.netplayEnded = netplayEnded; it.refresh() }
+            // netplay: the root is "Leave netplay?" only; Continue / Quit once the session has ended. An ended link
+            // session's game is a local one ([netplayNow] null): the normal root.
+            if (netplayNow != null) {
+                it.netplay = true; it.netplayLink = netplay?.endsAsLocalGame == true; it.netplayEnded = netplayEnded; it.refresh()
+            }
         }
         if (retroView != null) {
             // Re-listed on every open so a bundled tree swapped in since launch is picked up; on IO, the
@@ -3820,8 +3847,9 @@ class GameActivity : ComponentActivity() {
             MenuEffect.Quit -> quitWithAutoState(chosen = true)
             // Quit's "Quit": the battery save as ever, the resume point on disk left as it is.
             MenuEffect.QuitWithoutResume -> quitWithAutoState(chosen = true, autoState = false)
-            // netplay: DISCONNECT and shut the engine down (off main), then quit; saveStates is null: no auto state.
-            MenuEffect.LeaveNetplay -> { netplayGame?.leave(); quitWithAutoState(chosen = true) }
+            // netplay: DISCONNECT and shut the engine down (off main), then quit; saveStates is null: no auto state. A
+            // link session ends the link instead and plays on, the menu open on the normal root.
+            MenuEffect.LeaveNetplay -> if (netplay?.endsAsLocalGame == true) leaveLink() else { netplayGame?.leave(); quitWithAutoState(chosen = true) }
             is MenuEffect.SaveSlot -> saveToSlot(effect.slot)
             is MenuEffect.LoadSlot -> loadFromSlot(effect.slot)
             is MenuEffect.ToggleMute -> toggleMute(effect.id)
@@ -3900,7 +3928,7 @@ class GameActivity : ComponentActivity() {
      * [withCoreOptions] read sees them.
      */
     private fun applyOptions(vars: List<Variable>) {
-        if (netplay != null) return   // netplay: no core option changes mid-session (the other device would not follow)
+        if (netplayNow != null) return   // netplay: no core option changes mid-session (the other device would not follow)
         val view = retroView ?: return
         if (vars.isEmpty()) return
         view.queueEvent { runCatching { view.updateVariables(*vars.toTypedArray()) }.onFailure { NxLog.w("GameActivity", "setting options failed", it) } }
@@ -4332,10 +4360,12 @@ class GameActivity : ComponentActivity() {
                 if (netplayPillShown) notifications.hideProgress()
                 netplayPillShown = false
                 notifications.push(notice.text, null, NETPLAY_NOTICE_MS, now)
-                // The ended session holds no frames: an open menu pauses the game as for any other launch.
-                if (menuOpen) retroView?.frameSpeed = 0
-                netplayEnded = true
-                menuModel?.let { it.netplayEnded = true; it.refresh(); menuState.value = it.state }
+                if (netplay?.endsAsLocalGame == true) linkEnded() else {
+                    // The ended session holds no frames: an open menu pauses the game as for any other launch.
+                    if (menuOpen) retroView?.frameSpeed = 0
+                    netplayEnded = true
+                    menuModel?.let { it.endNetplay(local = false); menuState.value = it.state }
+                }
             }
             is NetplayNotice.Failed -> {
                 if (netplayPillShown) notifications.hideProgress()
@@ -4344,6 +4374,68 @@ class GameActivity : ComponentActivity() {
             }
         }
         publishNotifications()
+    }
+
+    /**
+     * netplay link: Leave. The link ends and the game plays on ([linkEnded]); the menu stays open on the normal root and
+     * the player leaves later with Quit. A GBA link's engine sends DISCONNECT and shuts down off main; [NetplayRun.leave]
+     * detaches it first, so no Ended notice follows. GB link has no engine: gambatte's network serial stops on its mode's
+     * variable update, read at the next frame (the menu holds frames, so on Continue). Set past [applyOptions]' guard and
+     * not stored: the link options are this launch's ([graphicsForcedOptions]), never the user's config.
+     */
+    private fun leaveLink() {
+        netplayGame?.leave()
+        if (netplayPillShown) { notifications.hideProgress(); netplayPillShown = false; publishNotifications() }   // the ticker is gone
+        if (netplay?.let { NetplayCores.link(it.coreId) } == NetplayLinkKind.GBLINK) retroView?.let { view ->
+            val off = Variable(NetplayLinkOptions.GB_MODE, NetplayLinkOptions.GB_OFF)
+            view.queueEvent { runCatching { view.updateVariables(off) }.onFailure { NxLog.w("GameActivity", "ending the GB link failed", it) } }
+        }
+        linkEnded()
+    }
+
+    /**
+     * netplay link: the session is over, from the other side or the network ([NetplayNotice.Ended]) or by Leave
+     * ([leaveLink]): the game is a local one from here ([playLocally]); an open menu stays open, paused, and becomes the
+     * normal root on the slot a normal launch shows.
+     */
+    private fun linkEnded() {
+        // The link holds no frames now: an open menu pauses the game as for any other launch.
+        if (menuOpen) retroView?.frameSpeed = 0
+        netplayEnded = true
+        playLocally()
+        menuModel?.let {
+            it.cheatsAvailable = cheatsSupported
+            lastSlotCache?.let { slot -> it.showSlot(slot - 1) }
+            it.endNetplay(local = true)
+            menuState.value = it.state
+        }
+    }
+
+    /**
+     * netplay link: the session ended (the other player left, it dropped, or this player left). Each player ran their own game on their own
+     * save (never a copy: [NetplaySession.onCopy]), so from here it is the normal launch of that game: save states, the
+     * auto state on Quit and on stop, cheats (loaded now, the saved ones applied), Options and the panel, as [netplayNow]
+     * is null. The link engine is idle already (or shutting down after Leave); [netplay] stays for onDestroy (the engine release, the USB cable).
+     * Achievements need nothing here: a link session ran them from launch ([NetplaySession.allowsAchievements]).
+     */
+    private fun playLocally() {
+        if (netplayLocal) return
+        netplayLocal = true
+        saveStates = SaveStates(sdRoot, paths).also { ss ->
+            // Read now, as openMenu does for a menu opened before the first read: an open menu shows this slot.
+            lastSlotCache = ss.lastSlot()
+        }
+        refreshSlots()
+        localCheats?.let { load ->
+            localCheats = null
+            val job = load().also { cheatsLoad = it }
+            lifecycleScope.launch {
+                job.join()
+                if (!quitting && cheatSet.enabledCodes().isNotEmpty()) retroView?.let(::applyCheats)
+            }
+        }
+        refreshDiscs()
+        refreshDualPanel()
     }
 
     // ------------------------------------------------------------------ achievements

@@ -111,7 +111,11 @@ sealed interface MenuEffect {
     data object Quit : MenuEffect
     /** Quit without the auto state: the last resume point stays as it is (the battery save is still written). */
     data object QuitWithoutResume : MenuEffect
-    /** netplay: Leave on the "Leave netplay?" root; the host ends the session and quits without an auto state. */
+    /**
+     * netplay: Leave on the "Leave netplay?" root. Lockstep: the host ends the session and quits without an auto state.
+     * A link session ([InGameMenuModel.netplayLink]): the host ends the link and the game plays on, the menu open on the
+     * normal root once the host calls [InGameMenuModel.endNetplay].
+     */
     data object LeaveNetplay : MenuEffect
     data class SaveSlot(val slot: Int) : MenuEffect
     data class LoadSlot(val slot: Int) : MenuEffect
@@ -204,8 +208,33 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
      */
     var netplayEnded: Boolean = false
 
+    /**
+     * netplay: the session is a link one (GB/GBC/GBA, each player on their own save): Leave ends the link and the game
+     * plays on as a local one, which the root's footer says. Set with [netplay], then [refresh].
+     */
+    var netplayLink: Boolean = false
+
     /** Rebuilds the root page after a host-side flag ([netplay]) changed. */
     fun refresh() = refreshRoot()
+
+    /**
+     * netplay: the session ended. [local] (a link session, [com.nxredux.mobile.netplay.NetplaySession.endsAsLocalGame]):
+     * the game is a normal local one from now on, so the full root and the panel beside it; otherwise the plain
+     * Continue / Quit ([netplayEnded]). The host sets [cheatsAvailable] first.
+     */
+    fun endNetplay(local: Boolean) {
+        if (!netplay) return
+        if (local) { netplay = false; netplayEnded = false } else netplayEnded = true
+        refreshRoot()
+    }
+
+    /**
+     * The Save / Load slot shown, 0-based: what the constructor's initialSlot is for a menu that was open before the
+     * game had save states (a netplay link session that became a local game).
+     */
+    fun showSlot(index: Int) {
+        state = state.copy(slotIndex = index.coerceIn(0, slotCount - 1))
+    }
 
     /** False for a core that ignores cheats: no Cheats row. */
     var cheatsAvailable: Boolean = true
@@ -943,7 +972,7 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
     ) else if (netplay) MenuPage(
         PageKind.Root, NetplayText.LEAVE_TITLE,
         listOf(MenuRow.Action(NetplayText.CONTINUE, MenuAction.CONTINUE), MenuRow.Action(NetplayText.LEAVE, MenuAction.LEAVE_NETPLAY)),
-        footer = NetplayText.LEAVE_TEXT,
+        footer = if (netplayLink) NetplayText.LEAVE_LINK_TEXT else NetplayText.LEAVE_TEXT,
     ) else MenuPage(
         PageKind.Root, gameTitle,
         buildList {

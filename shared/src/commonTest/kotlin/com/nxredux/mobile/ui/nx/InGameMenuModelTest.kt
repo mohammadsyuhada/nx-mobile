@@ -1511,6 +1511,124 @@ class InGameMenuModelTest {
         assertNull(m.state.panelFocus)
     }
 
+    @Test fun an_ended_lockstep_session_stays_continue_quit() {
+        val m = model()
+        m.netplay = true
+        m.refresh()
+        m.endNetplay(local = false)
+        assertEquals(listOf("Continue", "Quit"), m.state.page.rows.map { it.label })
+        assertFalse(m.panelBeside)
+        m.press(NxButton.DOWN)
+        assertEquals(MenuEffect.QuitWithoutResume, m.press(NxButton.A))   // no states: no auto state
+    }
+
+    @Test fun an_ended_link_session_is_the_normal_root() {
+        val m = model().also { it.cheatsAvailable = false }   // as in a session (no cheats)
+        m.setPlayers(listOf(p1), listOf(padA))
+        m.setAchievements(listOf(ach(1, RaAchievementState.UNLOCKED)), 1 to 1, RaSortOrder.DEFAULT, emptySet(), BADGES)
+        m.netplay = true
+        m.refresh()
+        m.press(NxButton.DOWN)   // on Leave
+        m.cheatsAvailable = true   // the host: the local game's cheats
+        m.endNetplay(local = true)
+        assertFalse(m.netplay)
+        assertFalse(m.netplayEnded)
+        assertEquals("Tetris", m.state.page.title)
+        assertEquals(listOf("Continue", "Save", "Load", "Options", "Quit"), m.state.page.rows.map { it.label })
+        assertEquals(0, m.state.page.selected)   // the Leave row is gone: back to Continue
+        assertTrue(m.panelBeside)
+        assertEquals(listOf(GamePanelTab.SHORTCUTS, GamePanelTab.ACHIEVEMENTS), m.panelState().tabs)
+        // Quit as a normal launch's: the resume state with it.
+        m.press(NxButton.DOWN); m.press(NxButton.DOWN); m.press(NxButton.DOWN); m.press(NxButton.DOWN)
+        assertEquals("Quit", m.state.page.rows[m.state.page.selected].label)
+        assertEquals(MenuEffect.Quit, m.press(NxButton.A))
+    }
+
+    @Test fun an_ended_link_session_offers_options_and_cheats() {
+        val m = model().also { it.cheatsAvailable = false }
+        m.netplay = true
+        m.refresh()
+        m.cheatsAvailable = true
+        m.endNetplay(local = true)
+        m.press(NxButton.DOWN); m.press(NxButton.DOWN); m.press(NxButton.DOWN)   // Options
+        m.press(NxButton.A)
+        assertEquals(PageKind.Options, m.state.page.kind)
+        assertTrue(m.state.page.rows.any { it.label == "Cheats" })
+    }
+
+    @Test fun a_link_session_with_achievements_shows_them_only_once_it_ends() {
+        val m = model().also { it.cheatsAvailable = false }
+        m.setAchievements(listOf(ach(1, RaAchievementState.UNLOCKED)), 1 to 1, RaSortOrder.DEFAULT, emptySet(), BADGES)
+        m.netplay = true
+        m.netplayLink = true
+        m.refresh()
+        // Live: still Continue / Leave, no panel beside (the second screen's panel is not the menu's).
+        assertEquals(listOf("Continue", "Leave"), m.state.page.rows.map { it.label })
+        assertFalse(m.panelBeside)
+        m.endNetplay(local = true)
+        assertTrue(m.panelBeside)
+        assertEquals(listOf(GamePanelTab.SHORTCUTS, GamePanelTab.ACHIEVEMENTS), m.panelState().tabs)
+    }
+
+    @Test fun ending_netplay_outside_a_session_changes_nothing() {
+        val m = model()
+        val before = m.state.page.rows.map { it.label }
+        m.endNetplay(local = false)
+        assertFalse(m.netplayEnded)
+        assertEquals(before, m.state.page.rows.map { it.label })
+    }
+
+    @Test fun a_link_session_root_says_leaving_keeps_you_playing() {
+        val m = model()
+        m.netplay = true
+        m.netplayLink = true
+        m.refresh()
+        assertEquals("Leave netplay?", m.state.page.title)
+        assertEquals(listOf("Continue", "Leave"), m.state.page.rows.map { it.label })
+        assertEquals("Leaving ends the link. You keep playing on your own save.", m.state.page.footer)
+    }
+
+    @Test fun a_lockstep_session_root_says_leaving_ends_the_session() {
+        val m = model()
+        m.netplay = true
+        m.refresh()
+        assertEquals("Leaving ends the netplay session.", m.state.page.footer)
+        m.press(NxButton.DOWN)
+        assertEquals(MenuEffect.LeaveNetplay, m.press(NxButton.A))   // the host leaves and quits
+        m.endNetplay(local = false)   // an ended lockstep game stays Continue / Quit
+        assertEquals(listOf("Continue", "Quit"), m.state.page.rows.map { it.label })
+    }
+
+    @Test fun leave_in_a_link_session_plays_on_with_the_normal_root() {
+        val m = plain(InGameMenuModel("Tetris", slotCount = 8, initialSlot = 0)).also { it.cheatsAvailable = false }
+        m.netplay = true
+        m.netplayLink = true
+        m.refresh()
+        m.press(NxButton.DOWN)
+        assertEquals(MenuEffect.LeaveNetplay, m.press(NxButton.A))
+        // The host ends the link: cheats, the last-used slot, then the local root; the menu stays open.
+        m.cheatsAvailable = true
+        m.showSlot(4)
+        m.endNetplay(local = true)
+        assertEquals(PageKind.Root, m.state.page.kind)
+        assertEquals(1, m.state.stack.size)
+        assertEquals("Tetris", m.state.page.title)
+        assertEquals(listOf("Continue", "Save", "Load", "Options", "Quit"), m.state.page.rows.map { it.label })
+        assertEquals("", m.state.page.footer)
+        assertTrue(m.panelBeside)
+        assertEquals(4, m.state.slotIndex)
+        m.press(NxButton.DOWN)   // Save: the last-used slot
+        assertEquals(MenuEffect.SaveSlot(5), m.press(NxButton.A))
+    }
+
+    @Test fun show_slot_stays_in_range() {
+        val m = model()
+        m.showSlot(20)
+        assertEquals(7, m.state.slotIndex)
+        m.showSlot(-1)
+        assertEquals(0, m.state.slotIndex)
+    }
+
     @Test fun panel_header_and_a_new_console_tag_bump_the_panel_version() {
         val m = model()
         val v0 = m.state.panelVersion

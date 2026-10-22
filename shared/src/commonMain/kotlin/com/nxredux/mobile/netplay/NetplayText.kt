@@ -63,6 +63,7 @@ object NetplayText {
     }
     const val LEAVE_TITLE = "Leave netplay?"
     const val LEAVE_TEXT = "Leaving ends the netplay session."
+    const val LEAVE_LINK_TEXT = "Leaving ends the link. You keep playing on your own save."
     const val CONTINUE = "Continue"
     const val LEAVE = "Leave"
     const val ENDED = "Netplay ended"

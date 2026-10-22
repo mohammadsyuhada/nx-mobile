@@ -12,6 +12,8 @@ object NetplayLinkOptions {
     const val GB_PORT_KEY = "gambatte_gb_link_network_port"
     const val GB_SERVER = "Network Server"
     const val GB_CLIENT = "Network Client"
+    /** gambatte re-reads the mode on a variable update: this one stops its network serial (Leave in a GB link session). */
+    const val GB_OFF = "Not Connected"
     const val GB_PORT = 56400
 
     fun gbIpKey(digit: Int) = "gambatte_gb_link_network_server_ip_$digit"

@@ -61,6 +61,19 @@ data class NetplaySession(
 ) {
     /** A link session (GB/GBC/GBA) never plays on a copy: each player keeps their own save, which a trade needs. */
     val onCopy: Boolean get() = !NetplayCores.isLink(coreId) && (emptySaves || NetplaySaves.playsOnCopy(role, coreId, folderCoreId))
+
+    /**
+     * Once the session ends, the game is a normal local one: a link session's (each player runs their own game on their
+     * own save, nothing is synced from the host). A lockstep session's game is the host's synced state: it stays a
+     * netplay game (Continue / Quit, no states, options or cheats).
+     */
+    val endsAsLocalGame: Boolean get() = NetplayCores.isLink(coreId)
+
+    /**
+     * RetroAchievements run as in a normal launch: a link session's (each player's game is their own, on their own save,
+     * so an unlock is theirs). A lockstep session has none: the client plays the host's synced state.
+     */
+    val allowsAchievements: Boolean get() = endsAsLocalGame
 }
 
 /** The browse filter: which discovery packets become a [FoundHost]. Pure, so every platform filters alike. */
