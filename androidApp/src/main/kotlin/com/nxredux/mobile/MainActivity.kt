@@ -4,12 +4,15 @@ import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.hardware.input.InputManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
+import android.view.Display
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -39,6 +42,9 @@ import com.nxredux.mobile.achievements.AchievementsService
 import com.nxredux.mobile.gametime.GameTimeService
 import com.nxredux.mobile.gametime.LazyGameTimeData
 import com.nxredux.mobile.launcher.AndroidAppLauncher
+import com.nxredux.mobile.launcher.TopScreenHost
+import com.nxredux.mobile.launcher.currentDisplayId
+import com.nxredux.mobile.launcher.topScreenDisplay
 import com.nxredux.mobile.netplay.AndroidNetplay
 import com.nxredux.mobile.netplay.NetplaySessionDir
 import com.nxredux.mobile.netplay.usb.UsbCables
@@ -48,7 +54,9 @@ import com.nxredux.mobile.runner.AndroidUserDataStore
 import com.nxredux.mobile.runner.ArcadeSetsAsset
 import com.nxredux.mobile.runner.Archives
 import com.nxredux.mobile.runner.AssetCoreOptionSource
+import com.nxredux.mobile.runner.BottomScreen
 import com.nxredux.mobile.runner.ContentRef
+import com.nxredux.mobile.runner.DualScreen
 import com.nxredux.mobile.runner.LibretroRunner
 import com.nxredux.mobile.runner.NaomiSetsAsset
 import com.nxredux.mobile.runner.NdsRenderer
@@ -77,6 +85,7 @@ import com.nxredux.mobile.storage.SafTree
 import com.nxredux.mobile.sync.DeviceSyncs
 import com.nxredux.mobile.tools.CheatDbService
 import com.nxredux.mobile.ui.App
+import com.nxredux.mobile.ui.MenuTopScreen
 import com.nxredux.mobile.ui.AppDeps
 import com.nxredux.mobile.ui.AppState
 import com.nxredux.mobile.ui.OnboardingStep
@@ -205,6 +214,18 @@ class MainActivity : ComponentActivity(), FolderPicker {
     private val secondScreens by lazy { SecondScreens(this) }   // onboarding's Bottom screen step asks it
     /** The Bottom screen step's button on the built-in second screen ([syncBottomScreenPrompt]); null while not shown. */
     private var bottomScreenPrompt: SecondScreenPresentation? = null
+    /** The main menu's window on the second display ([syncMenuScreen]): the top screen, or the menu itself; null while not shown. */
+    private var menuScreen: SecondScreenPresentation? = null
+    /** A failed [showMenuScreen] looks again shortly ([retryMenuScreen]): the game's own window may still be on the display. */
+    private val menuRetry = Runnable { menuRetryPending = false; syncMenuScreen() }
+    private var menuRetryPending = false
+    private var menuRetries = 0
+    /** [menuScreen] has the menu ([App]) and this window the top screen ([MenuTopScreen]); read by both contents. */
+    private val menuOnSecond = mutableStateOf(false)
+    /** A game is starting ([LibretroRunner.beforeLaunch]): the second display stays clear for it until the menu resumes. */
+    private var launching = false
+    /** Between onResume and onPause: [reclaimKeyFocus] must not pull the task forward from behind another window. */
+    private var resumed = false
     private var inFront = false
     private lateinit var launcher: AndroidAppLauncher
     /**
@@ -309,6 +330,8 @@ class MainActivity : ComponentActivity(), FolderPicker {
         settings = AndroidAppSettings(this)
         // Launcher mode (this instance is the home task's): games get their own task; otherwise they share this one.
         val runner = LibretroRunner(this) { asHome }
+        runner.beforeLaunch = { launching = true; syncMenuScreen() }   // GameActivity takes the display; nothing stays behind the game
+        runner.launchFailed = { launching = false; syncMenuScreen() }   // no game after all: the menu's second screen comes back
         val indexStore = AndroidLibraryIndexStore(this)
         val glesVersion = getSystemService(ActivityManager::class.java).deviceConfigurationInfo.reqGlEsVersion
         // An import refuses while a sync runs; a sync refuses while an import runs (both write saves).
@@ -359,7 +382,12 @@ class MainActivity : ComponentActivity(), FolderPicker {
             scope,
         )
         // Settings shows the dual-screen rows only with a second screen. Only while started: stop() clears `current`, which is not a removal.
-        scope.launch { secondScreens.current.collect { if (inFront) state.onSecondScreenChanged(it != null) } }
+        scope.launch {
+            secondScreens.current.collect {
+                if (inFront) state.onSecondScreenChanged(it != null)
+                syncMenuScreen()
+            }
+        }
         usbConsent = { consent: Intent ->
             runOnUiThread { runCatching { vpnConsent.launch(consent) }.onFailure { UsbCables.get(this).onConsent(false) } }
         }.also { UsbCables.get(this).askConsent = it }
@@ -382,10 +410,31 @@ class MainActivity : ComponentActivity(), FolderPicker {
             // included), so the Pad layout page edits the layouts a game will draw.
             val padScreen = PadScreen.of(LocalConfiguration.current.smallestScreenWidthDp.toFloat())
             LaunchedEffect(padScreen) { state.onPadScreen(padScreen) }
-            CompositionLocalProvider(LocalPosture provides posture.value) { App(state, ::pad) }
+            // One App at a time: with the menu on the second display ([syncMenuScreen]) this window has the top screen.
+            CompositionLocalProvider(LocalPosture provides posture.value) { if (menuOnSecond.value) MenuTopScreen(state) else App(state, ::pad) }
         }
         collectPosture()
-        scope.launch { state.screen.collect { syncBottomScreenPrompt() } }
+        // Dual mode: apps open on the top screen; one there takes our window on that display down until it leaves.
+        launcher.topDisplay = ::appTopDisplay
+        TopScreenHost.onChange = topScreenChanged
+        // Every screen change, Settings → Second screen and Bottom screen included (their rows change with them).
+        scope.launch { state.screen.collect { syncSecondScreen() } }
+    }
+
+    /**
+     * Where an app opens ([AndroidAppLauncher.topDisplay]): in dual mode the display without the menu; else null. An app
+     * on the top screen counts as dual mode (a game list turns it off meanwhile, [syncMenuScreen]).
+     */
+    private fun appTopDisplay(): Int? {
+        val second = secondScreens.current.value
+        val dual = state.dualMenu.value || TopScreenHost.active
+        return topScreenDisplay(dual, second != null && menuOnSecondFor(second), currentDisplayId(), second?.displayId)
+    }
+
+    /** The second display's one owner: onboarding's prompt while its step shows, else the main menu's screen. */
+    private fun syncSecondScreen() {
+        syncBottomScreenPrompt()
+        syncMenuScreen()
     }
 
     /**
@@ -399,6 +448,7 @@ class MainActivity : ComponentActivity(), FolderPicker {
         bottomScreenPrompt?.dismiss()
         bottomScreenPrompt = null
         if (display == null) return
+        hideMenuScreen()   // the prompt owns the display while it shows
         val prompt = SecondScreenPresentation(this, display)
         val colors = nxColorsFor(settings.accent, settings.secondaryAccent)
         prompt.theme = { content -> NxTheme(colors) { content() } }
@@ -407,11 +457,125 @@ class MainActivity : ComponentActivity(), FolderPicker {
         prompt.setOnDismissListener {
             if (bottomScreenPrompt !== prompt) return@setOnDismissListener   // syncBottomScreenPrompt's own dismiss
             bottomScreenPrompt = null
-            window.decorView.post { syncBottomScreenPrompt() }
+            window.decorView.post { syncSecondScreen() }
         }
         // The display may have gone meanwhile: the step still works from the main screen.
         runCatching { prompt.show() }.onSuccess { bottomScreenPrompt = prompt }
             .onFailure { NxLog.w("NXAPP", "bottom screen prompt: ${it.message}") }
+    }
+
+    /**
+     * The main menu on both screens while the app is in front with Settings → Second screen on, a second display there and
+     * no onboarding prompt on it ([AppState.onDualMenu]). The bottom screen (Settings → Bottom screen, else the shapes, as
+     * a game's [DualScreen.pictureOn]) has the menu, the other the top screen: usually this window keeps [App] and the
+     * presentation shows [MenuTopScreen]; with the menu on the second display the two swap ([menuOnSecond]). The
+     * presentation takes key focus only while it has the focused screen and a text prompt is open, so the keyboard types
+     * there. Gone while a game starts ([launching]), an app opened on the top screen runs there ([TopScreenHost.active]:
+     * the presentation would cover it) or the app stops. Dual mode follows the window: on only once it is shown (a failed
+     * show leaves the menu whole on this screen), kept through [launching] so the cross-fade stays, and through an app on
+     * top so the menu keeps its shape, except on a game list: its list is on the top screen, so this one shows it whole.
+     * That display gone or Second screen off lets go of the app on top ([TopScreenHost.release]).
+     */
+    private fun syncMenuScreen() {
+        if (!::state.isInitialized) return
+        val display = secondScreens.current.value
+        val active = inFront && settings.secondScreen && display != null && bottomScreenPrompt == null
+        if (TopScreenHost.active && inFront && (!settings.secondScreen || display?.displayId != TopScreenHost.heldDisplay)) TopScreenHost.release(this)
+        val appOnTop = TopScreenHost.active
+        val wanted = display.takeIf { active && !launching && !appOnTop }
+        if (wanted == null) cancelMenuRetry()
+        if (menuScreen?.display?.displayId != wanted?.displayId) {
+            hideMenuScreen()
+            // One try per pending retry: the several syncs of a resume (start, resume, display change) must not each add a window.
+            if (wanted != null && !menuRetryPending) {
+                if (showMenuScreen(wanted)) menuRetries = 0 else retryMenuScreen()
+            }
+        }
+        state.onDualMenu(active && (launching || (appOnTop && state.screen.value !is Screen.Games) || menuScreen != null))
+        val shown = menuScreen ?: return
+        val onSecond = menuOnSecondFor(shown.display)
+        if (onSecond != menuOnSecond.value) {
+            // The activity drops its App before the presentation composes one (and back): one App at a time.
+            menuOnSecond.value = onSecond
+            shown.showPanel(if (onSecond) ({ App(state, ::pad) }) else ({ MenuTopScreen(state) }))
+        }
+        // The focused screen: the top screen's list on a game list, the menu everywhere else.
+        val screen = state.screen.value
+        val hostsFocus = if (onSecond) screen !is Screen.Games else screen is Screen.Games
+        val focusable = hostsFocus && state.textEntryOpen   // any text field App or the top screen can show
+        val handBack = shown.focusable && !focusable
+        shown.focusable = focusable
+        if (handBack) reclaimKeyFocus()
+    }
+
+    /**
+     * The prompt on the second display closed after taking key focus there (a tap on it raised that display): this window
+     * is named focused again, but its display stays below the second one, so input gives it no key focus (keys go
+     * nowhere, then an ANR) until something raises it. Moving this task to the front raises it.
+     */
+    private fun reclaimKeyFocus() {
+        if (!resumed) return   // split screen or freeform with another app in front: leave it there
+        val tasks = getSystemService(ActivityManager::class.java)?.appTasks ?: return
+        val own = tasks.firstOrNull { t ->
+            runCatching { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) t.taskInfo?.taskId else @Suppress("DEPRECATION") t.taskInfo?.persistentId }
+                .getOrNull() == taskId
+        }
+        runCatching { own?.moveToFront() }.onFailure { NxLog.w("NXAPP", "menu key focus: ${it.message}") }
+    }
+
+    /** Whether the menu goes on [display] (the second): the main window as landscape against its real size, no core turning. */
+    private fun menuOnSecondFor(display: Display): Boolean {
+        val main = WindowMetricsCalculator.getOrCreate().computeCurrentWindowMetrics(this).bounds
+        val real = android.graphics.Point().also { @Suppress("DEPRECATION") display.getRealSize(it) }
+        return DualScreen.menuOnSecond(
+            maxOf(main.width(), main.height()), minOf(main.width(), main.height()), real.x, real.y,
+            rotated = false, BottomScreen.resolve(null, settings.bottomScreen),
+        )
+    }
+
+    /** Back from a game, its presentation stays on the display for a moment and the system refuses a second one: try again, for about 3 s. */
+    private fun retryMenuScreen() {
+        if (menuRetries >= 12) return
+        menuRetries++
+        menuRetryPending = true
+        window.decorView.removeCallbacks(menuRetry)
+        window.decorView.postDelayed(menuRetry, 250)
+    }
+
+    private fun cancelMenuRetry() {
+        window.decorView.removeCallbacks(menuRetry)
+        menuRetryPending = false
+        menuRetries = 0
+    }
+
+    /** Whether the window is up; a failure is logged and [retryMenuScreen] looks again. */
+    private fun showMenuScreen(display: Display): Boolean {
+        val p = SecondScreenPresentation(this, display)
+        p.showPanel { MenuTopScreen(state) }   // the usual layout; [syncMenuScreen] swaps it when the menu goes here
+        // The system dismisses it itself when the display's metrics change (or the display goes): forget it, leave dual
+        // mode at once (no list on any screen meanwhile), and look again (shape, placement).
+        p.setOnDismissListener {
+            if (menuScreen !== p) return@setOnDismissListener   // hideMenuScreen's own dismiss
+            forgetMenuScreen()
+            if (!launching) state.onDualMenu(false)
+            window.decorView.post { syncMenuScreen() }
+        }
+        return runCatching { p.show() }.onSuccess { menuScreen = p }
+            .onFailure { NxLog.w("NXAPP", "menu second screen: ${it.message}") }.isSuccess
+    }
+
+    private fun hideMenuScreen() {
+        val p = menuScreen ?: return
+        forgetMenuScreen()
+        p.dismiss()
+        // It had key focus, and this window stays in front (not when an app took the top screen: it keeps the focus).
+        if (p.focusable && inFront && !launching && !TopScreenHost.active) reclaimKeyFocus()
+    }
+
+    /** No window on the second display: this one has [App] again. */
+    private fun forgetMenuScreen() {
+        menuScreen = null
+        menuOnSecond.value = false
     }
 
     /** Flex mode from launch: the folding feature (and the hinge angle where it hides half-open), in window px. */
@@ -436,6 +600,18 @@ class MainActivity : ComponentActivity(), FolderPicker {
         if (::state.isInitialized) state.goHome()
     }
 
+    /** The menu's window has focus again: [TopScreenHost.recheck], as on resume (no resume when only the focus moved). */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) TopScreenHost.recheck(this)
+    }
+
+    /** The window's own size changed (a Fold folded or unfolded): the menu may belong on the other screen now. */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        syncMenuScreen()
+    }
+
     override fun onStart() {
         super.onStart()
         if (handOverToHome()) return   // made home (role dialog, Android's settings) while this drawer instance ran
@@ -450,6 +626,7 @@ class MainActivity : ComponentActivity(), FolderPicker {
         syncBottomScreenPrompt()
         secondScreens.start()
         if (::state.isInitialized) state.onSecondScreenChanged(secondScreens.current.value != null)   // what is there now, once, after the pause
+        syncMenuScreen()
     }
 
     /**
@@ -460,6 +637,9 @@ class MainActivity : ComponentActivity(), FolderPicker {
         super.onResume()
         if (handOverToHome()) return
         applyKeepScreenOn()
+        resumed = true
+        if (launching) { launching = false; syncMenuScreen() }   // back from the game (or a launch that never left)
+        TopScreenHost.recheck(this)   // an app on the top screen whose host is gone without a word
         // Back from Android's All files access page (or a revoke meanwhile): setup moves on, the row and the refs follow.
         if (::state.isInitialized) state.onAllFilesAccessChanged()
     }
@@ -485,9 +665,16 @@ class MainActivity : ComponentActivity(), FolderPicker {
         else window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
+    override fun onPause() {
+        resumed = false
+        super.onPause()
+    }
+
     override fun onStop() {
         inFront = false
-        syncBottomScreenPrompt()   // takes the second screen's button away
+        cancelMenuRetry()
+        launching = false   // the game has the screen, or never came: onStart shows the menu's second screen again
+        syncSecondScreen()   // takes the second screen's button and the menu's screen away
         secondScreens.stop()
         inputManager?.unregisterInputDeviceListener(inputDeviceListener)   // a no-op when onStart handed over before registering
         if (::router.isInitialized) { releaseHat(); router.releaseAll() }
@@ -516,6 +703,8 @@ class MainActivity : ComponentActivity(), FolderPicker {
         private var recents: RecentsRecorder? = null
         /** Every created instance, for [closeOtherInstances] and Device Sync's screen-on; main thread only. */
         private val live = mutableListOf<WeakReference<MainActivity>>()
+        /** [TopScreenHost.onChange]: an app took the top screen or left it; every live instance takes its window down or back. */
+        private val topScreenChanged: () -> Unit = { live.mapNotNull { it.get() }.forEach { it.syncMenuScreen() } }
         /**
          * [DeviceSyncs.screenOn]: a sync's keep-screen-on reaches every live instance (an older one resumed mid-sync must
          * hear the end too). Any thread; always posted (never run inline, even on the main thread), so reports apply in

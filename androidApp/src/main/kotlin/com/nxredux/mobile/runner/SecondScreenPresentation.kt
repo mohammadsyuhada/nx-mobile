@@ -3,6 +3,7 @@ package com.nxredux.mobile.runner
 import android.annotation.SuppressLint
 import android.app.Presentation
 import android.graphics.Color
+import android.graphics.Point
 import android.os.Build
 import android.os.Bundle
 import android.view.Display
@@ -22,12 +23,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
@@ -52,6 +56,17 @@ class SecondScreenPresentation(private val activity: ComponentActivity, display:
     /** Wraps the panel and the pill in the app's theme (colours, font); identity until set. */
     var theme: @Composable (@Composable () -> Unit) -> Unit = { it() }
 
+    /**
+     * Takes key focus, so a text field here can type (the main menu's prompt on this display); false (the default):
+     * [WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE], the buttons stay on the [activity]'s window.
+     */
+    var focusable = false
+        set(value) {
+            if (field == value) return
+            field = value
+            applyFocusable()
+        }
+
     private var panel by mutableStateOf<(@Composable () -> Unit)?>(null)
     private var panelPill by mutableStateOf(false)
 
@@ -61,8 +76,8 @@ class SecondScreenPresentation(private val activity: ComponentActivity, display:
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Never key focus: a tap here must not move the buttons off the game's window (nor Back close this window).
-        window?.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+        // No key focus unless asked ([focusable]): a tap here must not move the buttons off the game's window (nor Back close this window).
+        applyFocusable()
         setCancelable(false)
         // Edge to edge with the bars hidden: a desktop mode's taskbar (Samsung DeX) must not cover the picture.
         window?.let { w ->
@@ -87,12 +102,19 @@ class SecondScreenPresentation(private val activity: ComponentActivity, display:
         }
         val composeView = ComposeView(context).apply {
             setContent {
-                theme {
-                    Box(Modifier.fillMaxSize()) {
-                        val content = panel
-                        when {
-                            content != null -> content()
-                            panelPill -> PanelPill("Panel", Modifier.align(Alignment.BottomEnd).padding(10.dp)) { onPanelPill() }
+                // A big monitor would lay out thousands of dp wide: scale up so its short side is 720 dp (handhelds unchanged).
+                // The presentation is re-created when the display's metrics change, so this is read once per window.
+                val size = Point().also { this@SecondScreenPresentation.display.getRealSize(it) }
+                val scaled = SecondScreenScale.density(size.x, size.y, context.resources.displayMetrics.density)
+                val current = LocalDensity.current
+                CompositionLocalProvider(LocalDensity provides Density(scaled, fontScale = current.fontScale)) {
+                    theme {
+                        Box(Modifier.fillMaxSize()) {
+                            val content = panel
+                            when {
+                                content != null -> content()
+                                panelPill -> PanelPill("Panel", Modifier.align(Alignment.BottomEnd).padding(10.dp)) { onPanelPill() }
+                            }
                         }
                     }
                 }
@@ -116,8 +138,15 @@ class SecondScreenPresentation(private val activity: ComponentActivity, display:
         setContentView(root)
     }
 
-    // Should a key or a stick still arrive here, it is the game's.
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean = activity.dispatchKeyEvent(event)
+    private fun applyFocusable() {
+        val w = window ?: return
+        if (focusable) w.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) else w.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+    }
+
+    // Should a key or a stick still arrive here, it is the game's (the activity's). While [focusable] the text field here
+    // has the keys first (the keyboard's Delete and Enter); Back, and whatever it leaves, still go to the activity.
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+        (focusable && event.keyCode != KeyEvent.KEYCODE_BACK && super.dispatchKeyEvent(event)) || activity.dispatchKeyEvent(event)
 
     override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean = activity.dispatchGenericMotionEvent(ev)
 

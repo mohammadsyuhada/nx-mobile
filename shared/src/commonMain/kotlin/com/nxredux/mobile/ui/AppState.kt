@@ -165,6 +165,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -416,7 +417,7 @@ sealed interface Screen {
     data class ArtworkReset(val scopes: List<ResetScope>, val confirm: ResetScope? = null) : Screen
 }
 
-enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SECOND_SCREEN, SECOND_SCREEN_ENABLE, BOTTOM_SCREEN, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_FOLDER, IMPORT_ZIP, IMPORT_RETROARCH, IMPORT_DONE, RESET_DEFAULTS, ALL_FILES,
+enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SECOND_SCREEN_ENABLE, BOTTOM_SCREEN, PAUSE_UNFOCUSED, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_FOLDER, IMPORT_ZIP, IMPORT_RETROARCH, IMPORT_DONE, RESET_DEFAULTS, ALL_FILES,
     LAYOUT_HOME, LAYOUT_CONSOLES, LAYOUT_COLLECTIONS, LAYOUT_TOOLS, LAYOUT_GAME_LISTS, LAYOUT_TITLE_HINTS, LAYOUT_SWITCHER, TEXT_SIZE }
 
 /**
@@ -425,11 +426,11 @@ enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASS
  * Appearance, as NX Redux's main page category.
  */
 enum class SettingsSection(val label: String, val parent: SettingsSection? = null, val opener: SettingsKind? = null) {
-    LIBRARY("Library"), EMULATORS("Emulators"), APPEARANCE("Appearance"), MAIN_MENU("Layouts"), CONTROLS("Controls"), LAUNCHER("Launcher"), DEVELOPER("Developer"), ABOUT("About"),
+    LIBRARY("Library"), EMULATORS("Emulators"), APPEARANCE("Appearance"), MAIN_MENU("Layouts"), CONTROLS("Controls"),
+    // Only while a second screen is connected: Enable and Bottom screen.
+    SECOND_SCREEN("Second screen"), LAUNCHER("Launcher"), DEVELOPER("Developer"), ABOUT("About"),
     ROM_FOLDERS("ROM folders", LIBRARY, SettingsKind.FOLDERS), DEFAULT_EMULATORS("Default emulators", EMULATORS, SettingsKind.DEFAULTS),
     PAD_LAYOUT("Pad layout", CONTROLS, SettingsKind.PAD_LAYOUT), SAVES("Saves", EMULATORS, SettingsKind.SAVES),
-    // Only while a second screen is connected: Enable and Bottom screen.
-    SECOND_SCREEN("Second screen", EMULATORS, SettingsKind.SECOND_SCREEN),
     IMPORT_SAVES("Import saves", SAVES, SettingsKind.IMPORT_SAVES),
     // An import's results; Done and B go back to Saves ([AppState.leaveSubPage]), past Import saves.
     IMPORT_RESULT("Import results", IMPORT_SAVES),
@@ -497,6 +498,8 @@ private const val HOME_BUILDS_KEPT = 8
 internal const val MINIMAL_LEAVE_MS = 120L
 internal const val MINIMAL_OPEN_MS = MINIMAL_LEAVE_MS + 350L
 private const val MINIMAL_CLEAR_MS = 1_000L
+/** The details pane's achievements download only after the highlight has stayed on a game this long. */
+private const val DETAIL_RA_REST_MS = 500L
 /** A game's band stays black until the app is back in front ([AppState.onForeground]), or this long if it never left. */
 private const val MINIMAL_GAME_CLEAR_MS = 10_000L
 
@@ -786,6 +789,98 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private val _selection = MutableStateFlow(ListSelection(0, 0))
     val selection: StateFlow<ListSelection> = _selection.asStateFlow()
 
+    private val _dualMenu = MutableStateFlow(false)
+    /** The main menu is on the second display ([onDualMenu]): the preview and the game list's details live there. */
+    val dualMenu: StateFlow<Boolean> = _dualMenu.asStateFlow()
+
+    private val _secondList = MutableStateFlow<SecondList?>(null)
+    /** While [dualMenu]: the highlighted console's or collection's games (the list A would open), for the second display; else null. */
+    val secondList: StateFlow<SecondList?> = _secondList.asStateFlow()
+    private var secondListJob: Job? = null
+
+    /** The platform tells the menu is on the second display ([active]) or back on the main one. */
+    fun onDualMenu(active: Boolean) {
+        if (_dualMenu.value == active) return
+        _dualMenu.value = active
+        if (active) closeRaPanel()   // the panel is a single-screen overlay: dual mode shows the details pane instead
+        followSecondList()
+        followRaDetails()
+    }
+
+    /** What the shown [secondList] was built from: the source, the library snapshot, and for a collection its row (name and count). */
+    private data class SecondKey(val source: ListSource, val library: List<SystemFolder>, val row: MainRow?)
+    private var secondKey: SecondKey? = null
+    /** How many times the preview was built (test hook): a same-source, same-content republish must not add one. */
+    internal var secondListBuilds = 0
+        private set
+
+    /**
+     * Recomputes [secondList] from the screen and the highlighted row: a console's list at once (no I/O), a collection's
+     * after its file is read. A newer call cancels an older read. The same source over the same library snapshot (and,
+     * for a collection, the same row) keeps the shown list untouched: a rescan or a collection edit changes one of those.
+     */
+    private fun followSecondList() {
+        val source = highlightedSecondSource()
+        val row = if (source is ListSource.Collection) (_screen.value as? Screen.Systems)?.rows?.getOrNull(_selection.value.index) else null
+        val key = source?.let { SecondKey(it, systemsCache, row) }
+        if (key != null && _secondList.value?.source == source) {
+            val k = secondKey
+            if (k != null && k.source == key.source && k.library === key.library && k.row == key.row) return
+        }
+        secondListJob?.cancel()
+        secondKey = null
+        if (source == null) { _secondList.value = null; return }
+        if (source is ListSource.Console) {
+            secondListBuilds++
+            _secondList.value = SecondList(source, consoleEntries(source.systems), 0)
+            secondKey = key
+            return
+        }
+        if (_secondList.value?.source != source) _secondList.value = null
+        secondListJob = scope.launch {
+            val entries = entriesFor(source)
+            ensureActive()
+            if (highlightedSecondSource() == source) { secondListBuilds++; _secondList.value = SecondList(source, entries, 0); secondKey = key }
+        }
+    }
+
+    /** The list the highlighted row previews while [dualMenu] on Consoles / Collections; null for any other row, tab or screen. */
+    private fun highlightedSecondSource(): ListSource? {
+        val s = _screen.value as? Screen.Systems ?: return null
+        if (!_dualMenu.value || (s.category != MenuCategory.CONSOLES && s.category != MenuCategory.COLLECTIONS)) return null
+        return when (val row = s.rows.getOrNull(_selection.value.index)) {
+            is MainRow.System -> ListSource.Console(consoleGroup(row.system) ?: listOf(row.system))
+            is MainRow.Collection -> ListSource.Collection(row.name)
+            else -> null
+        }
+    }
+
+    /** A tap on game [index] of the second display's preview: opens that list as A would (B returns to the same row) on it. */
+    fun openSecondListGame(index: Int) {
+        val list = _secondList.value ?: return
+        val s = _screen.value as? Screen.Systems ?: return
+        if (loader.active || minimalPending || highlightedSecondSource() != list.source) return   // a stale preview: ignore the tap
+        when (val row = s.rows.getOrNull(_selection.value.index)) {
+            is MainRow.System -> { intendNav(NavMotion.FORWARD); openSystem(row.system, select = list.entries.getOrNull(index)?.game?.path) }
+            else -> { intendNav(NavMotion.FORWARD); rememberSelection(); showList(list.source, list.entries, index) }
+        }
+    }
+
+    /**
+     * A tap on main menu row [index]: selects it. A console or collection already opens on one tap in every style but
+     * Minimal (the UI's [com.nxredux.mobile.ui.nx.nxTap] calls [openSelected] after this), and Minimal's names take two;
+     * so on the second display's Consoles and Collections a Minimal console or collection opens here at once, highlighted
+     * or not (as A, so focus moves to the preview list). Opening here in any other style would open twice (the list,
+     * then its first game).
+     */
+    fun tapMainRow(index: Int) {
+        val s = _screen.value as? Screen.Systems
+        val opens = _dualMenu.value && s != null && (s.category == MenuCategory.CONSOLES || s.category == MenuCategory.COLLECTIONS) &&
+            styleOf(s) == MenuStyle.MINIMAL && s.rows.getOrNull(index).let { it is MainRow.System || it is MainRow.Collection }
+        select(index)
+        if (opens) openSelected()
+    }
+
     private val _tabFocus = MutableStateFlow(false)
     /**
      * The main menu's tab row has the d-pad (UP from the top of a Grid, a horizontal row or Home, or on an empty tab; a
@@ -851,6 +946,14 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** The achievements panel over a game list; null while closed. */
     val raPanel: StateFlow<RaPanel?> = _raPanel.asStateFlow()
     private var raPanelJob: Job? = null
+    private val _gameDetailRa = MutableStateFlow<RaPanel?>(null)
+    /**
+     * While [dualMenu] on a game list and signed in: the highlighted game's achievements, for the details pane on the second
+     * display (the panel's contents, without its row or detail state); else null. A game with no cached data downloads only
+     * once the highlight has rested on it for [DETAIL_RA_REST_MS], so scrolling past games requests nothing.
+     */
+    val gameDetailRa: StateFlow<RaPanel?> = _gameDetailRa.asStateFlow()
+    private var raDetailJob: Job? = null
     private var gameInfoDirty = false   // a refresh was asked for while one ran: it runs once more
     private val shelvesCache = HomeShelvesCache()   // Home's shelves while their inputs hold ([shelvesFor])
     private var gameInfoRead = false    // a [refreshGameInfo] pass has read play time: the shelves can go by play time
@@ -910,8 +1013,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             }
         }
         // The achievements panel follows the game list's selection, and closes off the game list.
-        scope.launch { _selection.collect { followRaPanel() } }
-        scope.launch { _screen.collect { if (it !is Screen.Games) closeRaPanel() else followRaPanel() } }
+        scope.launch { _selection.collect { followRaPanel(); followRaDetails(); followSecondList() } }
+        scope.launch { _screen.collect { if (it !is Screen.Games) { closeRaPanel() } else { followRaPanel() }; followRaDetails(); followSecondList() } }
         deps.achievements?.let { c ->
             scope.launch {
                 var wasBusy = false
@@ -1767,17 +1870,18 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private var secondConnected = false
 
     /**
-     * A qualifying second screen was connected or removed (the platform reports it): Settings → Emulators and an open
-     * Emulator or Game Settings page add or drop their dual-screen rows at once (the Second screen page, open, goes back). Stored values are untouched.
+     * A qualifying second screen was connected or removed (the platform reports it): the Settings root's Second screen
+     * section and an open Emulator or Game Settings page add or drop their dual-screen rows at once (the Second screen
+     * page, open, goes back to the root). Stored values are untouched.
      */
     fun onSecondScreenChanged(connected: Boolean) {
         if (secondConnected == connected) return
         secondConnected = connected
         when ((_screen.value as? Screen.Settings)?.section) {
-            SettingsSection.EMULATORS -> refreshSettings()
-            SettingsSection.SECOND_SCREEN -> if (!connected) showSettingsOn(SettingsSection.EMULATORS, SettingsKind.SAVES)   // its entry is gone: back to Emulators
+            SettingsSection.SECOND_SCREEN -> if (!connected) showSettingsMenu()   // its section is gone: back to the root
             else -> Unit
         }
+        if (_screen.value is Screen.SettingsMenu) showSettingsMenu()   // the root's sections follow
         emulatorSettings.refreshOpenPage()
     }
 
@@ -2383,6 +2487,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 val raRead = try { deps.achievements?.progressByPath().orEmpty() } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
                 try { deps.achievements?.hashesByPath()?.let { raHashes = it } } catch (e: CancellationException) { throw e } catch (e: Exception) { }
                 followRaPanel(force = true)   // the panel's game may have data now (a download just ended)
+                followRaDetails(force = true)
                 val times = read?.also { lastTimes = it } ?: lastTimes
                 val ra = raRead?.also { lastRa = it } ?: lastRa
                 _gameInfo.value = (times.keys + ra.keys).associateWith { p -> GameInfo(times[p]?.lastPlayedAt, times[p]?.totalMs, ra[p]) }
@@ -2439,6 +2544,18 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         rememberMenuSelection()
         if (tab.category == MenuCategory.TOOLS) { deps.cheatDb?.refresh(); deps.achievements?.refresh() }
         showMenu(menuScreen(tab.category))
+    }
+
+    private var loadedOnce = false
+
+    /**
+     * App's start-up [load], once per state: App composed again (moved to or from the second display) leaves the screen
+     * as it is.
+     */
+    fun loadOnce() {
+        if (loadedOnce) return
+        loadedOnce = true
+        load()
     }
 
     /**
@@ -3000,7 +3117,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     }
 
     /** The Settings root's categories on this platform ([settingsCategories]); the two-pane left pane lists the same. */
-    internal fun settingsSections(): List<SettingsSection> = settingsCategories(launcher = deps.launcher != null)
+    internal fun settingsSections(): List<SettingsSection> = settingsCategories(launcher = deps.launcher != null, secondScreen = secondConnected)
 
     private fun showSettingsMenu() {
         val sections = settingsSections()   // sub-pages open from their section
@@ -3170,7 +3287,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             SettingsRow(SettingsKind.DEFAULTS, "Default emulators"),
             SettingsRow(SettingsKind.EMULATORS, "Settings"),
             SettingsRow(SettingsKind.SAVES, "Saves"),
-        ) + if (secondConnected) listOf(SettingsRow(SettingsKind.SECOND_SCREEN, "Second screen")) else emptyList()   // absent, not disabled, without one
+            SettingsRow(SettingsKind.PAUSE_UNFOCUSED, "Pause when unfocused", if (deps.settings.pauseWhenUnfocused) "On" else "Off"),
+        )
         SettingsSection.SECOND_SCREEN -> listOf(
             SettingsRow(SettingsKind.SECOND_SCREEN_ENABLE, "Enable", if (deps.settings.secondScreen) "On" else "Off"),
             SettingsRow(SettingsKind.BOTTOM_SCREEN, "Bottom screen", bottomScreenLabel(deps.settings.bottomScreen)),
@@ -3452,13 +3570,19 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         refreshSettings()
     }
 
-    /** Emulators → Second screen: two values, so every press flips it. */
+    /** Settings → Emulators → Pause when unfocused: two values, so every press flips it. */
+    private fun flipPauseUnfocused() {
+        deps.settings.pauseWhenUnfocused = !deps.settings.pauseWhenUnfocused
+        refreshSettings()
+    }
+
+    /** Settings → Second screen → Enable: two values, so every press flips it. */
     private fun flipSecondScreen() {
         deps.settings.secondScreen = !deps.settings.secondScreen
         refreshSettings()
     }
 
-    /** Emulators → Bottom screen: Auto, Main screen, Second screen (LEFT back, RIGHT and A forward, wrapping). */
+    /** Settings → Second screen → Bottom screen: Auto, Main screen, Second screen (LEFT back, RIGHT and A forward, wrapping). */
     private fun cycleBottomScreen(step: Int) {
         val all = BottomScreen.entries
         deps.settings.bottomScreen = all[(all.indexOf(deps.settings.bottomScreen) + step).mod(all.size)]
@@ -3909,6 +4033,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     SettingsKind.PAGE_TITLE -> flipPageTitle()
                     SettingsKind.DEBUG_LOG -> flipDebugLog()
                     SettingsKind.SECOND_SCREEN_ENABLE -> flipSecondScreen()
+                    SettingsKind.PAUSE_UNFOCUSED -> flipPauseUnfocused()
                     SettingsKind.BOTTOM_SCREEN -> cycleBottomScreen(step)
                     SettingsKind.MENU_PAD -> flipMenuPad()
                     SettingsKind.BUTTON_HINTS -> flipButtonHints()
@@ -4167,10 +4292,13 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** The trophy icon: opens the panel on the highlighted game, or closes it. */
     fun toggleRaPanel() { if (_raPanel.value != null) closeRaPanel() else openRaPanel() }
 
-    /** X (or the trophy icon) on a game list: the panel on its highlighted game. Not over its menu, search or Layout dropdown. */
+    /**
+     * X (or the trophy icon) on a game list: the panel on its highlighted game. Not over its menu, search or Layout
+     * dropdown, nor while [dualMenu] (the second display's details pane shows the game's achievements).
+     */
     fun openRaPanel() {
         val s = _screen.value as? Screen.Games ?: return
-        if (!hasAchievements || s.menu != null || s.search != null || s.layoutMenu != null) return
+        if (!hasAchievements || _dualMenu.value || s.menu != null || s.search != null || s.layoutMenu != null) return
         raFetches.values.removeAll { it is RaGameFetch.Failed }   // opened again: a failed download is tried once more
         _raPanel.value = RaPanel(null, "", RaPanelContent.Loading)
         followRaPanel(force = true)
@@ -4186,35 +4314,59 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * read again. Signed out or no game: a message instead. A game with no cached data downloads in the background
      * ([RaController.fetchGame], not cancelled by the panel moving on); the panel shows it once it is cached.
      */
-    private fun followRaPanel(force: Boolean = false) {
-        val p = _raPanel.value ?: return
-        val s = _screen.value as? Screen.Games ?: return
+    private fun followRaPanel(force: Boolean = false) = followRa(false, force)
+
+    /** [followRaPanel] for the details pane ([gameDetailRa]): off unless [dualMenu] on a game list, signed in, with a highlighted game. */
+    private fun followRaDetails(force: Boolean = false) = followRa(true, force)
+
+    /** One feed for both: the panel's ([details] false) or the details pane's. The pane waits [DETAIL_RA_REST_MS] before starting a download. */
+    private fun followRa(details: Boolean, force: Boolean, rested: Boolean = false) {
+        val target = if (details) _gameDetailRa else _raPanel
+        val s = _screen.value as? Screen.Games
+        val entry = s?.entries?.getOrNull(_selection.value.index)
+        if (details && (!_dualMenu.value || entry == null || deps.achievements == null || deps.settings.raUsername.isBlank())) {
+            raDetailJob?.cancel(); raDetailJob = null
+            target.value = null
+            return
+        }
+        val p = target.value ?: (if (details) RaPanel(null, "", RaPanelContent.Loading) else return)
+        if (s == null) return
         val c = deps.achievements ?: return
-        val entry = s.entries.getOrNull(_selection.value.index)
         val path = entry?.game?.path
         if (!force && p.path == path) return
-        raPanelJob?.cancel()
+        if (details && !rested && path != null) {
+            if (force && raDetailJob?.isActive == true && p.path == path && path !in raFetches) return   // still resting on it: keep the window
+            if (!force && raFetches[path] is RaGameFetch.Failed) raFetches.remove(path)   // the highlight came back: a failed download is tried once more
+        }
+        (if (details) raDetailJob else raPanelJob)?.cancel()
         val title = entry?.shown.orEmpty()
         val keep = { content: RaPanelContent -> RaPanel(path, title, content) }
-        if (entry == null) { _raPanel.value = keep(RaPanelContent.NoData); return }
-        if (deps.settings.raUsername.isBlank()) { _raPanel.value = keep(RaPanelContent.SignedOut); return }
+        if (entry == null) { target.value = keep(RaPanelContent.NoData); return }
+        if (deps.settings.raUsername.isBlank()) { target.value = keep(RaPanelContent.SignedOut); return }
         val hash = raHashes[path] ?: (raFetches[path] as? RaGameFetch.Cached)?.hash ?: run {
-            val content = raFetchContent(c, entry.game.path) ?: return followRaPanel(force = true)   // cached at once: read it
-            _raPanel.value = keep(content)
+            if (details && !rested && entry.game.path !in raFetches) {
+                // Not asked for yet: the highlight must rest on this game before it is downloaded.
+                target.value = keep(RaPanelContent.Loading)
+                raDetailJob = scope.launch { delay(DETAIL_RA_REST_MS); followRa(true, force = true, rested = true) }
+                return
+            }
+            val content = raFetchContent(c, entry.game.path) ?: return followRa(details, force = true, rested = true)   // cached at once: read it
+            target.value = keep(content)
             return
         }
         // A re-read of the game shown keeps its rows (no Loading flash); a new game starts on its first achievement.
         val same = p.path == path && p.content is RaPanelContent.Game
-        if (!same) _raPanel.value = keep(RaPanelContent.Loading)
-        raPanelJob = scope.launch {
+        if (!same) target.value = keep(RaPanelContent.Loading)
+        val job = scope.launch {
             val list = try { c.achievements(hash).sortedBy(deps.settings.raSortOrder) } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
             val badges = try { c.badgeListing(hash) } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyMap() }
-            val now = _raPanel.value ?: return@launch
+            val now = target.value ?: return@launch
             if (now.path != path) return@launch   // the selection moved on meanwhile
             val content = RaPanelContent.Game(hash, list, badges)
-            _raPanel.value = if (same) now.copy(content = content).let { it.copy(row = it.row.coerceAtMost((it.visible.size - 1).coerceAtLeast(0))) }
+            target.value = if (same) now.copy(content = content).let { it.copy(row = it.row.coerceAtMost((it.visible.size - 1).coerceAtLeast(0))) }
                 else now.copy(content = content, row = 0, detail = false)
         }
+        if (details) raDetailJob = job else raPanelJob = job
     }
 
     /**
@@ -4230,6 +4382,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 raFetches[path] = o
                 if (o is RaGameFetch.Cached) { raHashes = raHashes + (path to o.hash); refreshGameInfo() }   // its progress in the menus too
                 if (started && _raPanel.value?.path == path) followRaPanel(force = true)
+                if (started && _gameDetailRa.value?.path == path) followRaDetails(force = true)
             }
             started = true
         }
@@ -5314,7 +5467,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     SettingsKind.PAGE_TITLE -> flipPageTitle()
                     SettingsKind.DEBUG_LOG -> flipDebugLog()
                     SettingsKind.SECOND_SCREEN_ENABLE -> flipSecondScreen()
-                    SettingsKind.SECOND_SCREEN -> { sectionSelections[s.section] = _selection.value; openSettings(SettingsSection.SECOND_SCREEN) }
+                    SettingsKind.PAUSE_UNFOCUSED -> flipPauseUnfocused()
                     SettingsKind.BOTTOM_SCREEN -> cycleBottomScreen(1)
                     SettingsKind.MENU_PAD -> flipMenuPad()
                     SettingsKind.BUTTON_HINTS -> flipButtonHints()
@@ -5587,7 +5740,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             override fun netplayOffered(entry: Listed): Boolean = this@AppState.netplay?.offers(entry) == true
             override fun openNetplay(entry: Listed) = this@AppState.openNetplay(entry)
             override val netplayInMenu: Boolean get() = !launcherChrome().netplayHint
-            override val achievementsInMenu: Boolean get() = hasAchievements && !deps.settings.gameListAchievementsPanel
+            override val achievementsInMenu: Boolean get() = hasAchievements && !deps.settings.gameListAchievementsPanel && !_dualMenu.value
             override fun openAchievements() = this@AppState.openRaPanel()
             override suspend fun canResume(entry: Listed): Boolean = deps.userData.resumeInfo(entry.system.tag, entry.game.fileName).canResume
             override fun playFromStart(entry: Listed) = this@AppState.playFromStart(entry)
@@ -6028,7 +6181,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             }
             NxButton.SELECT -> openSwitcher()
             NxButton.START -> if (_screen.value is Screen.Games) openListSearch() else openSearch()   // a game list searches its own games
-            NxButton.X -> if (_screen.value is Screen.Games) openRaPanel()   // the highlighted game's achievements
+            NxButton.X -> if (_screen.value is Screen.Games && !_dualMenu.value) openRaPanel()   // the highlighted game's achievements (the second display's list has its own details)
             NxButton.MENU -> openContextMenu()
             NxButton.L1 -> switchTab(-1)
             NxButton.R1 -> switchTab(1)
@@ -6050,9 +6203,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             is Screen.Onboarding -> s.prompt   // setup's sign-in prompt
             is Screen.ArtworkSettings -> s.signingIn || s.editingKey
             is Screen.FilePicker -> s.prompt != null
-            is Screen.Systems -> s.search != null || s.menu?.prompt.let { it is MenuPrompt.Rename || it is MenuPrompt.NewCollection || it is MenuPrompt.RenameCollection }
-            is Screen.Games -> s.search != null || s.menu?.prompt.let { it is MenuPrompt.Rename || it is MenuPrompt.NewCollection || it is MenuPrompt.RenameCollection }
-            else -> s.contextMenu?.prompt.let { it is MenuPrompt.Rename || it is MenuPrompt.NewCollection || it is MenuPrompt.RenameCollection }
+            is Screen.Systems -> s.search != null || s.menu?.prompt.isTextEntry
+            is Screen.Games -> s.search != null || s.menu?.prompt.isTextEntry
+            else -> s.contextMenu?.prompt.isTextEntry
         }
 
     /**

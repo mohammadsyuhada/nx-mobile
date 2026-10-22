@@ -17,6 +17,15 @@ class DualScreenTest {
     @Test fun mode_panel_up_for_ds() = assertEquals(DualMode.PANEL_UP, DualScreen.mode(true, true, true, true))
     @Test fun mode_panel_for_regular_game() = assertEquals(DualMode.PANEL, DualScreen.mode(true, true, false, false))
 
+    @Test fun menu_goes_on_the_second_display_when_the_main_one_is_the_picture() {
+        // The wide monitor is the picture on AUTO, so the menu stays on the phone.
+        assertFalse(DualScreen.menuOnSecond(1248, 1972, 2560, 1600, rotated = false, BottomScreen.AUTO))
+        // Bottom = main puts the picture on the second: menu stays on main.
+        assertFalse(DualScreen.menuOnSecond(1248, 1972, 2560, 1600, rotated = false, BottomScreen.MAIN))
+        // Bottom = second puts the picture on main: the menu goes to the second.
+        assertTrue(DualScreen.menuOnSecond(1248, 1972, 2560, 1600, rotated = false, BottomScreen.SECOND))
+    }
+
     @Test fun nds_split_top_main() {
         val main = DualScreen.ndsScreen(1920f, 1080f, NdsScreen.TOP).single()
         assertEquals(NdsLayout.TOP_SRC, main.src); assertFalse(main.touch)

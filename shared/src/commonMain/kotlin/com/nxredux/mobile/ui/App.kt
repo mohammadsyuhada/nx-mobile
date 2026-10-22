@@ -104,6 +104,9 @@ import com.nxredux.mobile.ui.nx.NxDialog
 import com.nxredux.mobile.ui.nx.NxLoadingOverlay
 import com.nxredux.mobile.ui.nx.NxScreenBackground
 import com.nxredux.mobile.ui.nx.NxTheme
+import com.nxredux.mobile.ui.nx.NxColors
+import com.nxredux.mobile.ui.nx.FooterMode
+import com.nxredux.mobile.ui.nx.GameDetailsPane
 import com.nxredux.mobile.ui.nx.NxButton
 import com.nxredux.mobile.ui.nx.NxTextPrompt
 import com.nxredux.mobile.ui.nx.PadEvent
@@ -142,7 +145,8 @@ fun App(state: AppState, onPadEvent: (PadEvent) -> Unit = {}) {
     val nav by state.nav.collectAsState()
     val gameInfo by state.gameInfo.collectAsState()
     val netplayPage = state.netplay?.page?.collectAsState()   // the Netplay sheet's page (null: closed); no controller, no sheet
-    LaunchedEffect(Unit) { state.load() }
+    val dualMenu by state.dualMenu.collectAsState()   // the menu is on the second display: the game list's overlays go to the top screen
+    LaunchedEffect(Unit) { state.loadOnce() }   // App may be composed again on the other display (the main menu there)
     // Settings are plain properties: every Pad theme change republishes the screen, so re-read it when the screen changes.
     val padTheme = remember(screen) { state.settings.padTheme }
     val padVibration = remember(screen) { state.settings.padVibration }   // Controls → Pad vibration, likewise
@@ -152,15 +156,7 @@ fun App(state: AppState, onPadEvent: (PadEvent) -> Unit = {}) {
     val padLayouts by state.padLayouts.collectAsState()
     val padScreen by state.padScreen.collectAsState()   // the screen this is on (a Fold's cover or inner): its own layouts
     val menuPortraitLayout = remember(padLayouts, padScreen) { PadLayouts.resolve(padLayouts, null, PadSlot(PadShape.PORTRAIT, padScreen)) }
-    // Layouts → Page title and Button hints (the launcher screens' chrome, [launcherChromeFor] below), likewise.
-    val pageTitle = remember(screen) { state.settings.menuPageTitle }
-    val buttonHints = remember(screen) { state.settings.menuButtonHints }
-    val extraInfo = remember(screen) { state.settings.menuExtraInfo }
-    val homeStats = remember(screen) { state.settings.menuHomeStats }   // Layouts → Home stats, likewise
-    val optionText = remember(screen) { state.settings.optionTextSize.ofListLabel }   // Appearance → Text size, likewise
-    val hintShown = remember(screen) { Triple(state.settings.showRecentHint, state.settings.showSearchHint, state.settings.showNetplayHint) }   // Layouts → the Recent, Search and Netplay hints, likewise
-    // Appearance → Accent and Secondary accent, live (Auto follows the accent).
-    val colors = remember(screen) { state.settings.accent to state.settings.secondaryAccent }.let { remember(it) { nxColorsFor(it.first, it.second) } }
+    val look = rememberMenuLook(state, screen)   // the accents and the launcher chrome's settings, likewise
     val controllerConnected = rememberControllerConnected()   // once, above the shell: survives rotation and pad/no-pad flips
     val touchscreen = rememberHasTouchscreen()   // for a game list's Recent, Search and Layout icons
     // Bars and cutout only, never the IME: the shell must not shrink for the keyboard (NxModal pads for it where needed).
@@ -179,7 +175,7 @@ fun App(state: AppState, onPadEvent: (PadEvent) -> Unit = {}) {
                 }
             },
             screen = { m ->
-                NxTheme(colors = colors) {
+                NxTheme(colors = look.colors) {
                     val footer = footerModeFor(controllerConnected, LocalPadBelow.current)
                     // AppState needs it too: the tab row's focus follows whether Page title's Hide is in effect.
                     LaunchedEffect(footer) { state.onFooterMode(footer) }
@@ -188,12 +184,8 @@ fun App(state: AppState, onPadEvent: (PadEvent) -> Unit = {}) {
                     val portrait = LocalPortrait.current
                     val separate = rememberSeparateController()
                     LaunchedEffect(portrait, separate) { state.onPadContext(portrait, separate) }
-                    val chrome = launcherChromeFor(pageTitle, buttonHints, footer, extraInfo, hintShown.first, hintShown.second, hintShown.third, homeStats)
                     val valueAnchor = remember { NxValueAnchor() }   // where a touch value dropdown opens
-                    CompositionLocalProvider(
-                        LocalFooterMode provides footer, LocalLauncherChrome provides chrome, LocalHasTouchscreen provides touchscreen,
-                        LocalAppIcons provides state.appIcons, LocalNxValueAnchor provides valueAnchor, LocalNxOptionText provides optionText,
-                    ) {
+                    MenuLocals(state, look, footer, touchscreen, valueAnchor) {
                         Box(m) {
                             // The window decides whether Settings splits; AppState needs it for RIGHT on a category.
                             val split = settingsSplit(LocalWindowSize.current)
@@ -219,8 +211,9 @@ fun App(state: AppState, onPadEvent: (PadEvent) -> Unit = {}) {
                                 // The page sliding out takes no taps: they would act on the page sliding in.
                                 if (!live) Box(Modifier.fillMaxSize().pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } })
                             }
-                            // The Netplay sheet over the game list it was opened on; it takes every press while it shows.
-                            netplayPage?.value?.let { p -> NetplaySheet(p, onButton = state::onButton, onSelect = { i -> state.netplay?.select(i) }) }
+                            // The Netplay sheet over the game list it was opened on; it takes every press while it shows. With the
+                            // menu on the second display it goes with the game list, to the top screen ([MenuTopScreen]).
+                            if (DualMenu.bottom(screen, dualMenu) == BottomContent.Normal) netplayPage?.value?.let { p -> NetplayOverlay(state, p) }
                             if (loading) NxLoadingOverlay(loadingMessage)
                             // An installed library's Android games question over the menu (first setup asks it as a step). A one-time
                             // answer: a scrim tap does not give it, and AppState ignores answers in its first moments.
@@ -245,6 +238,50 @@ fun App(state: AppState, onPadEvent: (PadEvent) -> Unit = {}) {
 }
 
 /**
+ * The settings the launcher screens' look reads: Appearance → Accent and Secondary accent ([colors]; Auto follows the
+ * accent), Layouts → Page title, Button hints, Extra info, Home stats and the Recent, Search and Netplay hints (the
+ * chrome, [launcherChromeFor]), and Appearance → Text size ([optionText]).
+ */
+internal data class MenuLook(
+    val colors: NxColors, val pageTitle: Boolean, val buttonHints: Boolean, val extraInfo: Boolean, val homeStats: Boolean,
+    val recentHint: Boolean, val searchHint: Boolean, val netplayHint: Boolean, val optionText: Float,
+)
+
+/** [MenuLook] from the settings. They are plain properties: every change republishes the screen, so it is re-read on each [screen]. */
+@Composable
+internal fun rememberMenuLook(state: AppState, screen: Screen): MenuLook {
+    val accents = remember(screen) { state.settings.accent to state.settings.secondaryAccent }
+    val colors = remember(accents) { nxColorsFor(accents.first, accents.second) }
+    return remember(screen, colors) {
+        val st = state.settings
+        MenuLook(
+            colors, st.menuPageTitle, st.menuButtonHints, st.menuExtraInfo, st.menuHomeStats,
+            st.showRecentHint, st.showSearchHint, st.showNetplayHint, st.optionTextSize.ofListLabel,
+        )
+    }
+}
+
+/**
+ * The CompositionLocals every launcher screen reads, for the main window's [App] and the second display's
+ * [MenuTopScreen] alike: the [footer] mode, the launcher chrome ([launcherChromeFor] from [look] and [footer]), the
+ * [touchscreen], the app icons, the touch value dropdown's [valueAnchor] and the option text size.
+ */
+@Composable
+internal fun MenuLocals(state: AppState, look: MenuLook, footer: FooterMode, touchscreen: Boolean, valueAnchor: NxValueAnchor, content: @Composable () -> Unit) {
+    val chrome = launcherChromeFor(look.pageTitle, look.buttonHints, footer, look.extraInfo, look.recentHint, look.searchHint, look.netplayHint, look.homeStats)
+    CompositionLocalProvider(
+        LocalFooterMode provides footer, LocalLauncherChrome provides chrome, LocalHasTouchscreen provides touchscreen,
+        LocalAppIcons provides state.appIcons, LocalNxValueAnchor provides valueAnchor, LocalNxOptionText provides look.optionText,
+        content = content,
+    )
+}
+
+/** The Netplay sheet over the game list it was opened on ([page]); it takes every press while it shows. */
+@Composable
+internal fun NetplayOverlay(state: AppState, page: NetplayPage) =
+    NetplaySheet(page, onButton = state::onButton, onSelect = { i -> state.netplay?.select(i) })
+
+/**
  * The wall clock for the "Today" / "2 days ago" labels: read once, then again when one of [gameInfo]'s labels turns
  * ([nextWhenChange]), so an idle menu does not keep "Today" a day on. It checks each minute (a coroutine wake, no
  * recomposition) rather than sleeping the whole span, since a suspended device's delay would lag the wall clock. Only
@@ -252,7 +289,7 @@ fun App(state: AppState, onPadEvent: (PadEvent) -> Unit = {}) {
  * turns at once.
  */
 @Composable
-private fun rememberNow(gameInfo: Map<String, GameInfo>): Long {
+internal fun rememberNow(gameInfo: Map<String, GameInfo>): Long {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val now by produceState(nowMs(), gameInfo, lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -301,6 +338,15 @@ private fun pageTransition(motion: NavMotion): ContentTransform {
  */
 @Composable
 private fun PageContent(state: AppState, page: Screen, pageSelection: State<ListSelection>, resume: State<ResumeInfo>, allInfo: Map<String, GameInfo>, live: State<Boolean>) {
+    // The menu on the second display, on a game list: the list and its overlays are on the top screen ([MenuTopScreen]);
+    // this screen has the highlighted game's details alone, full screen (no title, no hints).
+    val dualMenu by state.dualMenu.collectAsState()
+    if (page is Screen.Games && DualMenu.bottom(page, dualMenu) == BottomContent.Details) {
+        val ra by state.gameDetailRa.collectAsState()
+        val entry = page.entries.getOrNull(pageSelection.value.index)
+        GameDetailsPane(entry, entry?.let { allInfo[it.game.path] }, ra, onBack = { state.back() })
+        return
+    }
     val now = rememberNow(allInfo)
     // A game's own Game Settings is a modal over the game list it came from: that list is the page drawn here, as it was
     // (the same composition group, so its list state survives the modal), on the selection it had; the modal goes on top.
@@ -340,8 +386,8 @@ private fun PageContent(state: AppState, page: Screen, pageSelection: State<List
             is Screen.Systems -> {
                 val listBand = mainMenuListBand(s.category)   // Consoles' List band has no shade and no "N games"
                 MainMenuScreen(
-                    s, index, state::select, { state.openSelected() }, state::selectTab,
-                    onHint = state::onButton, onLongPress = { state.openContextMenu(it) },
+                    s, index, state::tapMainRow, { state.openSelected() }, state::selectTab,
+                    onSwipeSelect = state::select, onHint = state::onButton, onLongPress = { state.openContextMenu(it) },
                     info = {
                         if (!listBand.info) emptyList() else when (val row = s.rows.getOrNull(selection.value.index)) {
                             is MainRow.System -> consoleInfoLines(row)
@@ -373,39 +419,7 @@ private fun PageContent(state: AppState, page: Screen, pageSelection: State<List
                 s.menu?.let { ContextMenuOverlay(it, onButton = state::onButton, onSelect = state::menuSelect, onOpen = state::menuOpen, onDraft = state::menuDraft, onColumns = state::onMenuLayout) }
                 s.search?.let { NxTextPrompt("Search", it, state::searchDraft, onConfirm = { state.onButton(NxButton.A) }, onCancel = { state.onButton(NxButton.B) }) }
             }
-            is Screen.Games -> {
-                val raPanel by state.raPanel.collectAsState()   // the achievements panel over the list
-                val current = { s.entries.getOrNull(selection.value.index) }
-                GameListScreen(
-                    listTitle(s.source), s.entries, index,
-                    canResume = { resume.value.canResume }, menuAvailable = s.source != ListSource.Hidden,
-                    canOpen = { current().let { it != null && (s.source == ListSource.Hidden || it.system.core != null || it.system.android) } },
-                    canNetplay = { state.canNetplay(current()) },
-                    openLabel = if (s.source == ListSource.Hidden) "Unhide" else "Open",
-                    onSelect = state::select, onOpen = { state.openSelected() }, onHint = state::onButton,
-                    onLongPress = { state.openContextMenu(it) },
-                    showTag = s.source == ListSource.Hidden || s.source is ListSource.Search,   // a search mixes consoles
-                    emptyText = if (s.source is ListSource.Search || s.source is ListSource.Filtered) "No results" else null,
-                    info = { gameInfoFor(gameInfo, now, current()?.game, full = true) },   // Grid shows none (its tiles have tileInfo)
-                    style = style, orientation = orientation, alignment = state.settings.gameListVerticalAlignment, onGridLayout = onGridLayout, tileInfo = remember(s.entries, gameInfo, now) { entryTileInfo(s.entries, gameInfo, now) }, layoutKey = s.source,
-                    artBox = state.settings.gameListArt.boxed,
-                    backdropArt = state.settings.backdropArt,
-                    onSearch = state::openListSearch.takeIf { s.source.searchable },
-                    onLayout = state::toggleLayoutMenu.takeIf { state.settings.gameListLayoutOptions }, layoutOpen = s.layoutMenu != null,
-                    // Layouts → Achievements panel Hide: no icon or hint (X and the game's menu still open it).
-                    onAchievements = state::toggleRaPanel.takeIf { state.hasAchievements && state.settings.gameListAchievementsPanel }, achievementsOpen = raPanel != null,
-                    minimalOpening = minimalOpening.value?.takeIf { it.page == s.source },
-                )
-                RaPanelOverlay(raPanel.takeIf { state.screen.value === s }, onRow = state::openRaPanelRow, onButton = state::onButton)
-                s.layoutMenu?.let { at ->
-                    GameListLayoutMenu(
-                        current = GameListLayouts.indexOf(state.settings.gameListStyle, state.settings.gameListOrientation, state.settings.gameListVerticalAlignment), highlighted = at,
-                        onPick = state::pickLayout, onDismiss = { state.onButton(NxButton.B) },
-                    )
-                }
-                s.search?.let { NxTextPrompt("Search ${listTitle(s.source.base)}", it, state::searchDraft, onConfirm = { state.onButton(NxButton.A) }, onCancel = { state.onButton(NxButton.B) }) }
-                s.menu?.let { ContextMenuOverlay(it, onButton = state::onButton, onSelect = state::menuSelect, onOpen = state::menuOpen, onDraft = state::menuDraft, onColumns = state::onMenuLayout) }
-            }
+            is Screen.Games -> GamesPage(state, s, selection, resume, gameInfo, now)
             // NX Redux PR #218: its info follows Extra info, as the menus'. List: a row tap selects, a second tap resumes.
             is Screen.Switcher -> GameSwitcherScreen(
                 s, state::onButton, info = gameInfoFor(gameInfo, now, s.entries.getOrNull(s.index)?.game, full = true),
@@ -450,6 +464,54 @@ private fun PageContent(state: AppState, page: Screen, pageSelection: State<List
     }
 }
 
+/**
+ * A game list page ([Screen.Games]) with all its overlays: the list in the game list style, the achievements panel, the
+ * Layout dropdown, the search prompt and the context menu (with its rename / new collection drafts). The single screen's
+ * page, and the second display's top screen while the main menu is there ([MenuTopScreen]). [gameInfo]: the launcher's
+ * ([launcherGameInfo]); [now]: [rememberNow]'s clock.
+ */
+@Composable
+internal fun GamesPage(state: AppState, s: Screen.Games, selection: State<ListSelection>, resume: State<ResumeInfo>, gameInfo: Map<String, GameInfo>, now: Long) {
+    val style = state.styleOf(s)
+    val orientation = state.orientationOf(s)
+    // A Grid reports its columns only while its page is the one showing (a page sliding out never overwrites the count).
+    val onGridLayout: (Int, Int) -> Unit = remember(s) { { columns, rows -> if (state.screen.value === s) state.onGridLayout(columns, rows) } }
+    val index = { selection.value.index }
+    val minimalOpening = state.minimalOpening.collectAsState()   // a Minimal page's row being opened (its page draws the band)
+    val raPanel by state.raPanel.collectAsState()   // the achievements panel over the list
+    val dual by state.dualMenu.collectAsState()   // the menu is on the second display: its details pane has the achievements
+    val current = { s.entries.getOrNull(selection.value.index) }
+    GameListScreen(
+        listTitle(s.source), s.entries, index,
+        canResume = { resume.value.canResume }, menuAvailable = s.source != ListSource.Hidden,
+        canOpen = { current().let { it != null && (s.source == ListSource.Hidden || it.system.core != null || it.system.android) } },
+        canNetplay = { state.canNetplay(current()) },
+        openLabel = if (s.source == ListSource.Hidden) "Unhide" else "Open",
+        onSelect = state::select, onOpen = { state.openSelected() }, onHint = state::onButton,
+        onLongPress = { state.openContextMenu(it) },
+        showTag = s.source == ListSource.Hidden || s.source is ListSource.Search,   // a search mixes consoles
+        emptyText = if (s.source is ListSource.Search || s.source is ListSource.Filtered) "No results" else null,
+        info = { gameInfoFor(gameInfo, now, current()?.game, full = true) },   // Grid shows none (its tiles have tileInfo)
+        style = style, orientation = orientation, alignment = state.settings.gameListVerticalAlignment, onGridLayout = onGridLayout, tileInfo = remember(s.entries, gameInfo, now) { entryTileInfo(s.entries, gameInfo, now) }, layoutKey = s.source,
+        artBox = state.settings.gameListArt.boxed,
+        backdropArt = state.settings.backdropArt,
+        onSearch = state::openListSearch.takeIf { s.source.searchable },
+        onLayout = state::toggleLayoutMenu.takeIf { state.settings.gameListLayoutOptions }, layoutOpen = s.layoutMenu != null,
+        // Layouts → Achievements panel Hide: no icon or hint (X and the game's menu still open it). Dual: none (X does nothing).
+        onAchievements = state::toggleRaPanel.takeIf { state.hasAchievements && state.settings.gameListAchievementsPanel && !dual }, achievementsOpen = raPanel != null,
+        minimalOpening = minimalOpening.value?.takeIf { it.page == s.source },
+    )
+    RaPanelOverlay(raPanel.takeIf { state.screen.value === s }, onRow = state::openRaPanelRow, onButton = state::onButton)
+    s.layoutMenu?.let { at ->
+        GameListLayoutMenu(
+            current = GameListLayouts.indexOf(state.settings.gameListStyle, state.settings.gameListOrientation, state.settings.gameListVerticalAlignment), highlighted = at,
+            onPick = state::pickLayout, onDismiss = { state.onButton(NxButton.B) },
+        )
+    }
+    s.search?.let { NxTextPrompt("Search ${listTitle(s.source.base)}", it, state::searchDraft, onConfirm = { state.onButton(NxButton.A) }, onCancel = { state.onButton(NxButton.B) }) }
+    s.menu?.let { ContextMenuOverlay(it, onButton = state::onButton, onSelect = state::menuSelect, onOpen = state::menuOpen, onDraft = state::menuDraft, onColumns = state::onMenuLayout) }
+}
+
 /** A Settings screen drawn as one page (or as the two-pane Settings' focused right pane, [titled]: the split draws its dialog). */
 @Composable
 private fun SettingsPage(state: AppState, s: Screen, selection: State<ListSelection>, titled: Boolean) {
@@ -478,7 +540,7 @@ internal fun WithIndex(selection: State<ListSelection>, content: @Composable (In
  * [live]: false on the page sliding out, whose Backdrop picture fades to black as it goes.
  */
 @Composable
-private fun PageBackground(state: AppState, s: Screen, style: MenuStyle, selection: State<ListSelection>, live: State<Boolean>) {
+internal fun PageBackground(state: AppState, s: Screen, style: MenuStyle, selection: State<ListSelection>, live: State<Boolean>) {
     when (s) {
         is Screen.Systems -> {
             val category = s.category ?: MenuCategory.HOME

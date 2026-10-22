@@ -73,6 +73,7 @@ import com.nxredux.mobile.ui.nx.menuTabUnderlineBottom
 fun MainMenuScreen(
     screen: Screen.Systems, selectedIndex: () -> Int,
     onSelect: (Int) -> Unit, onOpen: (Int) -> Unit, onTab: (Int) -> Unit, modifier: Modifier = Modifier,
+    onSwipeSelect: ((Int) -> Unit)? = null,         // Minimal's swipe release: moves the highlight only, never the tap's open (default: onSelect)
     onHint: ((NxButton) -> Unit)? = null, onLongPress: ((Int) -> Unit)? = null,
     info: () -> List<InfoLine> = { emptyList() },   // the selected row's info (a game's gameInfoLines, a console's or collection's game count): List's band
     rowInfo: (Int) -> List<InfoLine> = { emptyList() },   // Carousel Home: any row's full info by index (its caption stays on the last row item while the dock has focus)
@@ -256,7 +257,7 @@ fun MainMenuScreen(
                         val names = remember(rows) { minimalTabRows(rows) }
                         MinimalScreen(
                             names, selection, hints.value, onSelect, onOpen, onLongPress, onHint, bodyAlpha, minimalSelected,
-                            Modifier.weight(1f).zIndex(-1f), hideHints = chrome.emptyBarRoom, layoutKey = layoutKey, leaving = minimalOpening != null,
+                            Modifier.weight(1f).zIndex(-1f), hideHints = chrome.emptyBarRoom, layoutKey = layoutKey, leaving = minimalOpening != null, onSwipeSelect = onSwipeSelect,
                         )
                     }
                     // List: the info band on the hint bar, holding the scroll arrows.

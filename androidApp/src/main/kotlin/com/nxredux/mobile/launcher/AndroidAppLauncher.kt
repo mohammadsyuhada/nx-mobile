@@ -1,5 +1,6 @@
 package com.nxredux.mobile.launcher
 
+import android.app.ActivityOptions
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
@@ -60,10 +61,26 @@ class AndroidAppLauncher(private val activity: ComponentActivity, private val re
         }.getOrNull()
     }
 
+    /**
+     * Dual mode's top screen, where an app opens ([topScreenDisplay], set by MainActivity): another display's id, this
+     * activity's own, or null outside dual mode (launch as usual).
+     */
+    var topDisplay: () -> Int? = { null }
+
+    /**
+     * In dual mode on the top screen ([launchRoute]): on this activity's display with the launch display named (an app
+     * still on the other display moves here); on another display through a [TopScreenHost], falling back to the normal
+     * launch when that display takes no activity.
+     */
     override fun launch(id: String): Boolean {
         val c = component(id) ?: return false
+        val app = launcherIntent().setComponent(c).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        val top = topDisplay()
+        val own = activity.currentDisplayId()
+        val route = launchRoute(top, own)
+        if (route == LaunchRoute.HOST && pm.resolveActivity(app, 0) != null && TopScreenHost.start(activity, app, top!!, own)) return true
         return try {
-            activity.startActivity(launcherIntent().setComponent(c).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
+            activity.startActivity(app, if (route == LaunchRoute.USUAL) null else ActivityOptions.makeBasic().setLaunchDisplayId(own).toBundle())
             true
         } catch (e: ActivityNotFoundException) { false } catch (e: SecurityException) { false }
     }

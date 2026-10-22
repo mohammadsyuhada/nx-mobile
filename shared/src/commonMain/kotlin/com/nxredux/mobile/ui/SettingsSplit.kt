@@ -22,9 +22,11 @@ private val SPLIT_MIN_WIDTH = 600.dp
 fun settingsSplit(window: DpSize): Boolean =
     window.width >= SPLIT_MIN_WIDTH && window.width.value >= window.height.value * SPLIT_MIN_ASPECT
 
-/** The Settings categories: the sections the Settings root lists (sub-pages open from them). Launcher only on a platform with one. */
-fun settingsCategories(launcher: Boolean = false): List<SettingsSection> =
-    SettingsSection.entries.filter { it.parent == null && (it != SettingsSection.LAUNCHER || launcher) }
+/** The Settings categories: the sections the Settings root lists (sub-pages open from them). Launcher only on a platform with one, Second screen only while one is connected. */
+fun settingsCategories(launcher: Boolean = false, secondScreen: Boolean = false): List<SettingsSection> =
+    SettingsSection.entries.filter {
+        it.parent == null && (it != SettingsSection.LAUNCHER || launcher) && (it != SettingsSection.SECOND_SCREEN || secondScreen)
+    }
 
 /**
  * The pane [screen] is drawn in when Settings splits: the Settings root is the left pane (focused there), a Settings
