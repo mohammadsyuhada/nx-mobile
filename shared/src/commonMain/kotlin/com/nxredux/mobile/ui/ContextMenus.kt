@@ -23,6 +23,10 @@ sealed interface MenuPrompt {
     data class DeleteCollection(val name: String) : MenuPrompt
 }
 
+/** The prompt is a text field (a rename or a new collection's draft), so the keyboard is in use. */
+val MenuPrompt?.isTextEntry: Boolean
+    get() = this is MenuPrompt.Rename || this is MenuPrompt.NewCollection || this is MenuPrompt.RenameCollection
+
 /**
  * nx-redux's context menu, opened with MENU (or a long press) over [entry] in a game list, on Home's Continue card, a
  * pinned game or a shelf game, over [tool] on a tool or pinned tool row, or over the [collection] (its name) on a Collections-tab row.

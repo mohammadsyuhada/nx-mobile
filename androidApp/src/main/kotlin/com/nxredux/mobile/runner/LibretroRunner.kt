@@ -11,7 +11,14 @@ class LibretroRunner(private val context: Context, private val ownTask: () -> Bo
     /** A game screen is alive (playing, suspended in its own task, or closing); main thread only. Import saves waits for it. */
     val gameScreenAlive: Boolean get() = GameActivity.gameScreenAlive
 
+    /** Runs first in every [launch], on the main thread: the menu clears the second display for the game. */
+    var beforeLaunch: () -> Unit = {}
+
+    /** The launch threw after [beforeLaunch] (the activity could not start); the error is rethrown after it. */
+    var launchFailed: () -> Unit = {}
+
     override fun launch(session: GameSession, onStarted: () -> Unit) {
+        beforeLaunch()
         val intent = Intent(context, GameActivity::class.java)
             .putExtra(GameActivity.EXTRA_LAUNCH_ID, PendingLaunches.put(onStarted))
             .putExtra(GameActivity.EXTRA_CORE_FILE, session.core.libraryFileName)
@@ -39,7 +46,12 @@ class LibretroRunner(private val context: Context, private val ownTask: () -> Bo
                 }
             }
             .addFlags(gameLaunchFlags(ownTask()))
-        context.startActivity(intent)
+        try {
+            context.startActivity(intent)
+        } catch (e: Throwable) {
+            launchFailed()
+            throw e
+        }
     }
 }
 

@@ -233,7 +233,7 @@ private fun minimalNameStyle(): TextStyle {
  * the whole box, the hint bar at the bottom ([NxScreenScaffold]). The selection sits one row under the body's top, [top]
  * down the box (Home's strip room), the names running on above and below it. A drag moves the names with the finger and,
  * released, they settle on the name the throw lands on, selected ([axisSwipe]). A tap selects, a tap on the selected name
- * opens it (every name, so the open band starts at the selection's place), a long press calls [onLongPress]. The d-pad
+ * opens it (every name, so the open band starts at the selection's place; [tapOpens] may open on one tap), a long press calls [onLongPress]. The d-pad
  * lives in AppState (UP / DOWN wrap on a fresh press, as a List). [overlay] draws over the names (Home's strip). Draw it
  * under the tab row or title (zIndex), so the names run on under it. [leaving]: a row is opening (AppState's minimalOpening),
  * the other names fading out. Come in by a morph ([LocalMinimalPage]), a list's names rise in ([NavMotion.MINIMAL_FORWARD])
@@ -244,7 +244,9 @@ internal fun MinimalScreen(
     names: List<NxRow>, selection: () -> Int, hints: List<Hint>,
     onSelect: (Int) -> Unit, onOpen: (Int) -> Unit, onLongPress: ((Int) -> Unit)?, onHint: ((NxButton) -> Unit)?,
     bodyAlpha: () -> Float, selected: MinimalSelected, modifier: Modifier = Modifier, top: Float = 0f, hideHints: Boolean = false,
-    layoutKey: Any? = null, leaving: Boolean = false, overlay: @Composable BoxScope.() -> Unit = {},
+    layoutKey: Any? = null, leaving: Boolean = false, tapOpens: (Int) -> Boolean = NxTapNeverOpens,
+    onSwipeSelect: ((Int) -> Unit)? = null,   // a swipe's release: moves the highlight only (default: onSelect)
+    overlay: @Composable BoxScope.() -> Unit = {},
 ) {
     val gutter = if (LocalPortrait.current) 16.dp else 24.dp
     val page = LocalMinimalPage.current
@@ -274,8 +276,8 @@ internal fun MinimalScreen(
     var boxH by remember { mutableFloatStateOf(0f) }
     Box(modifier.fillMaxSize().onGloballyPositioned { box[0] = it; boxH = it.size.height.toFloat() }) {
         area?.let { a ->
-            CompositionLocalProvider(LocalNxTapOpens provides NxTapNeverOpens) {
-                MinimalNames(names, a, boxH, selection, onSelect, onOpen, onLongPress, selected, gutter, bodyAlpha, layoutKey, motion, page)
+            CompositionLocalProvider(LocalNxTapOpens provides tapOpens) {
+                MinimalNames(names, a, boxH, selection, onSelect, onOpen, onLongPress, selected, gutter, bodyAlpha, layoutKey, motion, page, onSwipeSelect)
             }
         }
         // B from a Minimal list: its title flies down into the selected row.
@@ -369,7 +371,7 @@ private class MinimalTexts(
 private fun MinimalNames(
     names: List<NxRow>, area: Rect, boxH: Float, selection: () -> Int, onSelect: (Int) -> Unit, onOpen: (Int) -> Unit,
     onLongPress: ((Int) -> Unit)?, selected: MinimalSelected, gutter: Dp, bodyAlpha: () -> Float, layoutKey: Any?,
-    motion: MinimalMotion, page: MinimalPage?,
+    motion: MinimalMotion, page: MinimalPage?, onSwipeSelect: ((Int) -> Unit)?,
 ) {
     val count = names.size
     if (count == 0) return
@@ -390,7 +392,7 @@ private fun MinimalNames(
     }
     val dragPos = remember(pos) { mutableFloatStateOf(Float.NaN) }
     val at = rememberShownPosition(pos, dragPos)
-    val taps = rememberItemTaps(selection, count, onSelect, onOpen, onLongPress)
+    val taps = rememberItemTaps(selection, count, onSelect, onOpen, onLongPress, onSwipeSelect)
     // The solid fill and the tags blend by the shown position ([fill]) over the names it is between ([near]), so nothing
     // switches mid-move.
     val near by remember(count) { derivedStateOf { floor(at()).toInt().coerceIn(0, count - 1)..ceil(at()).toInt().coerceIn(0, count - 1) } }

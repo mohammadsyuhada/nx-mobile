@@ -44,24 +44,27 @@ internal fun rememberShownPosition(pos: Animatable<Float, AnimationVector1D>, dr
 /**
  * A row's or stack's item taps, reading the selection and the callbacks when the tap lands (one object for the whole
  * row, so an item never recomposes for a new callback): [tap] the one tap path ([nxTap]), [swipeSelect] a swipe's
- * release (selects only another item), [longPress].
+ * release (selects only another item, through its own callback when given: a swipe must never open what a tap does),
+ * [longPress].
  */
 @Stable
 internal class ItemTaps(
     private val selected: State<() -> Int>, private val count: State<Int>,
     private val onSelect: State<(Int) -> Unit>, private val onOpen: State<(Int) -> Unit>,
     private val opens: State<(Int) -> Boolean>, private val onLongPress: State<((Int) -> Unit)?>,
+    private val onSwipeSelect: State<((Int) -> Unit)?>,
 ) {
     /** The selection now, in the list. */
     fun current(): Int = selected.value().coerceIn(0, maxOf(0, count.value - 1))
     fun tap(i: Int) = nxTap(i, i == current(), opens.value(i), onSelect.value, onOpen.value)
-    fun swipeSelect(i: Int) { if (i != current()) onSelect.value(i) }
+    fun swipeSelect(i: Int) { if (i != current()) (onSwipeSelect.value ?: onSelect.value)(i) }
     fun longPress(i: Int) { onLongPress.value?.invoke(i) }
 }
 
 @Composable
 internal fun rememberItemTaps(
     selectedIndex: () -> Int, count: Int, onSelect: (Int) -> Unit, onOpen: (Int) -> Unit, onLongPress: ((Int) -> Unit)?,
+    onSwipeSelect: ((Int) -> Unit)? = null,
 ): ItemTaps {
     val selected = rememberUpdatedState(selectedIndex)
     val n = rememberUpdatedState(count)
@@ -69,7 +72,8 @@ internal fun rememberItemTaps(
     val open = rememberUpdatedState(onOpen)
     val opens = rememberUpdatedState(LocalNxTapOpens.current)
     val longPress = rememberUpdatedState(onLongPress)
-    return remember { ItemTaps(selected, n, select, open, opens, longPress) }
+    val swipe = rememberUpdatedState(onSwipeSelect)
+    return remember { ItemTaps(selected, n, select, open, opens, longPress, swipe) }
 }
 
 /**

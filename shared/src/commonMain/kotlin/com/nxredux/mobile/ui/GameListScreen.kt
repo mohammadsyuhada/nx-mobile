@@ -125,6 +125,7 @@ fun GameListScreen(
     onAchievements: (() -> Unit)? = null, // the trophy icon (touchscreens) and X's hint: the achievements panel
     achievementsOpen: Boolean = false,    // the panel is open: its icon lit
     minimalOpening: MinimalOpening? = null,   // Minimal: the selected game being opened (this list's), its band growing over the screen
+    tapOpens: (Int) -> Boolean = NxTapNeverOpens,   // one tap on another game opens it too ([LocalNxTapOpens]); the second display's preview
 ) {
     val index = rememberUpdatedState(selectedIndex)
     val resume = rememberUpdatedState(canResume)
@@ -146,8 +147,9 @@ fun GameListScreen(
         }
     }
     // Every row launches a game (or, Hidden, unhides one): tap to highlight, tap again to act ([LocalNxTapOpens]) in
-    // every style, so a stray tap never plays. Its context menu and dialogs sit outside this and open on one tap.
-    CompositionLocalProvider(LocalNxTapOpens provides NxTapNeverOpens) {
+    // every style, so a stray tap never plays. Its context menu and dialogs sit outside this and open on one tap. The
+    // second display's preview ([tapOpens]) launches nothing: one tap opens the list there.
+    CompositionLocalProvider(LocalNxTapOpens provides tapOpens) {
         GameListFrame(
             title, style, hints, { index.value() }, dataKey = listOf(entries, showTag, backdropArt), orientation = orientation, alignment = alignment,
             gridTiles = { gameGridTiles(entries) }, backdropGames = { backdropGames(entries, backdropArt) },
@@ -305,6 +307,7 @@ internal fun GameListFrame(
                         MinimalScreen(
                             names, selectedIndex, hints.value, onSelect, onOpen, onLongPress, onHint, { 1f }, minimalSelected,
                             Modifier.weight(1f).zIndex(-1f), hideHints = chrome.emptyBarRoom, layoutKey = layoutKey, leaving = minimalOpening != null,
+                            tapOpens = LocalNxTapOpens.current,   // the list's own rule (two taps, but for the preview's)
                         )
                     }
                     // List: the info band on the hint bar, holding the scroll arrows.

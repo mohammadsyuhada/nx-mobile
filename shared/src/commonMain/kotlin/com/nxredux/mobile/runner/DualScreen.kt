@@ -74,6 +74,11 @@ object DualScreen {
         else -> PictureOn.MAIN
     }
 
+    /** The main menu goes on the second display when the picture (the top screen) is on the main one. */
+    fun menuOnSecond(
+        mainW: Int, mainH: Int, secondW: Int, secondH: Int, rotated: Boolean, bottom: BottomScreen,
+    ): Boolean = pictureOn(mainW, mainH, secondW, secondH, rotated, bottom) == PictureOn.MAIN
+
     /** Split, the DS/3DS screen on the main display: the [picture] screen's own when the picture is on main, else the other. */
     fun splitMain(picture: NdsScreen, pictureOn: PictureOn): NdsScreen = if (pictureOn == PictureOn.MAIN) picture else picture.other
 
