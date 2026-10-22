@@ -5,8 +5,8 @@ import kotlin.test.assertEquals
 
 class MenuStylesTest {
     @Test fun aMissingTabIsItsDefaultAndAStoredOneWins() {
-        for (c in listOf(MenuCategory.CONSOLES, MenuCategory.COLLECTIONS))
-            assertEquals(MenuStyle.CAROUSEL, MenuStyles.styleOf(emptyMap(), c))
+        assertEquals(MenuStyle.CAROUSEL, MenuStyles.styleOf(emptyMap(), MenuCategory.CONSOLES))
+        assertEquals(MenuStyle.MINIMAL, MenuStyles.styleOf(emptyMap(), MenuCategory.COLLECTIONS))   // the Collections tab's own default
         assertEquals(MenuStyle.GRID, MenuStyles.styleOf(emptyMap(), MenuCategory.TOOLS))   // the Tools tab's own default
         assertEquals(MenuStyle.GRID, MenuStyles.styleOf(mapOf(MenuCategory.CONSOLES to MenuStyle.GRID), MenuCategory.CONSOLES))
         assertEquals(MenuStyle.LIST, MenuStyles.styleOf(mapOf(MenuCategory.TOOLS to MenuStyle.LIST), MenuCategory.TOOLS))

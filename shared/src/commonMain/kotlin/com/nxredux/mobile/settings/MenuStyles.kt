@@ -25,9 +25,15 @@ object MenuStyles {
     /** Layouts → Home stats: Show. */
     const val DEFAULT_HOME_STATS = true
 
-    /** [category]'s default style: Grid for Home and Tools (NX Redux CFG_DEFAULT_MENUSTYLE_TOOLS, homeStyle 0), Carousel for the others. */
-    fun defaultStyleOf(category: MenuCategory): MenuStyle =
-        if (category == MenuCategory.TOOLS || category == MenuCategory.HOME) MenuStyle.GRID else MenuStyle.CAROUSEL
+    /**
+     * [category]'s default style: Grid for Home and Tools (NX Redux CFG_DEFAULT_MENUSTYLE_TOOLS, homeStyle 0), Minimal for
+     * Collections, Carousel for Consoles.
+     */
+    fun defaultStyleOf(category: MenuCategory): MenuStyle = when (category) {
+        MenuCategory.TOOLS, MenuCategory.HOME -> MenuStyle.GRID
+        MenuCategory.COLLECTIONS -> MenuStyle.MINIMAL
+        MenuCategory.CONSOLES -> MenuStyle.CAROUSEL
+    }
 
     /** [category]'s style: its [defaultStyleOf] when it has none stored. */
     fun styleOf(styles: Map<MenuCategory, MenuStyle>, category: MenuCategory): MenuStyle =
