@@ -153,6 +153,8 @@ class AppStateTest {
         override var defaultTags: Map<String, String> = emptyMap()
         override var padLayouts: com.nxredux.mobile.settings.PadLayoutMap = emptyMap()
         override var debugLog = false
+        override var secondScreen = true
+        override var bottomScreen = com.nxredux.mobile.runner.BottomScreen.AUTO
         override var menuPad = true
         override var saveFormat = SaveFormat.DEFAULT
         override var stateFormat = StateFormat.DEFAULT
@@ -303,6 +305,47 @@ class AppStateTest {
         assertNull(settings.onboardingStep)
         val home = assertIs<Screen.Systems>(state.screen.value)
         assertEquals(MenuCategory.HOME, home.category)
+    }
+
+    // A built-in second screen (a dual-screen handheld's): setup asks which screen is the bottom one right after the text
+    // size, before the folder steps. The main screen's button stores main, the second screen's stores second, Skip stores nothing.
+    @Test fun a_built_in_second_screen_adds_the_bottom_screen_step_after_the_text_size() = runTest {
+        for (pick in listOf("main", "second", "skip")) {
+            val settings = freshInstall()
+            val state = state(settings, builtInSecond = { true })
+            state.load(); state.onButton(NxButton.A); state.continueTextSize()
+            val s = assertIs<Screen.Onboarding>(state.screen.value)
+            assertEquals(OnboardingStep.BOTTOM_SCREEN, s.step)
+            assertTrue(s.canGoBack)
+            assertEquals(listOf("This is the bottom screen", "Skip"), s.rows.map { it.label })
+            state.onButton(NxButton.B)                                         // back to the text size, and on again
+            assertEquals(OnboardingStep.TEXT_SIZE, assertIs<Screen.Onboarding>(state.screen.value).step, pick)
+            state.continueTextSize()
+            when (pick) {
+                "main" -> { state.select(0); state.onButton(NxButton.A) }
+                "second" -> state.onboardingBottomScreenOnSecond()
+                else -> { state.select(1); state.onButton(NxButton.A) }
+            }
+            assertEquals(if (pick == "skip") "auto" else pick, settings.bottomScreen.value, pick)
+            assertIs<Screen.PickFolder>(state.screen.value)
+            state.onButton(NxButton.B)                                         // the first folder step goes back to it
+            assertEquals(OnboardingStep.BOTTOM_SCREEN, assertIs<Screen.Onboarding>(state.screen.value).step, pick)
+            state.select(1); state.onButton(NxButton.A)
+            state.setHomePast(ContentRef("Home")); state.skipFirstExtra()
+            assertEquals(OnboardingStep.HANDHELD, assertIs<Screen.Onboarding>(state.screen.value).step, pick)
+            state.onButton(NxButton.B)                                         // the folder steps, not the bottom screen
+            assertIs<Screen.AddFirstExtra>(state.screen.value)
+        }
+    }
+
+    @Test fun without_a_built_in_second_screen_the_step_is_left_out() = runTest {
+        val settings = freshInstall()
+        val state = state(settings)
+        state.load(); state.getStarted(); state.setHomePast(ContentRef("Home")); state.skipFirstExtra()
+        assertEquals(OnboardingStep.HANDHELD, assertIs<Screen.Onboarding>(state.screen.value).step)
+        state.onboardingBottomScreenOnSecond()                                 // a stray tap: not on the step, nothing stored
+        assertEquals("auto", settings.bottomScreen.value)
+        assertEquals(OnboardingStep.HANDHELD, assertIs<Screen.Onboarding>(state.screen.value).step)
     }
 
     // B walks a first run back one page at a time: the handheld question → the ROMs folder → the home folder pick → the
@@ -1200,7 +1243,8 @@ class AppStateTest {
     private fun libraryPageOf(kind: SettingsKind): SettingsSection = when (kind) {
         SettingsKind.HOME, SettingsKind.ADD_EXTRA, SettingsKind.EXTRA -> SettingsSection.ROM_FOLDERS
         SettingsKind.DEFAULT_TAG -> SettingsSection.DEFAULT_EMULATORS
-        SettingsKind.EMULATORS, SettingsKind.DEFAULTS, SettingsKind.SAVES -> SettingsSection.EMULATORS
+        SettingsKind.EMULATORS, SettingsKind.DEFAULTS, SettingsKind.SAVES, SettingsKind.SECOND_SCREEN -> SettingsSection.EMULATORS
+        SettingsKind.SECOND_SCREEN_ENABLE, SettingsKind.BOTTOM_SCREEN -> SettingsSection.SECOND_SCREEN
         else -> SettingsSection.LIBRARY
     }
 
@@ -1804,8 +1848,8 @@ class AppStateTest {
         assertEquals(2, runner.launched.size)
     }
 
-    private fun TestScope.state(settings: MemorySettings, src: RomsSource = source, picker: NoopPicker = NoopPicker(), runner: RecordingRunner = RecordingRunner(), data: UserDataStore = NoUserData, store: LibraryIndexStore = MemoryLibraryIndexStore(), now: (() -> Long)? = null, gameTime: GameTimeData? = null, calendar: LocalCalendar = FixedOffsetCalendar(), launcher: AppLauncher? = null, rumblePreview: (GameRumble) -> Unit = {}, padEditor: ((PadEditRequest) -> Unit)? = null, saveTransfer: SaveTransfer? = null, allFiles: AllFilesAccess? = null, localFiles: LocalFiles? = null, notifications: NotificationAccess? = null) =
-        AppState(AppDeps(settings, src, runner, picker, data, indexStore = store, now = now, gameTime = gameTime, compute = UnconfinedTestDispatcher(testScheduler), calendar = calendar, launcher = launcher, rumblePreview = rumblePreview, padEditor = padEditor, saveTransfer = saveTransfer, allFilesAccess = allFiles, localFiles = localFiles, notificationAccess = notifications), CoroutineScope(UnconfinedTestDispatcher(testScheduler)))
+    private fun TestScope.state(settings: MemorySettings, src: RomsSource = source, picker: NoopPicker = NoopPicker(), runner: RecordingRunner = RecordingRunner(), data: UserDataStore = NoUserData, store: LibraryIndexStore = MemoryLibraryIndexStore(), now: (() -> Long)? = null, gameTime: GameTimeData? = null, calendar: LocalCalendar = FixedOffsetCalendar(), launcher: AppLauncher? = null, rumblePreview: (GameRumble) -> Unit = {}, padEditor: ((PadEditRequest) -> Unit)? = null, saveTransfer: SaveTransfer? = null, allFiles: AllFilesAccess? = null, localFiles: LocalFiles? = null, notifications: NotificationAccess? = null, builtInSecond: () -> Boolean = { false }) =
+        AppState(AppDeps(settings, src, runner, picker, data, indexStore = store, now = now, gameTime = gameTime, compute = UnconfinedTestDispatcher(testScheduler), calendar = calendar, launcher = launcher, rumblePreview = rumblePreview, padEditor = padEditor, saveTransfer = saveTransfer, allFilesAccess = allFiles, localFiles = localFiles, notificationAccess = notifications, builtInSecondScreen = builtInSecond), CoroutineScope(UnconfinedTestDispatcher(testScheduler)))
 
     /** What a scan of [src] for [settings] stores, built without an AppState (so without the skeleton). */
     private suspend fun scannedIndex(settings: MemorySettings, src: RomsSource = source): LibraryIndex =
@@ -4959,7 +5003,7 @@ class AppStateTest {
         state.onButton(NxButton.DOWN); state.onButton(NxButton.A)       // Emulators
         val emu = assertIs<Screen.Settings>(state.screen.value)
         assertEquals(SettingsSection.EMULATORS, emu.section)
-        assertEquals(listOf("Default emulators", "Settings", "Saves"), emu.rows.map { it.label })
+        assertEquals(listOf("Default emulators", "Settings", "Saves"), emu.rows.map { it.label })   // no second screen: no Second screen row
         state.onButton(NxButton.B)
         assertEquals(ListSelection(1, 7), state.selection.value)
         state.onButton(NxButton.DOWN); state.onButton(NxButton.A)       // Appearance
@@ -5136,11 +5180,12 @@ class AppStateTest {
     @Test fun the_emulators_page_opens_default_emulators_and_b_returns_to_its_row() = runTest {
         val st = state(MemorySettings(ContentRef("Home")))
         st.load()
+        st.onSecondScreenChanged(true)
         st.openTools(); st.onButton(NxButton.DOWN); st.onButton(NxButton.A)                    // Settings
         st.onButton(NxButton.DOWN); st.onButton(NxButton.A)                                      // Emulators
         val e = assertIs<Screen.Settings>(st.screen.value)
         assertEquals(SettingsSection.EMULATORS, e.section)
-        assertEquals(listOf(SettingsRow(SettingsKind.DEFAULTS, "Default emulators"), SettingsRow(SettingsKind.EMULATORS, "Settings"), SettingsRow(SettingsKind.SAVES, "Saves")), e.rows)
+        assertEquals(listOf(SettingsRow(SettingsKind.DEFAULTS, "Default emulators"), SettingsRow(SettingsKind.EMULATORS, "Settings"), SettingsRow(SettingsKind.SAVES, "Saves"), SettingsRow(SettingsKind.SECOND_SCREEN, "Second screen")), e.rows)
         assertTrue(e.details.isEmpty())
         st.onButton(NxButton.A)                                                                  // Default emulators
         assertEquals(SettingsSection.DEFAULT_EMULATORS, assertIs<Screen.Settings>(st.screen.value).section)
@@ -9089,9 +9134,9 @@ class AppStateTest {
         val state = state(settings)
         state.load()
         state.openSettings(SettingsSection.MAIN_MENU)
-        // No Pinned row; Home first. Home, Collections and Tools are unset (their defaults: Grid, Carousel with its Orientation row, and Grid).
+        // No Pinned row; Home first. Home, Collections and Tools are unset (their defaults: Grid, Minimal, and Grid).
         assertEquals(
-            listOf("Home" to "Grid", "Consoles" to "Grid", "Collections" to "Carousel", "Tools" to "Grid", "Game lists" to "List", "Title and hints" to "Show",
+            listOf("Home" to "Grid", "Consoles" to "Grid", "Collections" to "Minimal", "Tools" to "Grid", "Game lists" to "List", "Title and hints" to "Show",
                 "Game Switcher" to "Full screen", "Extra info" to "Show", "Reset to defaults" to null),
             state.layoutsRows().map { it.label to it.secondary },
         )
@@ -9099,12 +9144,12 @@ class AppStateTest {
         val groups = listOf(SettingsSection.LAYOUT_HOME, SettingsSection.LAYOUT_CONSOLES, SettingsSection.LAYOUT_COLLECTIONS, SettingsSection.LAYOUT_TOOLS,
             SettingsSection.LAYOUT_GAME_LISTS, SettingsSection.LAYOUT_TITLE_HINTS, SettingsSection.LAYOUT_SWITCHER)
         val rows = groups.flatMap { g -> state.openLayoutsPage(g) }
-        assertEquals(listOf("Home tab", "Home layout", "New shelf", "Not started shelf", "Home stats", "Consoles tab", "Consoles layout", "Collections tab", "Collections layout", "Collections orientation", "Tools tab", "Tools layout", "Game lists layout", "List art", "Layout options", "Page title", "Button hints", "Recent hint", "Search hint", "Game Switcher layout"), rows.map { it.label })
+        assertEquals(listOf("Home tab", "Home layout", "New shelf", "Not started shelf", "Home stats", "Consoles tab", "Consoles layout", "Collections tab", "Collections layout", "Tools tab", "Tools layout", "Game lists layout", "List art", "Layout options", "Page title", "Button hints", "Recent hint", "Search hint", "Game Switcher layout"), rows.map { it.label })
         val styles = rows.filter { it.kind == SettingsKind.MENU_STYLE }
         assertEquals(listOf(MenuCategory.HOME, MenuCategory.CONSOLES, MenuCategory.COLLECTIONS, MenuCategory.TOOLS), styles.map { it.category })
         assertTrue(styles.all { it.enabled })
         assertEquals(1, rows.count { it.kind == SettingsKind.GAME_LIST_STYLE })
-        assertEquals(listOf("Show", "Grid", "Show", "Show", "Show", "Show", "Grid", "Show", "Carousel", "Horizontal", "Show", "Grid", "List", "Screenshot", "Show", "Show", "Show", "Show", "Show", "Full screen"), rows.map { it.secondary })
+        assertEquals(listOf("Show", "Grid", "Show", "Show", "Show", "Show", "Grid", "Show", "Minimal", "Show", "Grid", "List", "Screenshot", "Show", "Show", "Show", "Show", "Show", "Full screen"), rows.map { it.secondary })
     }
 
     @Test fun layouts_page_defaults_to_carousel_tools_grid_and_cycles_four_main_menu_styles() = runTest {
@@ -9114,11 +9159,11 @@ class AppStateTest {
         fun rows() = assertIs<Screen.Settings>(state.screen.value).rows
         assertEquals(listOf("Home tab", "Home layout", "New shelf", "Not started shelf", "Home stats"), state.openLayoutsPage(SettingsSection.LAYOUT_HOME).map { it.label })
         assertEquals(listOf("Consoles tab", "Consoles layout", "Consoles orientation", "Consoles background"), state.openLayoutsPage(SettingsSection.LAYOUT_CONSOLES).map { it.label })
-        assertEquals(listOf("Collections tab", "Collections layout", "Collections orientation"), state.openLayoutsPage(SettingsSection.LAYOUT_COLLECTIONS).map { it.label })
+        assertEquals(listOf("Collections tab", "Collections layout"), state.openLayoutsPage(SettingsSection.LAYOUT_COLLECTIONS).map { it.label })
         assertEquals(listOf("Tools tab", "Tools layout"), state.openLayoutsPage(SettingsSection.LAYOUT_TOOLS).map { it.label })
         assertEquals(listOf("Game lists layout", "List art", "Layout options"), state.openLayoutsPage(SettingsSection.LAYOUT_GAME_LISTS).map { it.label })
-        // Layouts' group rows carry each layout: Tools' own default is Grid; the fixture's game list is List.
-        assertEquals(listOf("Grid", "Carousel", "Carousel", "Grid", "List"), state.openLayoutsPage(SettingsSection.MAIN_MENU).take(5).map { it.secondary })
+        // Layouts' group rows carry each layout: Tools' own default is Grid, Collections' Minimal; the fixture's game list is List.
+        assertEquals(listOf("Grid", "Carousel", "Minimal", "Grid", "List"), state.openLayoutsPage(SettingsSection.MAIN_MENU).take(5).map { it.secondary })
         state.selectLayoutsRow(SettingsKind.MENU_STYLE, MenuCategory.CONSOLES); state.onButton(NxButton.RIGHT)   // Consoles: Carousel to Minimal, no Backdrop
         assertEquals(MenuStyle.MINIMAL, settings.menuStyles[MenuCategory.CONSOLES])
         state.onButton(NxButton.RIGHT)                                    // and Minimal wraps to List
@@ -9366,7 +9411,7 @@ class AppStateTest {
     private fun assertLayoutsAtDefaults(settings: AppSettings) {
         assertEquals(MenuStyle.GRID, MenuStyles.styleOf(settings.menuStyles, MenuCategory.HOME))
         assertEquals(MenuStyle.CAROUSEL, MenuStyles.styleOf(settings.menuStyles, MenuCategory.CONSOLES))
-        assertEquals(MenuStyle.CAROUSEL, MenuStyles.styleOf(settings.menuStyles, MenuCategory.COLLECTIONS))
+        assertEquals(MenuStyle.MINIMAL, MenuStyles.styleOf(settings.menuStyles, MenuCategory.COLLECTIONS))
         assertEquals(MenuStyle.GRID, MenuStyles.styleOf(settings.menuStyles, MenuCategory.TOOLS))
         for (c in listOf(MenuCategory.CONSOLES, MenuCategory.COLLECTIONS, MenuCategory.TOOLS))
             assertEquals(MenuOrientation.HORIZONTAL, MenuStyles.orientationOf(settings.menuOrientations, c), c.name)
@@ -9392,7 +9437,7 @@ class AppStateTest {
         fun page(section: SettingsSection) = state.openLayoutsPage(section).map { it.label to it.secondary }
         assertEquals(
             listOf(
-                "Home" to "Grid", "Consoles" to "Carousel", "Collections" to "Carousel", "Tools" to "Grid", "Game lists" to "Carousel", "Title and hints" to "Show",
+                "Home" to "Grid", "Consoles" to "Carousel", "Collections" to "Minimal", "Tools" to "Grid", "Game lists" to "Carousel", "Title and hints" to "Show",
                 "Game Switcher" to "Full screen", "Extra info" to "Show", "Reset to defaults" to null,
             ),
             page(SettingsSection.MAIN_MENU),
@@ -9403,7 +9448,7 @@ class AppStateTest {
         )
         assertEquals(listOf("Consoles tab" to "Show", "Consoles layout" to "Carousel", "Consoles orientation" to "Horizontal", "Consoles background" to "Controller"), page(SettingsSection.LAYOUT_CONSOLES))
         assertEquals(
-            listOf("Collections tab" to "Show", "Collections layout" to "Carousel", "Collections orientation" to "Horizontal"),
+            listOf("Collections tab" to "Show", "Collections layout" to "Minimal"),
             page(SettingsSection.LAYOUT_COLLECTIONS),
         )
         assertEquals(listOf("Tools tab" to "Show", "Tools layout" to "Grid"), page(SettingsSection.LAYOUT_TOOLS))
@@ -9717,6 +9762,94 @@ class AppStateTest {
         state.onButton(NxButton.LEFT)
         assertEquals(true, settings.debugLog)
         assertEquals("On", rows()[0].secondary)
+    }
+
+    // Settings → Emulators → Second screen: an entry (a sub-page like Saves) that exists only while a second screen is connected.
+    @Test fun the_second_screen_entry_exists_only_while_a_second_screen_is_connected() = runTest {
+        val state = state(MemorySettings(ContentRef("Home")))
+        state.load()
+        state.openSettings(SettingsSection.EMULATORS)
+        fun labels() = assertIs<Screen.Settings>(state.screen.value).rows.map { it.label }
+        assertEquals(listOf("Default emulators", "Settings", "Saves"), labels())
+        state.onSecondScreenChanged(true)                       // plugged in while the page is open
+        assertEquals(listOf("Default emulators", "Settings", "Saves", "Second screen"), labels())
+        state.onSecondScreenChanged(false)
+        assertEquals(listOf("Default emulators", "Settings", "Saves"), labels())
+    }
+
+    @Test fun the_second_screen_page_has_enable_then_bottom_screen_and_b_returns_to_its_entry() = runTest {
+        val settings = MemorySettings(ContentRef("Home"))
+        val state = state(settings)
+        state.load()
+        state.onSecondScreenChanged(true)
+        state.openSettings(SettingsSection.EMULATORS)
+        state.select(assertIs<Screen.Settings>(state.screen.value).rows.indexOfFirst { it.kind == SettingsKind.SECOND_SCREEN })
+        state.onButton(NxButton.A)
+        val page = assertIs<Screen.Settings>(state.screen.value)
+        assertEquals(SettingsSection.SECOND_SCREEN, page.section)
+        assertEquals(listOf(SettingsRow(SettingsKind.SECOND_SCREEN_ENABLE, "Enable", "On"), SettingsRow(SettingsKind.BOTTOM_SCREEN, "Bottom screen", "Auto")), page.rows)
+        state.onButton(NxButton.B)
+        val back = assertIs<Screen.Settings>(state.screen.value)
+        assertEquals(SettingsSection.EMULATORS, back.section)
+        assertEquals(SettingsKind.SECOND_SCREEN, back.rows[state.selection.value.index].kind)
+    }
+
+    @Test fun the_second_screen_page_goes_back_to_emulators_when_the_screen_is_removed() = runTest {
+        val state = state(MemorySettings(ContentRef("Home")))
+        state.load()
+        state.onSecondScreenChanged(true)
+        state.openSettings(SettingsSection.SECOND_SCREEN)
+        state.onSecondScreenChanged(false)
+        val page = assertIs<Screen.Settings>(state.screen.value)
+        assertEquals(SettingsSection.EMULATORS, page.section)
+        assertEquals(SettingsKind.SAVES, page.rows[state.selection.value.index].kind)
+    }
+
+    // Enable is On by default; two values, so A, left and right each flip it.
+    @Test fun second_screen_enable_flips_on_a_left_and_right() = runTest {
+        val settings = MemorySettings(ContentRef("Home"))
+        val state = state(settings)
+        state.load()
+        state.onSecondScreenChanged(true)
+        state.openSettings(SettingsSection.SECOND_SCREEN)
+        fun row() = assertIs<Screen.Settings>(state.screen.value).rows.single { it.kind == SettingsKind.SECOND_SCREEN_ENABLE }
+        assertEquals("On", row().secondary)
+        assertTrue(settingsNxRow(row()).cycleable)
+        state.select(0)
+        state.onButton(NxButton.A)
+        assertEquals(false, settings.secondScreen)
+        assertEquals("Off", row().secondary)
+        state.onButton(NxButton.RIGHT)
+        assertEquals(true, settings.secondScreen)
+        state.onButton(NxButton.LEFT)
+        assertEquals(false, settings.secondScreen)
+        assertEquals("Off", row().secondary)
+    }
+
+    // Bottom screen, right after Enable: Auto by default; A and RIGHT step on, LEFT back.
+    @Test fun bottom_screen_row_defaults_to_auto_and_cycles() = runTest {
+        val settings = MemorySettings(ContentRef("Home"))
+        val state = state(settings)
+        state.load()
+        state.onSecondScreenChanged(true)
+        state.openSettings(SettingsSection.SECOND_SCREEN)
+        fun rows() = assertIs<Screen.Settings>(state.screen.value).rows
+        fun row() = rows().single { it.kind == SettingsKind.BOTTOM_SCREEN }
+        assertEquals(1, rows().indexOf(row()))
+        assertEquals("Bottom screen", row().label)
+        assertEquals("Auto", row().secondary)
+        assertTrue(settingsNxRow(row()).cycleable)
+        state.select(rows().indexOf(row()))
+        state.onButton(NxButton.A)
+        assertEquals("main", settings.bottomScreen.value)
+        assertEquals("Main screen", row().secondary)
+        state.onButton(NxButton.RIGHT)
+        assertEquals("second", settings.bottomScreen.value)
+        assertEquals("Second screen", row().secondary)
+        state.onButton(NxButton.RIGHT)
+        assertEquals("auto", settings.bottomScreen.value)
+        state.onButton(NxButton.LEFT)
+        assertEquals("second", settings.bottomScreen.value)
     }
 
     // Settings → Emulators → Saves, NX Redux's three save-naming settings with its labels and defaults.

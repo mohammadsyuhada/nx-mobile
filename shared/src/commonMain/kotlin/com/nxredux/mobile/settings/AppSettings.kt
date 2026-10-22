@@ -1,5 +1,6 @@
 package com.nxredux.mobile.settings
 
+import com.nxredux.mobile.runner.BottomScreen
 import com.nxredux.mobile.runner.ContentRef
 import com.nxredux.mobile.storage.SaveFormat
 import com.nxredux.mobile.storage.SaveNaming
@@ -177,7 +178,7 @@ interface AppSettings {
     var padTheme: PadTheme
     /**
      * Each main menu tab's style (List, Grid or Carousel), Home's too (Layouts → Home layout); a category missing from
-     * the map is its default ([MenuStyles.defaultStyleOf]: Grid for Home and Tools, Carousel for the others) and a stored
+     * the map is its default ([MenuStyles.defaultStyleOf]: Grid for Home and Tools, Minimal for Collections, Carousel for Consoles) and a stored
      * Backdrop reads as Carousel ([MenuStyles.styleOf]).
      */
     var menuStyles: Map<MenuCategory, MenuStyle>
@@ -315,6 +316,19 @@ interface AppSettings {
     var debugLog: Boolean
         get() = false
         set(@Suppress("UNUSED_PARAMETER") value) {}
+
+    /** Settings → Emulators → Second screen (default on): a built-in or wired second screen shows part of the frame. Defaulted, like [debugLog]. */
+    var secondScreen: Boolean
+        get() = true
+        set(@Suppress("UNUSED_PARAMETER") value) {}
+    /**
+     * Settings → Emulators → Bottom screen (default Auto): which display is the touch screen; a console's own choice wins.
+     * Defaulted, like [debugLog].
+     */
+    var bottomScreen: BottomScreen
+        get() = BottomScreen.AUTO
+        set(@Suppress("UNUSED_PARAMETER") value) {}
+
     /**
      * First setup's All files access step was answered (Allow or Skip); it is never shown again. Defaulted, like
      * [debugLog].

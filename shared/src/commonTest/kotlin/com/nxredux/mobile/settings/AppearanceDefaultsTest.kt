@@ -5,9 +5,9 @@ import kotlin.test.assertEquals
 
 /** Appearance and Layouts' named defaults: NX Redux's (config.h CFG_DEFAULT_*, menustyle_model.h) where it has the option. */
 class AppearanceDefaultsTest {
-    @Test fun anUnsetTabTakesItsOwnDefaultToolsGridTheOthersCarousel() {
+    @Test fun anUnsetTabTakesItsOwnDefaultToolsGridCollectionsMinimalConsolesCarousel() {
         assertEquals(MenuStyle.CAROUSEL, MenuStyles.styleOf(emptyMap(), MenuCategory.CONSOLES))
-        assertEquals(MenuStyle.CAROUSEL, MenuStyles.styleOf(emptyMap(), MenuCategory.COLLECTIONS))
+        assertEquals(MenuStyle.MINIMAL, MenuStyles.styleOf(emptyMap(), MenuCategory.COLLECTIONS))
         assertEquals(MenuStyle.GRID, MenuStyles.styleOf(emptyMap(), MenuCategory.TOOLS))
         assertEquals(MenuStyle.GRID, MenuStyles.defaultStyleOf(MenuCategory.TOOLS))
     }

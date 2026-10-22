@@ -74,4 +74,12 @@ class ArtChoiceTest {
         assertNull(tileUrl(0f, 0f, null, "h", "g"))
         assertEquals("s", tileUrl(0f, 0f, "s", "h", "g"))
     }
+
+    @Test fun panelArtChain() {
+        assertEquals("3d", panelArt("3d", "2d", "g", "s"))
+        assertEquals("2d", panelArt(null, "2d", "g", "s"))
+        assertEquals("g", panelArt(null, null, "g", "s"))
+        assertEquals("s", panelArt(null, null, null, "s"))
+        assertNull(panelArt(null, null, null, null))
+    }
 }

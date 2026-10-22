@@ -68,6 +68,7 @@ import com.nxredux.mobile.options.CoreOptionSource
 import com.nxredux.mobile.options.EmulatorPage
 import com.nxredux.mobile.options.NoCoreOptions
 import com.nxredux.mobile.netplay.NetplaySession
+import com.nxredux.mobile.runner.BottomScreen
 import com.nxredux.mobile.runner.ClassicNes
 import com.nxredux.mobile.runner.Console
 import com.nxredux.mobile.runner.ContentRef
@@ -248,6 +249,11 @@ class AppDeps(
     val chdSectors: com.nxredux.mobile.library.disc.ChdSectors? = null,
     /** The notification permission (Android 13+), asked with All files access on setup's Permissions page. */
     val notificationAccess: com.nxredux.mobile.storage.NotificationAccess? = null,
+    /**
+     * A built-in second screen is there now (a dual-screen handheld's, not an attached one): onboarding asks which screen
+     * is the bottom one. The platform shows the step's second button on it ([AppState.onboardingBottomScreenOnSecond]).
+     */
+    val builtInSecondScreen: () -> Boolean = { false },
 )
 
 /**
@@ -410,7 +416,7 @@ sealed interface Screen {
     data class ArtworkReset(val scopes: List<ResetScope>, val confirm: ResetScope? = null) : Screen
 }
 
-enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_FOLDER, IMPORT_ZIP, IMPORT_RETROARCH, IMPORT_DONE, RESET_DEFAULTS, ALL_FILES,
+enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SECOND_SCREEN, SECOND_SCREEN_ENABLE, BOTTOM_SCREEN, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_FOLDER, IMPORT_ZIP, IMPORT_RETROARCH, IMPORT_DONE, RESET_DEFAULTS, ALL_FILES,
     LAYOUT_HOME, LAYOUT_CONSOLES, LAYOUT_COLLECTIONS, LAYOUT_TOOLS, LAYOUT_GAME_LISTS, LAYOUT_TITLE_HINTS, LAYOUT_SWITCHER, TEXT_SIZE }
 
 /**
@@ -422,6 +428,8 @@ enum class SettingsSection(val label: String, val parent: SettingsSection? = nul
     LIBRARY("Library"), EMULATORS("Emulators"), APPEARANCE("Appearance"), MAIN_MENU("Layouts"), CONTROLS("Controls"), LAUNCHER("Launcher"), DEVELOPER("Developer"), ABOUT("About"),
     ROM_FOLDERS("ROM folders", LIBRARY, SettingsKind.FOLDERS), DEFAULT_EMULATORS("Default emulators", EMULATORS, SettingsKind.DEFAULTS),
     PAD_LAYOUT("Pad layout", CONTROLS, SettingsKind.PAD_LAYOUT), SAVES("Saves", EMULATORS, SettingsKind.SAVES),
+    // Only while a second screen is connected: Enable and Bottom screen.
+    SECOND_SCREEN("Second screen", EMULATORS, SettingsKind.SECOND_SCREEN),
     IMPORT_SAVES("Import saves", SAVES, SettingsKind.IMPORT_SAVES),
     // An import's results; Done and B go back to Saves ([AppState.leaveSubPage]), past Import saves.
     IMPORT_RESULT("Import results", IMPORT_SAVES),
@@ -1650,7 +1658,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val folder = setupFolderSteps()
         return when {
             m > 0 -> "Setup · Step ${n + folder} of ${m + folder}"
-            onboarding.step == OnboardingStep.TEXT_SIZE -> "Setup"
+            onboarding.step == OnboardingStep.TEXT_SIZE || onboarding.step == OnboardingStep.BOTTOM_SCREEN -> "Setup"
             else -> "Welcome"
         }
     }
@@ -1756,9 +1764,34 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         onboarding.context = onboarding.context.copy(padPage = padPage, buttons = padController || (padPage && deps.settings.menuPad))
     }
 
+    private var secondConnected = false
+
+    /**
+     * A qualifying second screen was connected or removed (the platform reports it): Settings → Emulators and an open
+     * Emulator or Game Settings page add or drop their dual-screen rows at once (the Second screen page, open, goes back). Stored values are untouched.
+     */
+    fun onSecondScreenChanged(connected: Boolean) {
+        if (secondConnected == connected) return
+        secondConnected = connected
+        when ((_screen.value as? Screen.Settings)?.section) {
+            SettingsSection.EMULATORS -> refreshSettings()
+            SettingsSection.SECOND_SCREEN -> if (!connected) showSettingsOn(SettingsSection.EMULATORS, SettingsKind.SAVES)   // its entry is gone: back to Emulators
+            else -> Unit
+        }
+        emulatorSettings.refreshOpenPage()
+    }
+
     /** A step's title, details and rows. */
     private fun onboardingPage(step: OnboardingStep, error: String?): Triple<String, List<String>, List<NxRow>> = when (step) {
         OnboardingStep.WELCOME -> Triple("NX Redux", listOf("Pick up. Select a game. Play."), listOf(NxRow("Get started")))
+        OnboardingStep.BOTTOM_SCREEN -> Triple(
+            "Which is the bottom screen?",
+            listOf(
+                "Tap the button on the bottom screen. It becomes the touch screen, and games show their picture on the other.",
+                "Change it later in Settings → Emulators, or for one console in its settings.",
+            ),
+            listOf(NxRow("This is the bottom screen"), NxRow("Skip")),
+        )
         OnboardingStep.HANDHELD -> Triple(
             "Do you also play on an NX Redux handheld?", listOf("Your games, BIOS, saves, save states and collections can then carry over between the two."),
             listOf(NxRow("Yes, I have one"), NxRow("No")),
@@ -1871,10 +1904,12 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val s = _screen.value as? Screen.Onboarding ?: return
         when (s.step) {
             OnboardingStep.WELCOME -> { onboarding.startTextSize(); showOnboarding() }
-            OnboardingStep.TEXT_SIZE -> if (index < s.rows.lastIndex) flipOnboardingValue(index, 1) else {
-                welcomeDone = true
-                onboarding.finish()
-                showPickFolder()
+            OnboardingStep.TEXT_SIZE -> if (index < s.rows.lastIndex) flipOnboardingValue(index, 1)
+                else if (deps.builtInSecondScreen()) { onboarding.startBottomScreen(); showOnboarding() }   // the bottom screen question, then the folders
+                else startFolderSteps()
+            OnboardingStep.BOTTOM_SCREEN -> {
+                if (index == 0) deps.settings.bottomScreen = BottomScreen.MAIN   // Skip keeps Auto
+                startFolderSteps()
             }
             OnboardingStep.HANDHELD -> {
                 onboarding.context = onboarding.context.copy(handheld = index == 0)
@@ -2025,10 +2060,27 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         showOnboarding()
     }
 
-    /** B: the step before; WELCOME stays, HANDHELD goes back to the home folder pick. */
+    /**
+     * The Bottom screen step's button on the second screen was tapped: the second screen is the bottom one. Only while the
+     * step shows.
+     */
+    fun onboardingBottomScreenOnSecond() {
+        if (onboarding.step != OnboardingStep.BOTTOM_SCREEN || (_screen.value as? Screen.Onboarding)?.step != OnboardingStep.BOTTOM_SCREEN) return
+        deps.settings.bottomScreen = BottomScreen.SECOND
+        startFolderSteps()
+    }
+
+    /** The welcome pages are answered: on to first setup's folder steps. */
+    private fun startFolderSteps() {
+        welcomeDone = true
+        onboarding.finish()
+        showPickFolder()
+    }
+
+    /** B: the step before; WELCOME stays, the first post-folder step goes back to the ROMs folder step. */
     private fun onboardingBack() {
-        // A first run's HANDHELD: back to the ROMs folder step (going on again comes back here, the saved step kept).
-        if (onboarding.step == OnboardingStep.HANDHELD) { onboarding.finish(); return showAddFirstExtra() }
+        // A first run's first step after the folders: back to the ROMs folder step (going on again comes back here, the saved step kept).
+        if (onboarding.isFirstMain()) { onboarding.finish(); return showAddFirstExtra() }
         val step = onboarding.back() ?: return
         onboardingImported = null
         deps.settings.onboardingStep = step.takeIf { it != OnboardingStep.WELCOME && it != OnboardingStep.TEXT_SIZE }?.name
@@ -2043,10 +2095,10 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         } else backToWelcome()
     }
 
-    /** First setup's first folder step (All files access or the home pick), back: the text size question again. */
+    /** First setup's first folder step (All files access or the home pick), back: the bottom screen question where asked, else the text size question. */
     private fun backToWelcome() {
         welcomeDone = false
-        onboarding.startTextSize()
+        if (deps.builtInSecondScreen()) onboarding.startBottomScreen() else onboarding.startTextSize()
         showOnboarding()
     }
 
@@ -2923,6 +2975,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             SettingsKind.SECONDARY_ACCENT -> pick(SecondaryAccent.entries, s.secondaryAccent, { it.label }, ::cycleSecondaryAccent)
             SettingsKind.SAVE_FORMAT -> pick(SaveFormat.entries, s.saveFormat, { it.label }, ::cycleSaveFormat)
             SettingsKind.STATE_FORMAT -> pick(StateFormat.entries, s.stateFormat, { it.label }, ::cycleStateFormat)
+            SettingsKind.BOTTOM_SCREEN -> pick(BottomScreen.entries, s.bottomScreen, ::bottomScreenLabel, ::cycleBottomScreen)
             SettingsKind.MENU_STYLE -> row.category?.let { c -> pick(MenuStyles.MAIN_MENU_STYLES, MenuStyles.styleOf(s.menuStyles, c), ::menuStyleLabel) { cycleMenuStyle(c, it) } } ?: false
             SettingsKind.GAME_LIST_STYLE -> pick(MenuStyles.GAME_LIST_STYLES, s.gameListStyle, ::menuStyleLabel, ::cycleGameListStyle)
             SettingsKind.CONTROLLER_ART -> pick(ConsoleArt.entries, s.consoleArt, { it.label }, ::cycleConsoleArt)
@@ -3117,6 +3170,10 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             SettingsRow(SettingsKind.DEFAULTS, "Default emulators"),
             SettingsRow(SettingsKind.EMULATORS, "Settings"),
             SettingsRow(SettingsKind.SAVES, "Saves"),
+        ) + if (secondConnected) listOf(SettingsRow(SettingsKind.SECOND_SCREEN, "Second screen")) else emptyList()   // absent, not disabled, without one
+        SettingsSection.SECOND_SCREEN -> listOf(
+            SettingsRow(SettingsKind.SECOND_SCREEN_ENABLE, "Enable", if (deps.settings.secondScreen) "On" else "Off"),
+            SettingsRow(SettingsKind.BOTTOM_SCREEN, "Bottom screen", bottomScreenLabel(deps.settings.bottomScreen)),
         )
         // NX Redux's Settings → System save rows, so both devices name saves alike.
         SettingsSection.SAVES -> listOf(
@@ -3200,6 +3257,12 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             deps.copyText(aboutCopyText(deps.appInfo, _gpu.value))
             showNotice("Device info copied")
         }
+    }
+
+    private fun bottomScreenLabel(b: BottomScreen): String = when (b) {
+        BottomScreen.AUTO -> "Auto"
+        BottomScreen.MAIN -> "Main screen"
+        BottomScreen.SECOND -> "Second screen"
     }
 
     private fun padThemeLabel(theme: PadTheme): String = when (theme) {
@@ -3386,6 +3449,19 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** Developer → Debug log: two values, so every press flips it. */
     private fun flipDebugLog() {
         deps.settings.debugLog = !deps.settings.debugLog
+        refreshSettings()
+    }
+
+    /** Emulators → Second screen: two values, so every press flips it. */
+    private fun flipSecondScreen() {
+        deps.settings.secondScreen = !deps.settings.secondScreen
+        refreshSettings()
+    }
+
+    /** Emulators → Bottom screen: Auto, Main screen, Second screen (LEFT back, RIGHT and A forward, wrapping). */
+    private fun cycleBottomScreen(step: Int) {
+        val all = BottomScreen.entries
+        deps.settings.bottomScreen = all[(all.indexOf(deps.settings.bottomScreen) + step).mod(all.size)]
         refreshSettings()
     }
 
@@ -3832,6 +3908,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     SettingsKind.BACKDROP_ART -> cycleBackdropArt(step)
                     SettingsKind.PAGE_TITLE -> flipPageTitle()
                     SettingsKind.DEBUG_LOG -> flipDebugLog()
+                    SettingsKind.SECOND_SCREEN_ENABLE -> flipSecondScreen()
+                    SettingsKind.BOTTOM_SCREEN -> cycleBottomScreen(step)
                     SettingsKind.MENU_PAD -> flipMenuPad()
                     SettingsKind.BUTTON_HINTS -> flipButtonHints()
                     SettingsKind.EXTRA_INFO -> flipExtraInfo()
@@ -4335,7 +4413,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             // a save that just arrived.
             SaveTransferRules.launchRefusal(deps.saveTransfer?.importing == true, deps.deviceSync?.running == true)?.let { showNotice(it); return@launch }
             dropPushedTab()
-            deps.runner.launch(GameSession(sys.tag, game.shownName, core, game.ref, game.folder, game.fileName, resumeSlot, all, systemSets = systemSets, gamePath = game.path, netplay = netplay)) {
+            deps.runner.launch(GameSession(sys.tag, game.shownName, core, game.ref, game.folder, game.fileName, resumeSlot, all, systemSets = systemSets, gamePath = game.path,
+                artPath = panelArt(game.boxartRef?.value, game.box2dRef?.value, game.gridRef?.value, game.screenshotRef?.value), netplay = netplay)) {
                 recorder.record(recent)
             }
         }
@@ -5234,6 +5313,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     SettingsKind.BACKDROP_ART -> cycleBackdropArt(1)
                     SettingsKind.PAGE_TITLE -> flipPageTitle()
                     SettingsKind.DEBUG_LOG -> flipDebugLog()
+                    SettingsKind.SECOND_SCREEN_ENABLE -> flipSecondScreen()
+                    SettingsKind.SECOND_SCREEN -> { sectionSelections[s.section] = _selection.value; openSettings(SettingsSection.SECOND_SCREEN) }
+                    SettingsKind.BOTTOM_SCREEN -> cycleBottomScreen(1)
                     SettingsKind.MENU_PAD -> flipMenuPad()
                     SettingsKind.BUTTON_HINTS -> flipButtonHints()
                     SettingsKind.EXTRA_INFO -> flipExtraInfo()
@@ -5318,6 +5400,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         },
         work = deps.compute,
         vulkanFailed = { it in deps.settings.vulkanFailedCores },
+        secondScreen = { secondConnected },
     )
 
     // --- Tools -> Artwork: AppState hosts the controller (index writes stay here); the pages live in ArtworkScreenController ---

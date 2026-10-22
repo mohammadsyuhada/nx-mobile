@@ -279,6 +279,7 @@ void LibretroDroid::onSurfaceCreated() {
         vulkan
     };
 
+    geometryRotation = Environment::getInstance().getScreenRotation();
     auto newVideo = new Video(
         renderingOptions,
         fragmentShaderConfig,
@@ -296,11 +297,15 @@ void LibretroDroid::onSurfaceCreated() {
     video->updateScaleMode(scaleMode);
     video->updateScreenOffset(screenOffsetX, screenOffsetY);
     video->updateScreenRegions(screenRegions);
+    video->updateSecondaryRegions(secondaryRegions);
     video->setPresetChain(presetChain);
     geometryWidth = (float) system_av_info.geometry.base_width;
     geometryHeight = (float) system_av_info.geometry.base_height;
     // A re-created Video (new context after load) gets the running game's aspect ratio; resume() does it the first time.
-    if (gameLoaded) refreshAspectRatio();
+    if (gameLoaded) {
+        refreshAspectRatio();
+        geometryChanged = true;
+    }
 
     if (Environment::getInstance().getHwContextReset() != nullptr && !(vulkan && hwContextLive)) {
         Environment::getInstance().getHwContextReset()();
@@ -414,6 +419,8 @@ void LibretroDroid::create(
     geometryWidth = 0.0F;
     geometryHeight = 0.0F;
     geometryAspect = 0.0F;
+    geometryRotation = 0.0F;
+    geometryChanged = false;
     hardwareFrame.store(false);
 
     gbalink::forgetCore();   // nx-mobile: the new core registers its netpacket interface itself (retro_init or load)
@@ -612,7 +619,9 @@ void LibretroDroid::resume() {
     if (fpsSync) fpsSync->reset();
     if (audio) audio->start();
     // The Video is the GL thread's: the ratio is applied there at the next step.
-    geometryAspect = getAspectRatio();
+    float aspect = getAspectRatio();
+    if (aspect != geometryAspect) geometryChanged = true;
+    geometryAspect = aspect;
     aspectRatioPending = true;
 }
 
@@ -703,6 +712,7 @@ void LibretroDroid::step() {
         );
         geometryWidth = (float) Environment::getInstance().getGameGeometryWidth();
         geometryHeight = (float) Environment::getInstance().getGameGeometryHeight();
+        geometryChanged = true;
 
         dirtyVideo = true;
     }
@@ -710,7 +720,9 @@ void LibretroDroid::step() {
     if (video && Environment::getInstance().isScreenRotationUpdated()) {
         Environment::getInstance().clearScreenRotationUpdated();
 
-        video->updateRotation(Environment::getInstance().getScreenRotation());
+        geometryRotation = Environment::getInstance().getScreenRotation();
+        geometryChanged = true;
+        video->updateRotation(geometryRotation);
     }
 
 }
@@ -1021,8 +1033,26 @@ void LibretroDroid::setScreenRegions(std::vector<ScreenRegion> regions) {
     }
 }
 
-std::array<float, 3> LibretroDroid::getGameGeometry() const {
-    return { geometryWidth.load(), geometryHeight.load(), geometryAspect.load() };
+void LibretroDroid::setSecondaryRegions(std::vector<ScreenRegion> regions) {
+    secondaryRegions = std::move(regions);
+
+    if (video) {
+        video->updateSecondaryRegions(secondaryRegions);
+    }
+}
+
+void LibretroDroid::renderSecondary(unsigned width, unsigned height) {
+    std::lock_guard<std::mutex> lock(coreLock);
+    if (!video) return;
+    try {
+        video->renderSecondary(width, height);
+    } catch (const std::exception& e) {
+        LOGE("Error rendering the second screen: %s", e.what());
+    }
+}
+
+std::array<float, 4> LibretroDroid::getGameGeometry() const {
+    return { geometryWidth.load(), geometryHeight.load(), geometryAspect.load(), geometryRotation.load() };
 }
 
 bool LibretroDroid::isHardwareRendered() const {

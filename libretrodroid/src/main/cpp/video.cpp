@@ -175,6 +175,7 @@ void Video::setPresetParameter(const std::string& id, float value) {
     // Not presetDirty: a parameter change updates the live renderer instead of rebuilding it.
     if (requestedPreset) requestedPreset->params[id] = value;
     if (presetRenderer) presetRenderer->setParameter(id, value);
+    if (secondaryPresetRenderer) secondaryPresetRenderer->setParameter(id, value);
     isDirty = true;
 }
 
@@ -188,6 +189,8 @@ void Video::updatePresetRenderer() {
     if (!presetDirty) return;
     presetDirty = false;
     presetRenderer.reset();
+    secondaryPresetRenderer.reset();
+    secondaryPresetFailed = false;
     if (!requestedPreset) return;
     try {
         presetRenderer = std::make_unique<PresetChainRenderer>(*requestedPreset);
@@ -200,52 +203,65 @@ void Video::updatePresetRenderer() {
     }
 }
 
-void Video::renderFrame(bool force) {
-    if (!rendersInVideoCallback()) {
-        drawFrame(force);
-        return;
+// A GL core draws inside its video callback and hands back whatever state it left: flycast leaves GL_ARRAY_BUFFER
+// bound, which turns the client-side vertex pointers of these passes into offsets into its buffer (nothing shows).
+// While alive (and active), this neutralises that state and then restores it, so the core resumes with exactly the
+// state it left (GL cores cache their state).
+class CoreGlStateGuard {
+public:
+    explicit CoreGlStateGuard(bool active) : active(active) {
+        if (!active) return;
+        scissor = glIsEnabled(GL_SCISSOR_TEST);
+        blend = glIsEnabled(GL_BLEND);
+        stencil = glIsEnabled(GL_STENCIL_TEST);
+        cull = glIsEnabled(GL_CULL_FACE);
+        depth = glIsEnabled(GL_DEPTH_TEST);
+        glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &arrayBuffer);
+        glGetBooleanv(GL_COLOR_WRITEMASK, colorMask);
+        // Only a GL core (ES3 framebuffer renderer) can leave a vertex array object bound; a bound VAO would reject
+        // the client-side attribute arrays (and the draw would clobber the core's VAO).
+        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vertexArray);
+
+        glDisable(GL_SCISSOR_TEST);
+        glDisable(GL_BLEND);
+        glDisable(GL_STENCIL_TEST);
+        glDisable(GL_CULL_FACE);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        glBindVertexArray(0);
     }
 
-    // A GL core draws inside its video callback and hands back whatever state it left: flycast leaves
-    // GL_ARRAY_BUFFER bound, which turns the client-side vertex pointers of these passes into offsets into its
-    // buffer (nothing shows). Neutralise that state for this draw and restore it, so the core resumes with exactly
-    // the state it left (GL cores cache their state). Same for the paused redraw.
-    GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
-    GLboolean blend = glIsEnabled(GL_BLEND);
-    GLboolean stencil = glIsEnabled(GL_STENCIL_TEST);
-    GLboolean cull = glIsEnabled(GL_CULL_FACE);
-    GLboolean depth = glIsEnabled(GL_DEPTH_TEST);
+    ~CoreGlStateGuard() {
+        if (!active) return;
+        // Re-bind the core's objects only while they still exist: binding a deleted vertex array raises
+        // GL_INVALID_OPERATION (and a deleted buffer name would be silently re-created as a fresh, empty buffer).
+        auto savedVertexArray = static_cast<GLuint>(vertexArray);
+        auto savedArrayBuffer = static_cast<GLuint>(arrayBuffer);
+        glBindVertexArray(savedVertexArray != 0 && glIsVertexArray(savedVertexArray) ? savedVertexArray : 0);
+        glColorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
+        glBindBuffer(GL_ARRAY_BUFFER, savedArrayBuffer != 0 && glIsBuffer(savedArrayBuffer) ? savedArrayBuffer : 0);
+        if (scissor) glEnable(GL_SCISSOR_TEST);
+        if (blend) glEnable(GL_BLEND);
+        if (stencil) glEnable(GL_STENCIL_TEST);
+        if (cull) glEnable(GL_CULL_FACE);
+        if (depth) glEnable(GL_DEPTH_TEST);  // the draws disable it
+    }
+
+    CoreGlStateGuard(const CoreGlStateGuard&) = delete;
+    CoreGlStateGuard& operator=(const CoreGlStateGuard&) = delete;
+
+private:
+    bool active;
+    GLboolean scissor = GL_FALSE, blend = GL_FALSE, stencil = GL_FALSE, cull = GL_FALSE, depth = GL_FALSE;
     GLint arrayBuffer = 0;
-    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &arrayBuffer);
-    GLboolean colorMask[4];
-    glGetBooleanv(GL_COLOR_WRITEMASK, colorMask);
-    // Only a GL core (ES3 framebuffer renderer) can leave a vertex array object bound; a bound VAO would reject the
-    // client-side attribute arrays (and the draw would clobber the core's VAO).
+    GLboolean colorMask[4] = { GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE };
     GLint vertexArray = 0;
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vertexArray);
+};
 
-    glDisable(GL_SCISSOR_TEST);
-    glDisable(GL_BLEND);
-    glDisable(GL_STENCIL_TEST);
-    glDisable(GL_CULL_FACE);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glBindVertexArray(0);
-
+void Video::renderFrame(bool force) {
+    // Same for the paused redraw.
+    CoreGlStateGuard guard(rendersInVideoCallback());
     drawFrame(force);
-
-    // Re-bind the core's objects only while they still exist: binding a deleted vertex array raises
-    // GL_INVALID_OPERATION (and a deleted buffer name would be silently re-created as a fresh, empty buffer).
-    GLuint savedVertexArray = static_cast<GLuint>(vertexArray);
-    GLuint savedArrayBuffer = static_cast<GLuint>(arrayBuffer);
-    glBindVertexArray(savedVertexArray != 0 && glIsVertexArray(savedVertexArray) ? savedVertexArray : 0);
-    glColorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
-    glBindBuffer(GL_ARRAY_BUFFER, savedArrayBuffer != 0 && glIsBuffer(savedArrayBuffer) ? savedArrayBuffer : 0);
-    if (scissor) glEnable(GL_SCISSOR_TEST);
-    if (blend) glEnable(GL_BLEND);
-    if (stencil) glEnable(GL_STENCIL_TEST);
-    if (cull) glEnable(GL_CULL_FACE);
-    if (depth) glEnable(GL_DEPTH_TEST);  // drawFrame disables it
 }
 
 void Video::drawFrame(bool force) {
@@ -284,7 +300,7 @@ void Video::drawFrame(bool force) {
     glBindTexture(GL_TEXTURE_2D, 0);
 
     if (!videoLayout.getRegionQuads().empty()) {
-        renderRegions();
+        renderRegions(videoLayout, presetRenderer.get());
         frameCount++;
         return;
     }
@@ -300,40 +316,42 @@ void Video::drawFrame(bool force) {
         return;
     }
 
-    drawBuiltInChain(videoLayout.getForegroundVertices(), frameCoordinates(videoLayout.getTextureCoordinates()));
+    drawBuiltInChain(videoLayout.getForegroundVertices(), frameCoordinates(videoLayout.getTextureCoordinates()),
+                     videoLayout.getScreenWidth(), videoLayout.getScreenHeight());
     frameCount++;
 }
 
-void Video::renderRegions() {
+void Video::renderRegions(VideoLayout& layout, PresetChainRenderer* preset) {
+    auto screenW = (unsigned) layout.getScreenWidth();
+    auto screenH = (unsigned) layout.getScreenHeight();
     auto texW = (unsigned) getTextureWidth();
     auto texH = (unsigned) getTextureHeight();
-    for (const auto& quad : videoLayout.getRegionQuads()) {
+    for (const auto& quad : layout.getRegionQuads()) {
         if (!quad.shaded) {
-            drawPlain(quad);
-        } else if (presetRenderer) {
+            drawPlain(quad, screenW, screenH);
+        } else if (preset) {
             // One chain serves every shaded region in turn: it keeps no frame history, and it resizes its FBOs only
             // when the region's size changes (the frontend gives shaded regions one size). Only pass 0 reads the
             // region's texture coordinates: later passes that sample Original (or the source) use whole-texture
             // coordinates, so they see the whole frame (both DS screens), not just this region.
             auto frameW = (unsigned) std::lround(quad.srcWidth * (float) texW);
             auto frameH = (unsigned) std::lround(quad.srcHeight * (float) texH);
-            presetRenderer->render(
+            preset->render(
                 renderer->getTexture(), (unsigned) getTextureStorageWidth(), (unsigned) getTextureStorageHeight(),
-                frameW, frameH, frameCoordinates(quad.coordinates), quad.vertices, videoLayout.getFramebufferVertices(),
-                videoLayout.getScreenWidth(), videoLayout.getScreenHeight(), linearTexture, frameCount);
+                frameW, frameH, frameCoordinates(quad.coordinates), quad.vertices, layout.getFramebufferVertices(),
+                (int) screenW, (int) screenH, linearTexture, frameCount);
         } else {
             // Built-in shaders: single-pass ones (the app only uses SHADER_DEFAULT) draw each region exactly; the
             // multi-pass upscalers are not region-aware.
             // A downscaled region samples linearly whatever the sharpness; put back after, as drawPlain does.
-            bool down = regionDownscales(quad, (float) texW, (float) texH,
-                                         videoLayout.getScreenWidth(), videoLayout.getScreenHeight());
+            bool down = regionDownscales(quad, (float) texW, (float) texH, (float) screenW, (float) screenH);
             GLint filter = (linearTexture || down) ? GL_LINEAR : GL_NEAREST;
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, renderer->getTexture());
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
             glBindTexture(GL_TEXTURE_2D, 0);
-            drawBuiltInChain(quad.vertices, frameCoordinates(quad.coordinates));
+            drawBuiltInChain(quad.vertices, frameCoordinates(quad.coordinates), screenW, screenH);
         }
     }
     GLint filter = linearTexture ? GL_LINEAR : GL_NEAREST;
@@ -344,7 +362,8 @@ void Video::renderRegions() {
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-void Video::drawBuiltInChain(const std::array<float, 12>& vertices, const std::array<float, 12>& coordinates) {
+void Video::drawBuiltInChain(const std::array<float, 12>& vertices, const std::array<float, 12>& coordinates,
+                             unsigned screenWidth, unsigned screenHeight) {
     for (int i = 0; i < shadersChain.size(); ++i) {
         auto shader = shadersChain[i];
         auto passData = renderer->getPassData(i);
@@ -355,8 +374,8 @@ void Video::drawBuiltInChain(const std::array<float, 12>& vertices, const std::a
         glViewport(
             0,
             0,
-            passData.width.value_or(videoLayout.getScreenWidth()),
-            passData.height.value_or(videoLayout.getScreenHeight())
+            passData.width.value_or(screenWidth),
+            passData.height.value_or(screenHeight)
         );
 
         glUseProgram(shader.gProgram);
@@ -380,7 +399,7 @@ void Video::drawBuiltInChain(const std::array<float, 12>& vertices, const std::a
 
         glUniform2f(shader.gTextureSizeHandle, getTextureStorageWidth(), getTextureStorageHeight());
 
-        glUniform1f(shader.gScreenDensityHandle, getScreenDensity());
+        glUniform1f(shader.gScreenDensityHandle, getScreenDensity((float) screenWidth, (float) screenHeight));
 
         glDrawArrays(GL_TRIANGLES, 0, 6);
 
@@ -398,7 +417,7 @@ void Video::drawBuiltInChain(const std::array<float, 12>& vertices, const std::a
     }
 }
 
-void Video::drawPlain(const RegionQuad& quad) {
+void Video::drawPlain(const RegionQuad& quad, unsigned screenWidth, unsigned screenHeight) {
     if (!plainShader) {
         auto chain = ShaderManager::getShader({ ShaderManager::Type::SHADER_DEFAULT, { { "LINEAR", "0" } } });
         plainShader = createShaderChainEntry(chain.passes.front());
@@ -406,7 +425,7 @@ void Video::drawPlain(const RegionQuad& quad) {
     const auto& s = *plainShader;
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, videoLayout.getScreenWidth(), videoLayout.getScreenHeight());
+    glViewport(0, 0, (GLsizei) screenWidth, (GLsizei) screenHeight);
     glUseProgram(s.gProgram);
 
     glVertexAttribPointer(s.gvPositionHandle, 2, GL_FLOAT, GL_FALSE, 0, quad.vertices.data());
@@ -420,12 +439,12 @@ void Video::drawPlain(const RegionQuad& quad) {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, renderer->getTexture());
     GLint plainFilter = regionDownscales(quad, getTextureWidth(), getTextureHeight(),
-                                         videoLayout.getScreenWidth(), videoLayout.getScreenHeight()) ? GL_LINEAR : GL_NEAREST;
+                                         (float) screenWidth, (float) screenHeight) ? GL_LINEAR : GL_NEAREST;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, plainFilter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, plainFilter);
     glUniform1i(s.gTextureHandle, 0);
     glUniform2f(s.gTextureSizeHandle, getTextureStorageWidth(), getTextureStorageHeight());
-    glUniform1f(s.gScreenDensityHandle, getScreenDensity());
+    glUniform1f(s.gScreenDensityHandle, getScreenDensity((float) screenWidth, (float) screenHeight));
 
     // A translucent region (the inset) is blended over what the regions before it drew. Only the blend state is
     // touched, and put back as found: a GL core caches its own.
@@ -472,12 +491,52 @@ void Video::updateScreenRegions(std::vector<ScreenRegion> regions) {
     isDirty = true;
 }
 
+void Video::updateSecondaryRegions(std::vector<ScreenRegion> regions) {
+    // Not isDirty: the main output is unchanged; the second surface is redrawn every frame anyway.
+    secondaryLayout.updateScreenRegions(std::move(regions));
+}
+
+void Video::updateSecondaryPresetRenderer() {
+    if (!presetRenderer || secondaryPresetRenderer || secondaryPresetFailed || !requestedPreset) return;
+    try {
+        secondaryPresetRenderer = std::make_unique<PresetChainRenderer>(*requestedPreset);
+        secondaryPresetRenderer->setPreserveTextureBindings(rendersInVideoCallback());
+    } catch (const std::exception& e) {
+        // The main chain built from the same source, so this is unexpected; the second surface then draws its shaded
+        // regions with the built-in shader. Not reported as presetError: that belongs to the main chain.
+        LOGE("Secondary preset chain failed: %s", e.what());
+        secondaryPresetFailed = true;
+    }
+}
+
+void Video::renderSecondary(unsigned width, unsigned height) {
+    if (width == 0 || height == 0) return;
+    if ((unsigned) secondaryLayout.getScreenWidth() != width || (unsigned) secondaryLayout.getScreenHeight() != height) {
+        secondaryLayout.updateScreenSize(width, height);
+    }
+
+    CoreGlStateGuard guard(rendersInVideoCallback());
+
+    glDisable(GL_DEPTH_TEST);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, (GLsizei) width, (GLsizei) height);
+    glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // Nothing to sample before the core's first frame, nor before the main draw built the built-in shader.
+    if (secondaryLayout.getRegionQuads().empty() || shadersChain.empty()) return;
+    if (getTextureWidth() <= 0.0F || getTextureHeight() <= 0.0F) return;
+
+    updateSecondaryPresetRenderer();
+    renderRegions(secondaryLayout, secondaryPresetRenderer.get());
+}
+
 void Video::renderPausedFrame() {
     renderFrame(true);
 }
 
-float Video::getScreenDensity() {
-    return std::min(videoLayout.getScreenWidth() / getTextureWidth(), videoLayout.getScreenHeight() / getTextureHeight());
+float Video::getScreenDensity(float screenWidth, float screenHeight) {
+    return std::min(screenWidth / getTextureWidth(), screenHeight / getTextureHeight());
 }
 
 float Video::getTextureWidth() {
@@ -577,7 +636,8 @@ Video::Video(
     skipDuplicateFrames(skipDuplicateFrames),
     immersiveModeEnabled(immersiveModeEnabled),
     immersiveMode(immersiveModeConfig),
-    videoLayout(bottomLeftOrigin, rotation, viewportRect, viewportAlignment) {
+    videoLayout(bottomLeftOrigin, rotation, viewportRect, viewportAlignment),
+    secondaryLayout(bottomLeftOrigin, 0.0F, Rect(0.0F, 0.0F, 1.0F, 1.0F), V_ALIGN_CENTER) {
 
     glContext = eglGetCurrentContext();
 
@@ -602,11 +662,13 @@ Video::~Video() {
         if (plainShader) glDeleteProgram(plainShader->gProgram);
         immersiveMode.releaseGlObjects();
         if (renderer) renderer->releaseGlObjects();
-    } else if (presetRenderer) {
-        presetRenderer->abandonGlObjects();
+    } else {
+        if (presetRenderer) presetRenderer->abandonGlObjects();
+        if (secondaryPresetRenderer) secondaryPresetRenderer->abandonGlObjects();
     }
     // Destroyed after the checks above: a chain deletes its objects in its destructor unless abandoned.
     presetRenderer.reset();
+    secondaryPresetRenderer.reset();
 }
 
 void Video::updateShaderType(ShaderManager::Config shaderConfig) {

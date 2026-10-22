@@ -73,6 +73,9 @@ private val TAB_WORD_BOTTOM = 7.dp
 internal fun menuTabUnderlineBottom(): Float =
     MENU_TAB_ROW_HEIGHT.value / 2 + (NxTextSizes.pageTitle.value * NX_FONT_LINE + TAB_WORD_BOTTOM.value) / 2
 
+/** The tab words' centre in dp from the tab row's top: the words' box is centred, the underline room below the words. */
+internal fun menuTabWordCentre(): Dp = MENU_TAB_ROW_HEIGHT / 2 - TAB_WORD_BOTTOM / 2
+
 /** The easing every main menu glide uses (CSS cubic-bezier(.2,.8,.2,1)). */
 internal val NxMenuEasing = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)
 internal const val NX_MENU_GLIDE_MS = 240

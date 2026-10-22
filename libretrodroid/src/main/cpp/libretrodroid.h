@@ -188,8 +188,20 @@ public:
     // Video created later (a new surface) gets them. GL thread.
     void setScreenRegions(std::vector<ScreenRegion> regions);
 
-    // Base width, base height and aspect ratio of the running game; zeros before it loads. Any thread.
-    std::array<float, 3> getGameGeometry() const;
+    // Regions drawn on a second surface (dst 0..1 of that whole surface). Remembered like setScreenRegions. GL thread.
+    void setSecondaryRegions(std::vector<ScreenRegion> regions);
+
+    // Draws the last frame's secondary regions into the current default framebuffer, width x height, after step().
+    // Never runs the core; errors are logged, never thrown (the second screen must not end the game). GL thread.
+    void renderSecondary(unsigned width, unsigned height);
+
+    // Base width, base height, aspect ratio and the core's rotation (radians, SET_ROTATION) of the running game; zeros
+    // before it loads. Any thread.
+    std::array<float, 4> getGameGeometry() const;
+
+    // True when getGameGeometry() changed (SET_GEOMETRY's size, SET_ROTATION) since the last call; cleared by this call.
+    // Read after step(), whose own aspect refresh has run by then. Any thread.
+    bool takeGameGeometryChanged() { return geometryChanged.exchange(false); }
 
     // True once the running core delivered a frame as RETRO_HW_FRAME_BUFFER_VALID (its own GL framebuffer); false
     // before any frame and while frames are software. Any thread.
@@ -243,10 +255,13 @@ private:
     float screenOffsetX = 0.0F;
     float screenOffsetY = 0.0F;
     std::vector<ScreenRegion> screenRegions;
+    std::vector<ScreenRegion> secondaryRegions;
 
     std::atomic<float> geometryWidth { 0.0F };
     std::atomic<float> geometryHeight { 0.0F };
     std::atomic<float> geometryAspect { 0.0F };
+    std::atomic<float> geometryRotation { 0.0F };
+    std::atomic<bool> geometryChanged { false };
     std::atomic<bool> hardwareFrame { false };
     // Set on the GL thread by handleVideoRefresh, rethrown by step() after retro_run returns.
     std::exception_ptr videoCallbackError = nullptr;

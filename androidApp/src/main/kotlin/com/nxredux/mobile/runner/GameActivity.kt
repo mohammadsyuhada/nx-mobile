@@ -5,25 +5,29 @@ import android.app.ActivityManager
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.PointF
 import android.graphics.RectF
-import android.graphics.drawable.GradientDrawable
 import android.hardware.input.InputManager
 import android.media.AudioManager
 import android.net.Uri
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.Display
 import android.view.Gravity
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.PixelCopy
+import android.view.Surface
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -42,7 +46,6 @@ import com.nxredux.mobile.ui.nx.LocalWindowSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
@@ -75,10 +78,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.Alignment
-import androidx.core.view.WindowCompat
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.flowWithLifecycle
@@ -89,6 +91,7 @@ import com.nxredux.mobile.achievements.AchievementsService
 import com.nxredux.mobile.achievements.AndroidRaHasher
 import com.nxredux.mobile.achievements.RaAchievement
 import com.nxredux.mobile.achievements.RaBadgeFolders
+import com.nxredux.mobile.achievements.sortedBy
 import com.nxredux.mobile.achievements.RaConsoles
 import com.nxredux.mobile.achievements.RaFingerprintKeys
 import com.nxredux.mobile.achievements.RaGamePointer
@@ -112,6 +115,7 @@ import com.nxredux.mobile.netplay.NetplaySession
 import com.nxredux.mobile.netplay.NetplaySessionDir
 import com.nxredux.mobile.netplay.NetplayText
 import com.nxredux.mobile.netplay.usb.UsbCables
+import com.nxredux.mobile.options.BottomScreenOptions
 import com.nxredux.mobile.options.ConfigSource
 import com.nxredux.mobile.options.CoreConfig
 import com.nxredux.mobile.options.CoreOption
@@ -146,6 +150,7 @@ import com.nxredux.mobile.shaders.ScaleType
 import com.nxredux.mobile.shaders.ShaderLut
 import com.nxredux.mobile.shaders.ShaderParam
 import com.nxredux.mobile.shaders.WrapMode
+import com.nxredux.mobile.storage.FileRefs
 import com.nxredux.mobile.storage.GamePath
 import com.nxredux.mobile.storage.NdsResumeCleanup
 import com.nxredux.mobile.storage.NdsDsvSave
@@ -172,9 +177,17 @@ import com.swordfish.libretrodroid.VirtualFile
 import com.nxredux.mobile.ui.nx.AxisDirections
 import com.nxredux.mobile.ui.nx.DpadHat
 import com.nxredux.mobile.ui.nx.LocalNxColors
-import com.nxredux.mobile.ui.nx.NxDefaults
 import com.nxredux.mobile.ui.nx.PadProfile
+import com.nxredux.mobile.ui.nx.GamePanelHeader
 import com.nxredux.mobile.ui.nx.InGameMenu
+import com.nxredux.mobile.ui.nx.NxTheme
+import com.nxredux.mobile.ui.nx.GamePanel
+import com.nxredux.mobile.ui.nx.GamePanelEvent
+import com.nxredux.mobile.ui.nx.GamePanelModel
+import com.nxredux.mobile.ui.nx.GamePanelState
+import com.nxredux.mobile.ui.nx.GamePanelTab
+import com.nxredux.mobile.ui.nx.PanelPill
+import com.nxredux.mobile.ui.nx.nxColorsFor
 import com.nxredux.mobile.ui.nx.InGameMenuModel
 import com.nxredux.mobile.ui.nx.InputRouter
 import com.nxredux.mobile.ui.nx.MenuEffect
@@ -211,6 +224,7 @@ import com.nxredux.mobile.ui.nx.VirtualStickRouter
 import com.nxredux.mobile.ui.nx.padBandPx
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -246,6 +260,7 @@ class GameActivity : ComponentActivity() {
         const val EXTRA_SYSTEM_SETS = "system_sets"          // String[]: arcade BIOS sets not beside the game, looked for in the system dir
         const val EXTRA_LAUNCH_ID = "launch_id"      // Long: the launcher's PendingLaunches entry, told once the game runs
         const val EXTRA_GAME_PATH = "game_path"      // the library path (GamePath): game time's identity; absent = not recorded
+        const val EXTRA_ART_PATH = "art_path"        // the game's box art (GameSession.artPath): the game panel's header; absent = the console logo
         const val EXTRA_FORCE_GLES = "force_gles"    // Boolean: the relaunch after Vulkan could not start (VulkanFallback)
         private const val SIMULATE_VULKAN_FAIL = "simulate_vulkan_fail"   // debug builds only: see startEmulator
         // netplay: a Wi-Fi netplay launch (GameSession.netplay); all absent for every other launch. The run core is EXTRA_CORE_ID.
@@ -259,12 +274,12 @@ class GameActivity : ComponentActivity() {
         private const val DOLPHIN_ID = "dolphin"
         // Instance-state key: the slot to resume from when the system recreates this activity after a process kill.
         private const val KEY_RESUME_SLOT = "nx_resume_slot"
+        private const val KEY_NETPLAY_LOCAL = "nx_netplay_local"   // netplay link: the session had ended ([netplayLocal])
         private const val NDS_INSET_MARGIN_DP = 8f   // the PiP inset's margin inside the big screen
         private const val NDS_LABEL_MS = 1500L   // a DS hotkey's label ("Bottom screen", "Stylus on")
         private const val PLAYER_NOTICE_MS = 2500L   // "Player 2: <pad>" when a pad takes a player slot
         private const val NETPLAY_NOTICE_MS = 5000L   // netplay: "Netplay ended ...", "Using <core> for this match ..."
         private const val NETPLAY_PILL_MS = 1000L     // netplay: a countdown pill outlives one 250 ms status tick
-        private const val PEN_DP = 14f           // the stylus cursor's size
         private const val PEN_TICK_MS = 16L
         /**
          * Cores that read the left stick as analog (N64, PSP, PS1 DualShock, Dreamcast, and Dolphin's GameCube stick and
@@ -374,8 +389,9 @@ class GameActivity : ComponentActivity() {
     private var relaunching = false
     @Volatile private var launchEnv: Map<String, String?> = emptyMap()   // Graphics API's core environment for this launch
     /**
-     * The core options this launch's Graphics API forced (SwanStation's renderer on Vulkan): locked for the session, so
-     * hidden from Core Options, never applied by a restore, and saved with their stored value ([CoreConfig.valuesToSave]).
+     * The core options this launch's Graphics API forced (SwanStation's renderer on Vulkan), and a netplay link session's
+     * (NetplayLinkOptions, still set once the game is local): locked for the session, so hidden from Core Options, never
+     * applied by a restore, and saved with their stored value ([CoreConfig.valuesToSave]).
      */
     @Volatile private var graphicsForcedOptions: Set<String> = emptySet()
 
@@ -427,6 +443,7 @@ class GameActivity : ComponentActivity() {
     private fun onInputDevicesChanged() {
         applyLayout(resources.configuration.orientation)
         if (menuOpen) menuModel?.let(::publishPlayers)
+        refreshDualPanel()
     }
     /** The controller names of the last [applyLayout] (logged once per change, to confirm hardware names). */
     private var loggedControllers: List<String>? = null
@@ -552,6 +569,7 @@ class GameActivity : ComponentActivity() {
 
     // ---- Nintendo DS screens (NdsLayout regions) ----
     private var ndsRegions: List<NdsRegion> = emptyList()   // the DS screens as laid out now; empty = one picture
+    private var secondNdsRegions: List<NdsRegion> = emptyList()   // the DS screens on the second surface (px of it); empty = none
     private var ndsSplit = false                            // regions are on: the overlay is off and shown unavailable
     private var ndsFrameWarned = false                      // the "not 256x384" warning is logged once
     private var ndsRenderMode: String? = null               // melonds_render_mode this game started with (the notice's)
@@ -561,7 +579,7 @@ class GameActivity : ComponentActivity() {
     private var ndsHatY = 0
     private var sentPen: NdsPen? = null          // the pen as last sent (null = stylus off)
     private var penJob: Job? = null
-    private var penView: View? = null
+    private var penDot: PenDot? = null           // the stylus cursor on main, over the GL surface ([positionPen])
     private val configWrites = Mutex()           // hotkey saves land in press order
     private val isNds: Boolean get() = NdsOptions.appliesTo(gameTag)
 
@@ -576,6 +594,37 @@ class GameActivity : ComponentActivity() {
     private val ndsStylusOn = mutableStateOf(false)    // the DS's, likewise
     private var n3dsTickJob: Job? = null        // ticks the hotkeys while they ask ([N3dsHotkeys.ticking])
     private val isN3ds: Boolean get() = N3dsOptions.appliesTo(gameTag)
+
+    // ---- Second display (DualScreen): the DS/3DS bottom screen on it ----
+    private val secondScreens by lazy { SecondScreens(this) }
+    private val appSettings by lazy { AndroidAppSettings(this) }   // reads the prefs live: the dual paths' settings
+    private var presentation: SecondScreenPresentation? = null
+    private var secondSurface: SecondSurface? = null   // the presentation's surface
+    private var pushedSecondSurface: SecondSurface? = null   // what the GL thread was last handed ([pushSecondSurface])
+    private var dualMode = DualMode.OFF
+    private var panelUp = false                  // the panel is flipped up over the DS/3DS screen (session only)
+    private var pictureOn = PictureOn.MAIN       // the wider display: the picture there, touch things on the other
+    private var n3dsPicture = NdsScreen.TOP      // the 3DS screen on the picture screen while split (session only)
+    private var orientationBeforeDual: Int? = null   // requestedOrientation before the second screen locked landscape
+    // The game panel on the second display (PANEL, PANEL_UP), or on main while the picture is on the second one: its tab
+    // and what it draws ([panelState], rebuilt by [refreshDualPanel] while it is up).
+    private var dualPanelTab = GamePanelTab.SHORTCUTS
+    private val dualPanel = mutableStateOf<GamePanelState?>(null)
+    private var panelWasShown = false            // at the last syncPanel: it re-reads the discs as the panel comes up
+    // The game panel's data, shared by the in-game menu's panel and the dual-screen one.
+    private var discs: Pair<Int, Int>? = null    // the core's (current disc 0-based, count), once asked ([refreshDiscs])
+    private var playTotalMs = 0L                 // this game's total play time before this launch ([readPlayTotal], once)
+    private var panelClockJob: Job? = null       // the header's minute tick while a panel shows ([syncPanelClock])
+    // The header's clock text and battery level, read once a minute (the first header of each minute) for every refresh.
+    private var panelClockMinute = -1L
+    private var panelClock = ""
+    private var panelBattery: Int? = null
+    // The panel (or the Panel pill) in the game's own window, while the picture is on the second display.
+    private var mainPanelHost: FrameLayout? = null
+    private val mainPanel = mutableStateOf<(@Composable () -> Unit)?>(null)
+    private val mainPanelPill = mutableStateOf(false)
+    @Volatile private var n3dsSwapBeforeSplit: Map<String, String>? = null   // 3DS swap values the split replaced (GL thread)
+    private var presentationShape: DisplayShape? = null   // the second display's size and density the window was made for
     private val isDc: Boolean get() = DcInput.appliesTo(gameTag)
     private val isN64: Boolean get() = N64Input.appliesTo(gameTag)
     /**
@@ -638,8 +687,8 @@ class GameActivity : ComponentActivity() {
     // ---- netplay (Wi-Fi lockstep, see the "netplay" block) ----
     /**
      * netplay: this launch's session (read in onCreate from the EXTRA_NETPLAY_* extras); null for every other launch. In a
-     * session there are no save states or auto-resume, no cheats, achievements, Core Options or local multiplayer slots,
-     * and the menu is only "Leave netplay?".
+     * session there are no save states or auto-resume, no cheats, Core Options or local multiplayer slots, no achievements
+     * outside a link session ([NetplaySession.allowsAchievements]), and the menu is only "Leave netplay?".
      */
     private var netplay: NetplaySession? = null
     /** netplay: recreated after a process kill with a session's intent: that session is gone, nothing is started. */
@@ -651,6 +700,16 @@ class GameActivity : ComponentActivity() {
     private var netplayPillShown = false   // the countdown pill is the session's (hidden again on Clear)
     /** netplay: the session ended and the game plays on alone (the menu is then Continue / Quit). */
     private var netplayEnded = false
+    /**
+     * netplay link: the link session ended ([playLocally]), or this screen came back after a process kill with one that
+     * had: the game is a normal local launch from then on. The one switch the menu, the panel and the option guards
+     * read, through [netplayNow]; [netplay] itself stays for the launch's setup and onDestroy's release.
+     */
+    private var netplayLocal = false
+    /** netplay: the session this screen plays in now: [netplay], or null once a link session's game is a local one. */
+    private val netplayNow: NetplaySession? get() = netplay.takeUnless { netplayLocal }
+    /** netplay link: starts the cheat load a normal launch starts in startEmulator, once the game is local ([playLocally]). */
+    private var localCheats: (() -> Job)? = null
     /** netplay: this screen's id on the session copy it plays on ([NetplaySessionDir.claim]). */
     private val netplayOwner by lazy { java.util.UUID.randomUUID().toString() }
     /** netplay: the engine did not start; the game stays paused and silent behind the failure dialog (closeMenu too). */
@@ -703,13 +762,10 @@ class GameActivity : ComponentActivity() {
             else @Suppress("DEPRECATION") setTaskDescription(ActivityManager.TaskDescription(recentsLabel))
         }
         setContentView(R.layout.activity_game)
+        readPlayTotal()   // before this launch's own slices land: the header's total stays as it was
         volumeControlStream = AudioManager.STREAM_MUSIC   // volume keys set the game's (media) volume, even between sounds
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        WindowInsetsControllerCompat(window, findViewById(R.id.root)).apply {
-            hide(WindowInsetsCompat.Type.systemBars())
-            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        }
+        window.goImmersive()
         // Portrait: start the game below a top camera cutout. Returned unconsumed so children still get it.
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.root)) { _, insets ->
             val cutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
@@ -724,6 +780,11 @@ class GameActivity : ComponentActivity() {
             it.registerInputDeviceListener(inputDeviceListener, Handler(Looper.getMainLooper()))
         }
         menuRouter = InputRouter(lifecycleScope, ::onMenuPress)
+        lifecycleScope.launch { secondScreens.current.collect { syncDual(); menuModel?.let(::publishSecondScreen) } }
+        // The game's window resized (a rotation, a fold): the picture screen may be the other display now.
+        findViewById<View>(R.id.root).addOnLayoutChangeListener { v, l, t, r, b, ol, ot, or_, ob ->
+            if (r - l != or_ - ol || b - t != ob - ot) v.post { recheckPictureOn() }
+        }
         applyLayout(resources.configuration.orientation)
         collectPosture()
         // Back as a gesture or a key on Android 16+ (targetSdk 36: predictive back, KEYCODE_BACK does not reach
@@ -733,12 +794,16 @@ class GameActivity : ComponentActivity() {
             override fun handleOnBackPressed() = backPressed()
         })
         // netplay: a session launches cold: no saved or requested resume slot.
-        netplay = netplaySessionFrom(
+        val launchSession = netplaySessionFrom(
             intent.getStringExtra(EXTRA_NETPLAY_ROLE), intent.getStringExtra(EXTRA_NETPLAY_PEER),
             intent.getStringExtra(EXTRA_CORE_ID) ?: "", intent.getStringExtra(EXTRA_NETPLAY_FOLDER_CORE),
             intent.getBooleanExtra(EXTRA_NETPLAY_EMPTY_SAVES, false),
             intent.getBooleanExtra(EXTRA_NETPLAY_USB, false),
         )
+        // netplay link: recreated after a process kill once its session had ended: the local game it had become, as a
+        // normal launch (its resume slot below), not a session.
+        netplayLocal = launchSession?.endsAsLocalGame == true && savedInstanceState?.getBoolean(KEY_NETPLAY_LOCAL) == true
+        netplay = launchSession.takeUnless { netplayLocal }
         netplayRestored = netplay != null && savedInstanceState != null
         if (netplay?.overUsb == true) netplayUsbToken = UsbCables.get(this).token()
         // Decided here, not after startEmulator's async setup, so a stop in between still records the slot.
@@ -812,6 +877,7 @@ class GameActivity : ComponentActivity() {
         if (!menuOpen && !quitting) rumbles.forEach { it.resume() }
         if (!menuOpen) netplayGame?.resume()   // netplay: input flows again; with the menu open it stays paused until Continue
         syncMotionSensors(foreground = true)
+        syncDual()   // Settings → Second screen may have changed meanwhile
     }
 
     /**
@@ -837,6 +903,7 @@ class GameActivity : ComponentActivity() {
         pendingOutState = null
         if (isNds) syncPen()   // restarts the pen tick onStop stopped, if stylus mode is on
         if (isN3ds) syncN3dsCursor()
+        secondScreens.start()   // the collector shows the presentation again
         // onStop closed the session: back in the foreground, a new one on the same game (background time is not play)
         gameTime?.let { if (!isFinishing && !quitting) { it.resume(); startGameTimeTicker(it) } }
     }
@@ -859,6 +926,7 @@ class GameActivity : ComponentActivity() {
         gameTime?.pause()   // the session ends here: a kill in the background loses nothing, a return opens a new one
         gameTimeTicker?.cancel()
         gameTimeTicker = null
+        panelClockJob?.cancel(); panelClockJob = null   // onResume's syncDual starts it again
         // Leaving via Home/recents: the process may be killed in the background, so keep the spot. Also when
         // finishing without a quit: sharing the menu's task, a launch of the singleTask menu (app icon, notification)
         // clears this screen. A quit writes its own; a game that never got ready writes nothing (writeAutoStateOnStop);
@@ -876,6 +944,9 @@ class GameActivity : ComponentActivity() {
         }
         n3dsTickJob?.cancel()
         n3dsTickJob = null
+        // A Presentation stays up while its activity is stopped: no second screen in the background.
+        secondScreens.stop()
+        syncDual()
         super.onStop()
     }
 
@@ -888,6 +959,7 @@ class GameActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         putResumeSlot(outState)
+        if (netplayLocal) outState.putBoolean(KEY_NETPLAY_LOCAL, true)
         pendingOutState = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) outState else null
     }
 
@@ -967,6 +1039,7 @@ class GameActivity : ComponentActivity() {
         gcClearTriggers()   // a latched soft press never outlives the game
         stopAchievements()
         inputManager?.unregisterInputDeviceListener(inputDeviceListener)
+        hidePresentation()
         cacheHoldsDrained = true
         releaseCacheHolds()
         // ON_DESTROY goes to the lifecycle observers before this body (API 29+, onActivityPreDestroyed) or from within
@@ -999,7 +1072,7 @@ class GameActivity : ComponentActivity() {
     private suspend fun startEmulator() {
         val coreFile = intent.getStringExtra(EXTRA_CORE_FILE) ?: return fail("No core given")
         // netplay: extras that make no session must not start an ordinary game on the real saves; a recreated session is over.
-        if (intent.hasExtra(EXTRA_NETPLAY_ROLE) && netplay == null) return fail(NetplayText.FAILED, NetplayText.FAILED)
+        if (intent.hasExtra(EXTRA_NETPLAY_ROLE) && netplay == null && !netplayLocal) return fail(NetplayText.FAILED, NetplayText.FAILED)
         if (netplayRestored) return fail(NetplayText.ENDED, NetplayText.FAILED)
         val np = netplay
         val tag = intent.getStringExtra(EXTRA_TAG) ?: "UNKNOWN"
@@ -1010,14 +1083,15 @@ class GameActivity : ComponentActivity() {
         val players = CoreRegistry.playersFor(tag, descriptor)
         playerCount = players
         // netplay: no slots, so every pad and the touch pad drive native port 0, the engine's local word.
-        slots = if (players > 1 && np == null) PlayerSlots(players, AndroidAppSettings(this).benchedPads.map(::DeviceKey).toSet()) else null
+        slots = if (players > 1 && np == null) PlayerSlots(players) else null
         // onCreate laid out before the slots existed: a pad benched in an earlier game counted there. Lay out again (only
         // when a benched pad is attached: one player, slots null, never re-lays out here).
         if (layoutControllerNames() != controllerNames()) applyLayout(resources.configuration.orientation)
         // Kept for one player: a key held through the load keeps its recorded send.
         if (inputs.count != players) inputs = PortInputs(players)
         rumbles = Array(players) { RumbleMotor(this, gameRumble, phoneFallback = it == 0) }
-        cheatsSupported = np == null && (descriptor?.cheats ?: true)   // netplay: cheats would desync the other device
+        val cheatsOk = descriptor?.cheats ?: true
+        cheatsSupported = np == null && cheatsOk   // netplay: cheats would desync the other device
         // A SAF document URI, or a file ref with All files access: opened only through [refs], never Uri.parse.
         val content = ContentRef(intent.getStringExtra(EXTRA_CONTENT_URI) ?: return fail("No content given"))
         val romFileName = intent.getStringExtra(EXTRA_FILE_NAME)
@@ -1067,7 +1141,7 @@ class GameActivity : ComponentActivity() {
         // The file Dolphin loads, once known: an archive's unpacked disc names its built-in cheats (completed below).
         val dolphinContent = CompletableDeferred<String>()
         // Off the critical path: the menu shows the set once it lands, the first-frame apply waits for it.
-        cheatsLoad = if (np != null) null else lifecycleScope.launch {   // netplay: no cheats (a saved nx_cheats set included)
+        val loadCheats = { lifecycleScope.launch {
             val extensions = descriptor?.extensions.orEmpty()
             val resolvedSet = withContext(Dispatchers.IO) {
                 // PSP cheat files are named by serial ("[ULUS-10466]"), which the disc knows and the file name rarely does.
@@ -1083,7 +1157,10 @@ class GameActivity : ComponentActivity() {
             } else resolvedSet
             cheatSet = savedCheats?.let(combined::withSaved) ?: combined
             menuModel?.let { it.setCheats(cheatSet.entries, cheatsFolder, cheatSet.expected); menuState.value = it.state }
-        }
+        } }
+        cheatsLoad = if (np != null) null else loadCheats()   // netplay: no cheats (a saved nx_cheats set included)
+        // netplay link: the cheats come once the session has ended and the game is a local one.
+        if (np?.endsAsLocalGame == true) localCheats = { cheatsSupported = cheatsOk; loadCheats() }
         // Resolved and decoded before the view exists, so the first frame already has its overlay (the configured one;
         // with none stored the default is None).
         // A DS game starts split (every DS layout draws its screens as regions), which shows no overlay: none is
@@ -1107,17 +1184,23 @@ class GameActivity : ComponentActivity() {
         val netplayPad = if (np != null) NetplayPads.forSession(tag, descriptor?.id) else null
         shaderValues = ShaderOptions.fromConfig(resolved.values)
         presetNames = withContext(Dispatchers.IO) { Shaders.presets(sdRoot) }
+        // 3DS with a second display: Azahar starts in the split's fixed layout, which replaces the rows' values below. The core
+        // never runs the user's swap values then, so leaving split puts back the stored ones.
+        val launchDual = dualModeNow()
+        val n3dsSplit = if (N3dsOptions.appliesTo(tag)) DualScreen.n3dsCoreOptions(launchDual) else null
+        if (n3dsSplit != null) n3dsSwapBeforeSplit = DualScreen.n3dsSwapRestore(null, resolved.values)
         val options = FrontendOptions.coreValues(resolved.values)
             .filterNot { (k, _) -> k == N3dsOptions.LAYOUT && N3dsOptions.appliesTo(tag) }   // set from the row below
+            .filterNot { (k, _) -> n3dsSplit?.containsKey(k) == true }
             .map { (k, v) -> Variable(k, v) } +
             // 3DS Top over bottom: a bigger top screen in landscape (onConfigurationChanged follows a rotation).
             if (N3dsOptions.appliesTo(tag)) listOf(
                 Variable(N3dsOptions.STACKED_SMALL_PROPORTION, N3dsOptions.stackedSmallProportion(isLandscape())),
-                Variable(N3dsOptions.TOUCH_MAIN_ONLY, N3dsOptions.touchMainOnly(overlayPadShown.value)),
+                Variable(N3dsOptions.TOUCH_MAIN_ONLY, DualScreen.n3dsTouchMainOnly(launchDual, overlayPadShown.value)),
                 Variable(N3dsOptions.CURSOR_VISIBLE, N3dsOptions.cursorVisible(false)),   // stylus mode is off at launch
                 // The locked core layout ([N3dsOptions.LAYOUT]) from the row in use; the descriptor's default is replaced.
                 Variable(N3dsOptions.LAYOUT, N3dsOptions.layoutFor(frontendValues, isLandscape(), ndsControllerMode())),
-            ) else emptyList()
+            ).withN3dsSplit(n3dsSplit) else emptyList()
         // netplay link: gambatte gets its link options; a GBA link engine starts now, before the core loads, so
         // a joiner learns the host's gpsp_serial from its READY and runs with it (the handheld reloads instead).
         val linkKind = np?.let { NetplayCores.link(it.coreId) }
@@ -1296,7 +1379,8 @@ class GameActivity : ComponentActivity() {
             }
         }
         val savesDir = (sessionDir ?: File(sdRoot, paths.savesDir)).apply { mkdirs() }
-        if (np == null) prepareAchievements(tag, romFileName, content, inner)   // netplay: no achievements
+        // netplay: a link session's game is the player's own, so it gets achievements as a normal launch; lockstep has none.
+        if (np == null || np.allowsAchievements) prepareAchievements(tag, romFileName, content, inner)
 
         // A REAL_PATH core's copy into the cache gets the unpack's toast: only one that outlasts the delay shows it.
         var copyToast: android.widget.Toast? = null
@@ -1317,7 +1401,8 @@ class GameActivity : ComponentActivity() {
                 val graphics = GraphicsApiOptions.resolve(frontendValues[GraphicsApiOptions.KEY], descriptor?.vulkan, { LibretroDroid.isVulkanSupported() }, vulkanFailed)
                 launchedOnVulkan = graphics.preferVulkan
                 launchEnv = graphics.env
-                graphicsForcedOptions = graphics.forcedOptions.keys
+                // netplay link: the link options are this launch's too (a session's port, mode and peer): never saved.
+                graphicsForcedOptions = graphics.forcedOptions.keys + linkOptions.keys
                 GLRetroViewData(this@GameActivity).apply {
                     coreFilePath = coreFile
                     systemDirectory = systemDir.absolutePath
@@ -1487,6 +1572,21 @@ class GameActivity : ComponentActivity() {
                 offerN3dsMotion()   // again: a previous game's unload can reset the native sensor state after the launch's offer
                 syncMotionSensors()
             }
+            pushSecondSurface()   // a presentation shown before the view ran
+            if (panelShown()) refreshDiscs()   // a panel up before the game ran asked too early
+            // A core may change its geometry later (SET_GEOMETRY), as Azahar does a frame or so after the dual modes switch
+            // its layout: both displays are laid out again from the new size and aspect, or the second one keeps fitting
+            // the new frame at the old aspect. A core turning its picture (a WonderSwan game held upright) moves the
+            // picture screen too. Collected before the first layout below, so no change falls between the two.
+            lifecycleScope.launch {
+                view.getGameGeometryChanges().collect {
+                    // Single display: nothing to do (turning dual on lays out from the geometry then).
+                    if (dualMode == DualMode.OFF) return@collect
+                    val g = view.getGameGeometry()
+                    recheckPictureOn(g)
+                    relayoutFrontend(g)
+                }
+            }
             relayoutFrontend()   // the core's geometry (a DS game's 256x384) is only known now
             // melonDS DS falls back to software when its GL renderer can't start: say so once (nothing is saved, the
             // next launch tries the GPU again). ~30 frames lets the core's first hardware frames arrive.
@@ -1534,7 +1634,7 @@ class GameActivity : ComponentActivity() {
         }
         // Debug builds: a file named simulate_vulkan_fail in the app's files dir makes a Vulkan launch take the fallback
         // as a failed bridge setup would (no phone at hand fails it): `adb shell run-as <package> touch files/simulate_vulkan_fail`.
-        if (BuildConfig.DEBUG && launchedOnVulkan && !intent.hasExtra(EXTRA_NETPLAY_ROLE) && File(filesDir, SIMULATE_VULKAN_FAIL).exists()) {
+        if (BuildConfig.DEBUG && launchedOnVulkan && (!intent.hasExtra(EXTRA_NETPLAY_ROLE) || netplayLocal) && File(filesDir, SIMULATE_VULKAN_FAIL).exists()) {
             relaunchOnGles()
         }
     }
@@ -1600,8 +1700,9 @@ class GameActivity : ComponentActivity() {
                     loadFailure(lines)?.let { fail(it); return@collect }
                 }
                 if (code == GLRetroView.ERROR_GL_NOT_COMPATIBLE && VulkanFallback.relaunchOnGles(launchedOnVulkan)) {
-                    // netplay: a relaunch would start without the session (it is gone), so the dialog says what to do.
-                    if (intent.hasExtra(EXTRA_NETPLAY_ROLE)) {
+                    // netplay: a relaunch would start without the session (it is gone), so the dialog says what to do. An
+                    // ended link session's relaunch ([netplayLocal]) is a plain launch, which relaunches as any other.
+                    if (intent.hasExtra(EXTRA_NETPLAY_ROLE) && !netplayLocal) {
                         fail("Vulkan could not start for this game on this device. Set Console Settings → Graphics API to OpenGL ES.")
                     } else {
                         relaunchOnGles()
@@ -1723,7 +1824,10 @@ class GameActivity : ComponentActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         applyLayout(newConfig.orientation)   // also re-sizes the menu and the notifications to the game area
-        if (isN3ds) applyOptions(listOf(Variable(N3dsOptions.STACKED_SMALL_PROPORTION, N3dsOptions.stackedSmallProportion(isLandscape(newConfig.orientation)))))
+        // Split keeps its own fixed proportion.
+        if (isN3ds && DualScreen.n3dsCoreOptions(dualMode) == null) {
+            applyOptions(listOf(Variable(N3dsOptions.STACKED_SMALL_PROPORTION, N3dsOptions.stackedSmallProportion(isLandscape(newConfig.orientation)))))
+        }
         // The motion level is captured in the display's frame: a new rotation takes the phone's attitude as level again.
         if (isWii) displayRotation().let { r -> if (r != lastRotation) { lastRotation = r; motionSensors?.recenter() } }
         if (retroView != null) {
@@ -1758,9 +1862,9 @@ class GameActivity : ComponentActivity() {
             loggedControllers = attached
             NxLog.i(TAG_LOG, "controllers: $attached")
         }
-        // The hints follow any attached pad (a Not playing one still drives the menu).
+        // The hints follow any attached pad (a benched one still drives the menu).
         controllerConnected.value = pads.isNotEmpty()
-        // What the layout goes by: a multiplayer game's Not playing pads leave the on-screen pad up for Player 1.
+        // What the layout goes by: a multiplayer game's benched pads leave the on-screen pad up for Player 1.
         val names = layoutControllerNames(pads)
         val tt = tabletop(names)
         if (tt != null) {
@@ -1806,7 +1910,7 @@ class GameActivity : ComponentActivity() {
         game.requestLayout()
         updatePadVisibility()
         syncN3dsCore()
-        menuView?.layoutParams = menuLayoutParams(orientation)
+        menuView?.layoutParams = menuLayoutParams(orientation, overPanel = mainPanelShown())
         notificationsView?.layoutParams = menuLayoutParams(orientation)
         // The DS layouts follow the new area (gameContainer's size listener does too, once it is laid out).
         game.post { relayoutFrontend() }
@@ -1843,9 +1947,44 @@ class GameActivity : ComponentActivity() {
         if (!isN3ds) return
         applyOptions(listOf(
             Variable(N3dsOptions.LAYOUT, N3dsOptions.layoutFor(frontendValues, isLandscape(), ndsControllerMode())),
-            Variable(N3dsOptions.TOUCH_MAIN_ONLY, N3dsOptions.touchMainOnly(overlayPadShown.value)),
+            // Under the main display's panel the pad is hidden, so it covers nothing on the picture screen.
+            Variable(N3dsOptions.TOUCH_MAIN_ONLY, DualScreen.n3dsTouchMainOnly(dualMode, overlayPadShown.value && !mainPanelShown())),
             Variable(N3dsOptions.CURSOR_VISIBLE, N3dsOptions.cursorVisible(n3dsHotkeys.stylus)),
-        ))
+        ).withN3dsSplit(DualScreen.n3dsCoreOptions(dualMode)))
+    }
+
+    /** These options with a second-screen [split]'s fixed ones in place of the same keys; unchanged without one. */
+    private fun List<Variable>.withN3dsSplit(split: Map<String, String>?): List<Variable> =
+        if (split == null) this else filterNot { it.key in split } + split.map { (k, v) -> Variable(k, v) }
+
+    /**
+     * 3DS entering split: notes the swap values the core runs now (an unsaved menu change included), queued ahead of the
+     * split's own, so leaving split can put them back. A launch straight into split noted the stored ones instead.
+     */
+    private fun captureN3dsSwap() {
+        val view = retroView ?: return
+        if (netplayNow != null) return   // no core option changes mid-session, so none to undo
+        view.queueEvent {
+            if (n3dsSwapBeforeSplit != null) return@queueEvent
+            n3dsSwapBeforeSplit = runCatching {
+                LibretroDroid.getVariables().filter { it.key in DualScreen.N3DS_SWAP_KEYS && it.value != null }
+                    .associate { it.key!! to it.value!! }
+            }.onFailure { NxLog.w(TAG_LOG, "reading the 3DS swap options failed", it) }.getOrNull()
+        }
+    }
+
+    /** 3DS leaving split: the swap values from before it ([captureN3dsSwap]) and the orientation's proportion are back. */
+    private fun restoreN3dsScreen() {
+        val view = retroView ?: return
+        if (netplayNow != null) return
+        val stored = storedValues
+        val proportion = N3dsOptions.stackedSmallProportion(isLandscape())
+        view.queueEvent {
+            val vars = DualScreen.n3dsSwapRestore(n3dsSwapBeforeSplit, stored).map { (k, v) -> Variable(k, v) } +
+                Variable(N3dsOptions.STACKED_SMALL_PROPORTION, proportion)
+            n3dsSwapBeforeSplit = null
+            runCatching { view.updateVariables(*vars.toTypedArray()) }.onFailure { NxLog.w(TAG_LOG, "restoring the 3DS screen options failed", it) }
+        }
     }
 
     /** The tag the layout goes by: the intent's until startEmulator sets [gameTag] (onCreate lays out before it). */
@@ -1910,7 +2049,7 @@ class GameActivity : ComponentActivity() {
         }
         game.requestLayout()
         updatePadVisibility()
-        menuView?.layoutParams = menuLayoutParams(orientation)
+        menuView?.layoutParams = menuLayoutParams(orientation, overPanel = mainPanelShown())
         notificationsView?.layoutParams = menuLayoutParams(orientation)
         game.post { relayoutFrontend() }
     }
@@ -1974,7 +2113,8 @@ class GameActivity : ComponentActivity() {
     private fun updatePadVisibility() {
         // Tabletop keeps its controls too: they sit below the hinge, under the menu's area.
         val overGame = resources.configuration.orientation != Configuration.ORIENTATION_PORTRAIT || layoutPadHidden
-        val hide = menuOpen && overGame && tabletop() == null
+        // The panel filling the game's window hides the pad too: it would cover the panel (dual-screen handhelds have buttons).
+        val hide = (menuOpen && overGame && tabletop() == null) || mainPanelShown()
         padViews.forEach { it.visibility = if (hide) View.GONE else View.VISIBLE }
     }
 
@@ -1989,7 +2129,7 @@ class GameActivity : ComponentActivity() {
 
     /**
      * The names of the [pads] that count as attached for the layout (the on-screen pad, the band rule, tabletop, DS touch
-     * mode; the hint glyphs follow every pad): in a multiplayer game not the Not playing ones ([PadPresence]); one player, all.
+     * mode; the hint glyphs follow every pad): in a multiplayer game not the benched ones ([PadPresence]); one player, all.
      */
     private fun layoutControllerNames(pads: List<InputDevice> = controllers()): List<String> =
         PadPresence.attached(pads, slots?.outOfPlay) { DeviceKey(it.descriptor) }.map { it.name }
@@ -2006,6 +2146,7 @@ class GameActivity : ComponentActivity() {
         val below = notificationsView?.let { root.indexOfChild(it) }?.takeIf { it >= 0 } ?: -1
         root.addView(view, below, lp)
         padViews += view
+        placeMainPanelHost()   // a Panel pill alone stays above the pads re-added here
     }
 
     // ------------------------------------------------------------------ frontend (display) settings
@@ -2016,7 +2157,10 @@ class GameActivity : ComponentActivity() {
     /** Applies frontend [values] (every frontend key) to the view: scaling, sharpness, overlay, offsets, HUD. */
     private fun applyFrontend(values: Map<String, String>) {
         val oldSegaSetting = frontendValues[PadOptions.SEGA_PAD] ?: SegaPadType.AUTO
+        val oldBottomScreen = frontendValues[BottomScreenOptions.KEY]
         frontendValues = values
+        // Console Settings → Bottom screen (the menu, live): the picture may move. Posted, as for the Sega pad.
+        if (values[BottomScreenOptions.KEY] != oldBottomScreen) findViewById<View?>(R.id.root)?.post { recheckPictureOn() }
         val segaSetting = values[PadOptions.SEGA_PAD] ?: SegaPadType.AUTO
         if (segaSetting != oldSegaSetting && PadMap.isSegaPadTag(gameTag)) applySegaPad(segaSetting)
         if (isN3ds) {
@@ -2269,8 +2413,9 @@ class GameActivity : ComponentActivity() {
         syncN3dsCursor()
     }
 
-    /** The SWAP pill: Azahar's swap-screens key (L3), held as long as the pill. */
+    /** The SWAP pill: Azahar's swap-screens key (L3), held as long as the pill; split, it swaps the displays on press. */
     private fun onN3dsSwap(down: Boolean) {
+        if (onN3dsSwapPressed(down)) return
         retroView?.sendKeyEvent(if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BUTTON_THUMBL)
     }
 
@@ -2356,7 +2501,7 @@ class GameActivity : ComponentActivity() {
 
     /** Sends Controller Type [setting] to the running core on the emulation thread (each player's port device or core option). */
     private fun sendSegaPad(setting: String) {
-        if (netplay != null) return   // netplay: the pad type is fixed for the session (startEmulator)
+        if (netplayNow != null) return   // netplay: the pad type is fixed for the session (startEmulator)
         val view = retroView
         val changes = SegaPadType.liveChanges(gameCoreId, setting, segaHeader, playerCount)
         val ports = changes.filterIsInstance<SegaPadChange.Port>()
@@ -2521,9 +2666,9 @@ class GameActivity : ComponentActivity() {
      * ([NdsLayout]), with the viewport the whole area and no offsets or overlay: the fork ignores the screen offset and
      * the scaling mode for regions, so the Screen Offset and Scaling settings have no effect while the screens are split.
      * Other games: the overlay box (or the whole area) becomes the GL viewport and the overlay view's bounds; the offsets
-     * (scaled to the box) go to the view. No-op until laid out.
+     * (scaled to the box) go to the view. No-op until laid out. [geometry]: the view's, when the caller has just read it.
      */
-    private fun relayoutFrontend() {
+    private fun relayoutFrontend(geometry: FloatArray? = null) {
         val view = retroView ?: return
         // Portrait with the band hidden: no touch reaches the game under the clusters (the 3DS core takes the touches whole;
         // the DS screen under them is also off in its regions). The game area starts at the cutout.
@@ -2533,8 +2678,8 @@ class GameActivity : ComponentActivity() {
         val w = game.width.toFloat()
         val h = game.height.toFloat()
         if (w <= 0f || h <= 0f) return
-        val g = view.getGameGeometry()
-        val nds = ndsLayout(w, h, g)
+        val g = geometry ?: view.getGameGeometry()
+        val nds = ndsLayout(w, h, g) ?: n3dsSplitLayout(w, h)
         // An area too small for one DS screen pixel (NdsLayout returns no regions) is only ever a transient mid-resize
         // size. Keep whatever is drawn now rather than letting an empty list flip a split game to the whole 256x384
         // frame (and the overlay back on) for that moment; the next size change lays it out again.
@@ -2542,8 +2687,11 @@ class GameActivity : ComponentActivity() {
         // Before its first frame a DS game's frame size is unknown (0x0): it stays split as it started, overlay off.
         if (nds == null && ndsSplit && !gameReady) return
         ndsRegions = nds ?: emptyList()
-        positionPen()
+        val secondDs = secondDsRegions(g)
+        secondNdsRegions = secondDs.takeIf { isNds }.orEmpty()
+        positionPen()   // on whichever display shows the bottom screen
         setNdsSplit(nds != null)
+        view.secondaryRegions = secondRegions(g, secondDs)
         if (nds != null) {
             val whole = RectF(0f, 0f, 1f, 1f)
             if (lastViewport != whole) {
@@ -2588,6 +2736,8 @@ class GameActivity : ComponentActivity() {
             }
             return null
         }
+        if (dualMode == DualMode.SPLIT) return DualScreen.ndsScreen(w, h, DualScreen.splitMain(NdsSettings.parse(frontendValues).big, pictureOn))
+        if (dualMode == DualMode.PANEL_UP) return DualScreen.ndsPanelUp(w, h, NdsSettings.parse(frontendValues))
         val landscape = isLandscape()
         return NdsLayout.regions(
             w, h, landscape, NdsSettings.parse(frontendValues), NDS_INSET_MARGIN_DP * resources.displayMetrics.density,
@@ -2606,6 +2756,522 @@ class GameActivity : ComponentActivity() {
         val tag = intent.getStringExtra(EXTRA_TAG) ?: gameTag   // set before startEmulator's gameTag, for onCreate's layout
         val portrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
         return PadBandRule.controllerLayout(tag, portrait, layoutControllerNames())
+    }
+
+    /** 3DS split across the displays: the main display's screen alone, as a region of Azahar's fixed stacked frame; else null. */
+    private fun n3dsSplitLayout(w: Float, h: Float): List<NdsRegion>? =
+        if (isN3ds && dualMode == DualMode.SPLIT) DualScreen.n3dsScreen(w, h, DualScreen.splitMain(n3dsPicture, pictureOn)) else null
+
+    /** The GL thread draws on the second display: split, and the picture there with the panel on main ([pictureOn]). */
+    private fun secondDraws(mode: DualMode = dualMode, picture: PictureOn = pictureOn): Boolean =
+        mode == DualMode.SPLIT || (picture == PictureOn.SECOND && (mode == DualMode.PANEL || mode == DualMode.PANEL_UP))
+
+    /** The panel fills the game's window on main (the picture is on the second display). */
+    private fun mainPanelShown(): Boolean = mainPanel.value != null
+
+    /**
+     * The DS/3DS screens cut for the second display, in px of its surface: split, the screen not on main; with the picture
+     * there, both DS screens side by side (panel up). Empty when it draws nothing, has no surface, or (split) the DS frame
+     * is not the plain stack; null when it draws the whole frame instead ([secondRegions]). [g]: the game geometry.
+     */
+    private fun secondDsRegions(g: FloatArray): List<NdsRegion>? {
+        val surface = secondSurface
+        if (!secondDraws() || surface == null || surface.width <= 0 || surface.height <= 0) return emptyList()
+        val sw = surface.width.toFloat()
+        val sh = surface.height.toFloat()
+        val dsFrame = isNds && NdsLayout.isDsFrame(g[0].roundToInt(), g[1].roundToInt())
+        return when {
+            // Not the plain DS stack (no frame yet, or another layout): main draws it whole, so nothing is cut for here.
+            dualMode == DualMode.SPLIT && isNds -> if (!dsFrame) emptyList() else DualScreen.ndsScreen(sw, sh, DualScreen.splitMain(NdsSettings.parse(frontendValues).big, pictureOn).other)
+            dualMode == DualMode.SPLIT && isN3ds -> DualScreen.n3dsScreen(sw, sh, DualScreen.splitMain(n3dsPicture, pictureOn).other)
+            dualMode == DualMode.PANEL_UP && dsFrame -> DualScreen.ndsPanelUp(sw, sh, NdsSettings.parse(frontendValues))
+            else -> null
+        }
+    }
+
+    /**
+     * What the second display draws (dst 0..1 of its surface): the DS/3DS screens cut for it ([ds], from [secondDsRegions]),
+     * or with the picture there and nothing cut, the whole frame fitted (3DS panel up, a regular game). Empty when it draws
+     * nothing or has no surface. [g]: the game geometry.
+     */
+    private fun secondRegions(g: FloatArray, ds: List<NdsRegion>?): List<ScreenRegion> {
+        val surface = secondSurface ?: return emptyList()
+        val sw = surface.width.toFloat()
+        val sh = surface.height.toFloat()
+        return ds?.map { it.toScreenRegion(sw, sh) } ?: listOfNotNull(wholeFrameRegion(sw, sh, g))
+    }
+
+    /**
+     * The whole core frame fitted at the game's aspect on a [w] x [h] surface, shaded; touch only for 3DS (Azahar's own
+     * side-by-side frame checks where a finger lands). Null before the first frame.
+     */
+    private fun wholeFrameRegion(w: Float, h: Float, g: FloatArray): ScreenRegion? {
+        val aspect = g[2].takeIf { it > 0f } ?: if (g[0] > 0f && g[1] > 0f) g[0] / g[1] else return null
+        val dst = DualScreen.fullFrame(w, h, aspect)
+        if (dst.width <= 0f || dst.height <= 0f) return null
+        return ScreenRegion(
+            src = ScreenRect(0f, 0f, 1f, 1f),
+            dst = ScreenRect(dst.x / w, dst.y / h, (dst.x + dst.width) / w, (dst.y + dst.height) / h),
+            shaded = true,
+            touch = isN3ds,
+        )
+    }
+
+    /**
+     * 3DS SWAP (the pill, SELECT + R, a pad's left-stick click) [down] or up: split, a press swaps the displays and the core
+     * never sees it (Azahar's own swap would turn its frame under the fixed cuts). False when not split: Azahar's key.
+     */
+    private fun onN3dsSwapPressed(down: Boolean): Boolean {
+        if (!isN3ds || dualMode != DualMode.SPLIT) return false
+        if (down) swapN3dsDisplays()
+        return true
+    }
+
+    /** 3DS split: SWAP moves the bottom screen to the other display (an in-session state; the core's layout stays). */
+    private fun swapN3dsDisplays() {
+        n3dsPicture = n3dsPicture.other
+        relayoutFrontend()
+    }
+
+    /** What the second display is for now: a qualifying display, the setting on, and the game (DS/3DS split, else the panel). */
+    private fun dualModeNow(): DualMode {
+        val tag = layoutTag()
+        return DualScreen.mode(
+            secondScreens.current.value != null, appSettings.secondScreen,
+            NdsOptions.appliesTo(tag) || N3dsOptions.appliesTo(tag), panelUp,
+        )
+    }
+
+    /** Shows the in-game menu panel's Second screen shortcut while a second display is attached, with the setting's value. */
+    private fun publishSecondScreen(model: InGameMenuModel) {
+        model.setSecondScreen(secondScreens.current.value != null, appSettings.secondScreen)
+        menuState.value = model.state
+    }
+
+    /**
+     * Follows the second display, the setting and the panel: shows or dismisses the presentation, sets the 3DS core's
+     * screen options for the new mode, and lays both displays out again.
+     */
+    private fun syncDual() {
+        val wanted = if (isFinishing || isDestroyed) DualMode.OFF else dualModeNow()
+        val geometry = retroView?.getGameGeometry()   // read once for the picture screen and the layout
+        val display = secondScreens.current.value.takeIf { wanted != DualMode.OFF }
+        // A different display, or the same one at a new size or density: a new window.
+        if (presentation?.display?.displayId != display?.displayId || (display != null && shapeOf(display) != presentationShape)) {
+            hidePresentation()
+            display?.let(::showPresentation)
+        }
+        // No window on the second display (it went before it showed): nothing is moved onto it, both screens stay here.
+        val mode = if (display != null && presentation == null) DualMode.OFF else wanted
+        val picture = if (display == null || presentation == null) PictureOn.MAIN else pictureOnNow(display, geometry)
+        val old = dualMode
+        val oldPicture = pictureOn
+        val changed = mode != old
+        val moved = picture != oldPicture
+        dualMode = mode
+        pictureOn = picture
+        if (changed || moved) NxLog.i(TAG_LOG, "second screen: $mode, picture on $picture")
+        if (changed) lockLandscape(mode != DualMode.OFF)
+        // Under a panel on the second display nothing is drawn there; with the picture there, the panel is on main.
+        pushSecondSurface()
+        syncPanel()
+        if ((changed || moved) && isN3ds) {
+            // Split and panel up set Azahar's layout and swap options; the other modes put the user's back.
+            val forcedBefore = DualScreen.n3dsCoreOptions(old) != null
+            val forced = DualScreen.n3dsCoreOptions(mode) != null
+            if (forced && !forcedBefore) captureN3dsSwap()
+            syncN3dsCore()
+            if (forcedBefore && !forced) restoreN3dsScreen()
+        }
+        relayoutFrontend(geometry)
+    }
+
+    /**
+     * Which display is the picture screen for [display]: the game's window as landscape (it is locked so while dual)
+     * against the display's real size as it is turned now, unless a bottom screen is chosen (the console's Bottom screen,
+     * else Settings → Emulators'). [geometry]: the view's game geometry (null before the view).
+     */
+    private fun pictureOnNow(display: Display, geometry: FloatArray?): PictureOn {
+        val root = findViewById<View>(R.id.root)
+        val dm = resources.displayMetrics
+        val w = if (root.width > 0) root.width else dm.widthPixels
+        val h = if (root.height > 0) root.height else dm.heightPixels
+        val real = android.graphics.Point().also { @Suppress("DEPRECATION") display.getRealSize(it) }
+        val bottom = BottomScreen.resolve(frontendValues[BottomScreenOptions.KEY], appSettings.bottomScreen)
+        // A core that turns its picture (SET_ROTATION): the second display's regions draw it unturned, so it stays on main.
+        return DualScreen.pictureOn(maxOf(w, h), minOf(w, h), real.x, real.y, GameGeometry.of(geometry).rotated, bottom)
+    }
+
+    /**
+     * Either display's size or the core's geometry changed: a new picture screen lays both out again ([syncDual]).
+     * [geometry]: the view's, when the caller has just read it.
+     */
+    private fun recheckPictureOn(geometry: FloatArray? = null) {
+        if (dualMode == DualMode.OFF) return
+        val display = presentation?.display ?: return
+        if (pictureOnNow(display, geometry ?: retroView?.getGameGeometry()) != pictureOn) syncDual()
+    }
+
+    /** While the second screen is in use the main display stays landscape, either way up; then the previous orientation is back. */
+    private fun lockLandscape(lock: Boolean) {
+        if (lock) {
+            if (orientationBeforeDual == null) orientationBeforeDual = requestedOrientation
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } else {
+            orientationBeforeDual?.let { requestedOrientation = it }
+            orientationBeforeDual = null
+        }
+    }
+
+    private fun showPresentation(display: Display) {
+        val p = SecondScreenPresentation(this, display)
+        p.onSurface = { surface, width, height ->
+            secondSurface = surface?.let { SecondSurface(it, width, height) }
+            pushSecondSurface(force = true)   // a null waits for the GL thread to drop its EGL surface, before the Surface goes
+            relayoutFrontend()
+            if (surface != null) findViewById<View>(R.id.root).post { recheckPictureOn() }   // the display may have turned or resized
+        }
+        p.theme = panelTheme()
+        p.onPanelPill = { panelUp = true; syncDual() }
+        p.onTouch = { x, y, down ->
+            retroView?.let { view ->
+                val point = view.mapSecondaryTouch(x, y)
+                if (down && point != null) view.sendPointer(point.x, point.y, true) else view.sendPointer(0f, 0f, false)
+            }
+        }
+        // The system dismisses the window itself when the display's metrics change (or it goes): drop it, and look again.
+        p.setOnDismissListener {
+            if (presentation !== p) return@setOnDismissListener   // hidePresentation's own dismiss
+            forgetPresentation(p)
+            findViewById<View>(R.id.root).post { syncDual() }
+        }
+        // The display can go between the listener's report and here.
+        try {
+            presentationShape = shapeOf(display)
+            presentation = p
+            p.show()
+        } catch (e: WindowManager.InvalidDisplayException) {
+            NxLog.w(TAG_LOG, "second screen ${display.displayId} went before its window showed", e)
+            presentation = null
+            presentationShape = null
+        }
+    }
+
+    @Suppress("DEPRECATION")   // the display's own metrics, not a window's
+    private fun shapeOf(display: Display): DisplayShape =
+        android.util.DisplayMetrics().also { display.getRealMetrics(it) }.let { DisplayShape(it.widthPixels, it.heightPixels, it.densityDpi) }
+
+    /**
+     * Hands the GL thread the second surface while it draws there ([secondDraws]: split, or the picture there), else takes
+     * it away, waiting for the GL thread to drop its EGL surface. Only a change is sent: nothing held, nothing to drop (no
+     * wait). A view not running yet gets the surface from the on-ready path. [force] (a surfaceChanged) sends an unchanged
+     * surface again: that clears the GL thread's dropped state after an EGL failure.
+     */
+    private fun pushSecondSurface(force: Boolean = false) {
+        val view = retroView ?: return
+        val want = secondSurface?.takeIf { secondDraws() }
+        if ((want == pushedSecondSurface && !force) || (want != null && !view.isAttachedToWindow)) return
+        view.setSecondarySurface(want?.surface, want?.width ?: 0, want?.height ?: 0)
+        pushedSecondSurface = want
+    }
+
+    /** The GL thread stops drawing on the second surface (waiting for it), and nothing is cut for it. */
+    private fun dropSecondSurface() {
+        secondSurface = null
+        pushSecondSurface()
+        retroView?.secondaryRegions = emptyList()
+        secondNdsRegions = emptyList()
+        positionPen()
+    }
+
+    /**
+     * [p] is no longer the second display's window: nothing is drawn on it, and a finger held on it lifts in the core (its
+     * own up never comes once it is dismissed).
+     */
+    private fun forgetPresentation(p: SecondScreenPresentation) {
+        presentation = null
+        presentationShape = null
+        dropSecondSurface()
+        p.releaseTouch()
+    }
+
+    /** The app's theme (accent, option text size) for the panel, on either display. */
+    private fun panelTheme(): @Composable (@Composable () -> Unit) -> Unit {
+        val colors = nxColorsFor(appSettings.accent, appSettings.secondaryAccent)
+        val optionText = appSettings.optionTextSize.ofListLabel
+        return { content -> NxTheme(colors) { CompositionLocalProvider(LocalNxOptionText provides optionText) { content() } } }
+    }
+
+    /**
+     * The panel follows the mode, on the touch screen ([pictureOn]'s other display): the panel over it in PANEL and
+     * PANEL_UP (its discs and play time re-read), the Panel pill over the DS/3DS screen in SPLIT.
+     */
+    private fun syncPanel() {
+        val p = presentation
+        val shown = panelShown()
+        val onMain = pictureOn == PictureOn.SECOND
+        val content = if (shown) panelContent(gamePill = dualMode == DualMode.PANEL_UP) else null
+        p?.showPanelPill(dualMode == DualMode.SPLIT && !onMain)
+        p?.showPanel(content.takeIf { !onMain })
+        val wasOnMain = mainPanelShown()
+        showMainPanel(content.takeIf { onMain }, pill = p != null && dualMode == DualMode.SPLIT && onMain)
+        if (wasOnMain != mainPanelShown()) {
+            updatePadVisibility()
+            if (mainPanelShown()) releaseAllGameInput()   // the pad went from under the fingers: nothing it held may stick
+            menuView?.layoutParams = menuLayoutParams(resources.configuration.orientation, overPanel = mainPanelShown())
+        }
+        // Re-read as it comes up; while up, each RA event, player, disc and setting change refreshes it.
+        if (shown && !panelWasShown) {
+            refreshDiscs()
+        }
+        panelWasShown = shown
+        if (shown) refreshDualPanel() else dualPanel.value = null
+        syncPanelClock()
+    }
+
+    /** The panel is up, on either display (PANEL, PANEL_UP). */
+    private fun panelShown(): Boolean = presentation != null && (dualMode == DualMode.PANEL || dualMode == DualMode.PANEL_UP)
+
+    /**
+     * The panel ([content]) over the whole game window on main, opaque and taking every touch there; or only the Panel
+     * [pill] at the top, the game's touches passing it by. Above the game and the pad, below the in-game menu and the
+     * notifications.
+     */
+    private fun showMainPanel(content: (@Composable () -> Unit)?, pill: Boolean) {
+        mainPanel.value = content
+        mainPanelPill.value = pill && content == null
+        if (content == null && !pill) { mainPanelHost?.visibility = View.GONE; return }
+        val host = mainPanelHost ?: FrameLayout(this).also { host ->
+            val theme = panelTheme()
+            host.addView(ComposeView(this).apply {
+                setContent {
+                    theme {
+                        val panel = mainPanel.value
+                        when {
+                            panel != null -> Box(Modifier.fillMaxSize().background(LocalNxColors.current.background)
+                                .windowInsetsPadding(WindowInsets.displayCutout)) { panel() }
+                            // Bottom-right, where the panel's Game pill sits (clear of a cutout on those sides): the
+                            // two switch pills land on one spot.
+                            mainPanelPill.value -> PanelPill(
+                                "Panel", Modifier.windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.End + WindowInsetsSides.Bottom)).padding(10.dp),
+                            ) { panelUp = true; syncDual() }
+                        }
+                    }
+                }
+            }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            mainPanelHost = host
+        }
+        host.isClickable = content != null   // the panel's empty parts swallow touches; the pill alone lets them through
+        host.layoutParams = if (content != null) {
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        } else {
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.END)
+        }
+        placeMainPanelHost()
+        syncMainPanelHost()
+    }
+
+    /**
+     * Where the main panel's host sits among the root's children: the panel right above gameContainer (under the pads,
+     * which it hides anyway); the Panel pill alone right above the pads, whose right cluster would cover it in landscape,
+     * and still under the menu and the notifications. Moved only when its place changed.
+     */
+    private fun placeMainPanelHost() {
+        val host = mainPanelHost ?: return
+        val root = findViewById<FrameLayout>(R.id.root)
+        val pillOnly = mainPanel.value == null && mainPanelPill.value
+        val current = root.indexOfChild(host)
+        // The other children's places as if the host were out of the root.
+        fun without(i: Int) = if (current in 0 until i) i - 1 else i
+        val game = without(root.indexOfChild(findViewById(R.id.gameContainer)))
+        val lastPad = padViews.maxOfOrNull { without(root.indexOfChild(it)) } ?: -1
+        val target = if (pillOnly) maxOf(game, lastPad) + 1 else game + 1
+        if (current == target) return
+        if (current >= 0) root.removeView(host)
+        root.addView(host, target)
+    }
+
+    /**
+     * The main panel's host shows with the panel or the pill; but not under the open in-game menu, which then draws the
+     * same header and panel in its place (with the list beside it), so the touch screen never shows two.
+     */
+    private fun syncMainPanelHost() {
+        val host = mainPanelHost ?: return
+        val shown = if (mainPanel.value != null) !menuOpen else mainPanelPill.value
+        host.visibility = if (shown) View.VISIBLE else View.GONE
+    }
+
+    /** The game panel, live on [dualPanel], touch-only; [gamePill]: the DS/3DS Game pill. */
+    private fun panelContent(gamePill: Boolean): @Composable () -> Unit = {
+        dualPanel.value?.let { GamePanel(it.copy(showGamePill = gamePill), ::onGamePanelEvent) }
+    }
+
+    /**
+     * The dual-screen panel's state: the header ([panelHeader], with the achievement count while there is a set), the tabs
+     * that apply, the Shortcuts (Swap disc for a multi-disc game outside netplay, Second screen, the future ones), this
+     * game's achievements in the menu's order, and the Players page's rows.
+     */
+    private fun panelState(): GamePanelState {
+        val b = achievements?.takeIf { it.available }
+        val summary = b?.summary()
+        val list = if (b != null && summary != null) b.list().sortedBy(appSettings.raSortOrder) else emptyList()
+        val players = playerRows()
+        val tabs = GamePanelModel.tabs(raAvailable = list.isNotEmpty(), playerSlots = if (netplayNow != null) 0 else players?.first?.size ?: 0)
+        val (disc, count) = discs ?: (0 to 0)
+        return GamePanelState(
+            header = panelHeader().copy(ra = summary.takeIf { GamePanelTab.ACHIEVEMENTS in tabs }),
+            tabs = tabs,
+            tab = GamePanelModel.resolveTab(dualPanelTab, tabs),
+            shortcuts = GamePanelModel.shortcuts(count, disc, secondScreens.current.value != null, appSettings.secondScreen, netplayNow != null),
+            achievements = list,
+            badges = b?.badges.orEmpty(),
+            players = players?.first.orEmpty(),
+            playerPads = players?.second.orEmpty(),
+            showGamePill = dualMode == DualMode.PANEL_UP,
+        )
+    }
+
+    /** Rebuilds [dualPanel] while the dual-screen panel is up; nothing otherwise ([syncPanel] builds it as it comes up). */
+    private fun refreshDualPanel() {
+        if (panelShown()) dualPanel.value = panelState()
+    }
+
+    /**
+     * A touch on the dual-screen panel: Swap disc, Second screen and the Players rows as the in-game menu's own effects
+     * (the menu, if open over the game, follows), a tab, or the Game pill flipping the DS/3DS screen back. Achievement
+     * rows ask for nothing.
+     */
+    private fun onGamePanelEvent(e: GamePanelEvent) {
+        if (quitting) return
+        when (e) {
+            GamePanelEvent.SwapDisc -> swapDisc()
+            is GamePanelEvent.SetSecondScreen -> {
+                handle(MenuEffect.SetSecondScreen(e.on))
+                menuModel?.let(::publishSecondScreen)
+            }
+            is GamePanelEvent.SelectTab -> { dualPanelTab = e.tab; refreshDualPanel() }
+            is GamePanelEvent.SetPlayer -> handle(MenuEffect.SetPlayer(e.slot, e.key))
+            GamePanelEvent.ShowGame -> { panelUp = false; syncDual() }
+        }
+    }
+
+    /**
+     * The panel's Swap disc: the next disc through the same core call as the menu's Disc row (on the emulation thread),
+     * a "Disc N of M" toast on the picture's display, and the menu's Disc row (if open) following.
+     */
+    private fun swapDisc() {
+        val view = retroView ?: return
+        if (!gameReady || resumePending || netplayNow != null) return
+        val (current, count) = discs ?: return
+        if (count < 2) return
+        val next = GamePanelModel.nextDisc(current, count)
+        discs = next to count
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { view.changeDisk(next) }.onFailure { NxLog.w("GameActivity", "disc change failed", it) }
+        }
+        discToast(next, count)
+        menuModel?.let { it.setDiscs(next, count); menuState.value = it.state }
+        refreshDualPanel()
+    }
+
+    /** The Swap disc toast ("Disc N of M") on the picture's display. */
+    private fun discToast(index: Int, count: Int) {
+        val text = GamePanelModel.discToast(index, count)
+        val p = presentation
+        if (p != null && pictureOn == PictureOn.SECOND) p.toast(text) else toast(text)
+    }
+
+    /**
+     * Asks the core for its discs (disk-control interface: an m3u, a multi-disc PBP) on IO and hands them to the open
+     * menu and the dual-screen panel. Not before the game runs, nor in netplay (no disc swaps there).
+     */
+    private fun refreshDiscs() {
+        val view = retroView?.takeIf { gameReady && netplayNow == null } ?: return
+        lifecycleScope.launch {
+            val (count, current) = withContext(Dispatchers.IO) {
+                runCatching { view.getAvailableDisks() to view.getCurrentDisk() }
+                    .onFailure { NxLog.w("GameActivity", "disc query failed", it) }.getOrNull()
+            } ?: return@launch
+            discs = current to count
+            menuModel?.let { it.setDiscs(current, count); menuState.value = it.state }
+            refreshDualPanel()
+        }
+    }
+
+    /**
+     * Reads this game's total play time from the store on IO, once as the game starts (no running count: the header shows
+     * the total before this launch), then refreshes the headers. A game with no library path (game time not recorded) keeps 0.
+     */
+    private fun readPlayTotal() {
+        val path = intent.getStringExtra(EXTRA_GAME_PATH) ?: return
+        lifecycleScope.launch {
+            val total = try {
+                val data = withContext(Dispatchers.IO) { GameTimeService.data(this@GameActivity) } ?: return@launch
+                data.byPath()[path]?.totalMs ?: 0L
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                NxLog.w("GameActivity", "could not read play time", e)
+                return@launch
+            }
+            playTotalMs = total
+            refreshPanelHeader()
+        }
+    }
+
+    /**
+     * Both panels' header: the title, the launcher's box art (null: the console logo), the total play time before this
+     * launch ([readPlayTotal]), the clock and the battery (read at the first header of each minute: the minute tick, a
+     * panel coming up; other refreshes reuse them). The achievement count is each panel's own.
+     */
+    private fun panelHeader(): GamePanelHeader {
+        val now = System.currentTimeMillis()
+        // A shared-storage ref as its plain path: the game screen's image loader may not have the app's ref mapper.
+        val art = intent.getStringExtra(EXTRA_ART_PATH)?.let { FileRefs.artPath(it) ?: it }
+        val minute = now / 60_000L
+        if (minute != panelClockMinute) {
+            panelClockMinute = minute
+            panelClock = android.text.format.DateFormat.getTimeFormat(this).format(java.util.Date(now))   // the phone's 12/24-hour setting
+            panelBattery = batteryPercent()
+        }
+        return GamePanelHeader(intent.getStringExtra(EXTRA_TITLE) ?: "Paused", art, layoutTag(), playTotalMs, null, panelClock, panelBattery)
+    }
+
+    /** The battery level from the sticky battery broadcast (no receiver is kept); null when it can't be read. */
+    private fun batteryPercent(): Int? {
+        val i = ContextCompat.registerReceiver(this, null, IntentFilter(Intent.ACTION_BATTERY_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED)
+            ?: return null
+        val level = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = i.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+        return if (level >= 0 && scale > 0) level * 100 / scale else null
+    }
+
+    /** The header again (clock, battery, the play total once read) in the open menu and the dual-screen panel. */
+    private fun refreshPanelHeader() {
+        menuModel?.let { it.setPanelHeader(panelHeader()); menuState.value = it.state }
+        refreshDualPanel()
+    }
+
+    /** While the menu is open or the dual-screen panel up (and the screen started), the header refreshes on each minute. */
+    private fun syncPanelClock() {
+        val want = (menuOpen || panelShown()) && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        if (!want) { panelClockJob?.cancel(); panelClockJob = null; return }
+        if (panelClockJob?.isActive == true) return
+        panelClockJob = lifecycleScope.launch {
+            while (true) {
+                delay(60_000L - System.currentTimeMillis() % 60_000L)
+                refreshPanelHeader()
+            }
+        }
+    }
+
+    /** Stops drawing on the second display, then closes its window. */
+    private fun hidePresentation() {
+        val p = presentation ?: return
+        forgetPresentation(p)
+        p.onSurface = { _, _, _ -> }
+        p.onTouch = { _, _, _ -> }
+        runCatching { p.dismiss() }.onFailure { NxLog.w(TAG_LOG, "dismissing the second screen failed", it) }
     }
 
     /** Split DS screens turn the overlay off and the menu shows it unavailable; both follow when that changes. */
@@ -2718,34 +3384,26 @@ class GameActivity : ComponentActivity() {
         }
     }
 
-    /** The stylus cursor over the bottom screen wherever it is shown (the inset included); hidden without stylus mode. */
+    /**
+     * The stylus cursor over the bottom screen wherever it is shown ([DualScreen.penOn]): on main (the inset included), or
+     * on the second display when the bottom screen is drawn there; hidden on the other display, and without stylus mode.
+     */
     private fun positionPen() {
-        val region = ndsRegions.firstOrNull { it.screen == NdsScreen.BOTTOM }
-        if (!ndsHotkeys.stylus || region == null) { penView?.visibility = View.GONE; return }
-        val v = ensurePenView()
-        val size = (PEN_DP * resources.displayMetrics.density).roundToInt()
+        val on = if (ndsHotkeys.stylus) DualScreen.penOn(ndsRegions, secondNdsRegions) else null
         val pen = ndsHotkeys.pen
-        val (cx, cy) = NdsLayout.pointIn(region, pen.x, pen.y)
-        v.layoutParams = FrameLayout.LayoutParams(size, size, Gravity.TOP or Gravity.START).apply {
-            leftMargin = (cx - size / 2f).roundToInt()
-            topMargin = (cy - size / 2f).roundToInt()
+        val mainRegion = ndsRegions.firstOrNull { it.screen == NdsScreen.BOTTOM }.takeIf { on == PictureOn.MAIN }
+        if (mainRegion == null) penDot?.hide() else {
+            val (cx, cy) = NdsLayout.pointIn(mainRegion, pen.x, pen.y)
+            // Above the GL surface in the game container.
+            (penDot ?: PenDot(findViewById(R.id.gameContainer)).also { penDot = it }).show(cx, cy, pen.pressed)
         }
-        v.alpha = if (pen.pressed) 1f else 0.6f
-        v.visibility = View.VISIBLE
-    }
-
-    /** A plain, non-clickable view above the GL surface in the game container: touches pass through to the game. */
-    private fun ensurePenView(): View = penView ?: View(this).also { v ->
-        v.background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(NxDefaults.colors.main.toArgb())   // the UI ink
-            setStroke((2 * resources.displayMetrics.density).roundToInt(), 0xFF000000.toInt())
+        val secondRegion = secondNdsRegions.firstOrNull { it.screen == NdsScreen.BOTTOM }.takeIf { on == PictureOn.SECOND }
+        presentation?.let { p ->
+            if (secondRegion == null) p.hidePen() else {
+                val (cx, cy) = NdsLayout.pointIn(secondRegion, pen.x, pen.y)
+                p.showPen(cx, cy, pen.pressed)
+            }
         }
-        v.isClickable = false
-        v.isFocusable = false
-        v.visibility = View.GONE
-        findViewById<FrameLayout>(R.id.gameContainer).addView(v, FrameLayout.LayoutParams(0, 0, Gravity.TOP or Gravity.START))
-        penView = v
     }
 
     /**
@@ -2793,6 +3451,7 @@ class GameActivity : ComponentActivity() {
     private fun sendN3dsKeys() {
         val view = retroView
         for (e in n3dsHotkeys.takeKeys()) {
+            if (e.key == N3dsKey.L3 && onN3dsSwapPressed(e.down)) continue   // split: SELECT + R swaps the displays, as the pill does
             val code = when (e.key) {
                 N3dsKey.L3 -> KeyEvent.KEYCODE_BUTTON_THUMBL
                 N3dsKey.R3 -> KeyEvent.KEYCODE_BUTTON_THUMBR
@@ -3015,8 +3674,11 @@ class GameActivity : ComponentActivity() {
             initialSlot = (lastSlotCache ?: saveStates?.lastSlot()?.also { lastSlotCache = it } ?: 1) - 1,
         ).also {
             it.setStatus(configSource); it.cheatsAvailable = cheatsSupported
-            // netplay: the root is "Leave netplay?" only; Continue / Quit once the session has ended
-            if (netplay != null) { it.netplay = true; it.netplayEnded = netplayEnded; it.refresh() }
+            // netplay: the root is "Leave netplay?" only; Continue / Quit once the session has ended. An ended link
+            // session's game is a local one ([netplayNow] null): the normal root.
+            if (netplayNow != null) {
+                it.netplay = true; it.netplayLink = netplay?.endsAsLocalGame == true; it.netplayEnded = netplayEnded; it.refresh()
+            }
         }
         if (retroView != null) {
             // Re-listed on every open so a bundled tree swapped in since launch is picked up; on IO, the
@@ -3047,18 +3709,15 @@ class GameActivity : ComponentActivity() {
         model.setShaders(shaderValues, presetNames, shaderParams)
         model.setCheats(cheatSet.entries, cheatsFolder, cheatSet.expected)
         publishPlayers(model)
+        publishSecondScreen(model)
         applyAchievements(model)
+        model.setPanelHeader(panelHeader())
+        // Over the dual-screen panel: the menu's panel opens on the tab it showed (a tab change has no effect to handle).
+        if (mainPanelShown()) model.panelEvent(GamePanelEvent.SelectTab(dualPanelTab))
         menuModel = model
         // Multi-disc content (an m3u, a multi-disc PBP): the core reports its discs through the disk-control interface.
-        retroView?.takeIf { gameReady && netplay == null }?.let { view ->
-            lifecycleScope.launch {
-                val (count, current) = withContext(Dispatchers.IO) {
-                    runCatching { view.getAvailableDisks() to view.getCurrentDisk() }
-                        .onFailure { NxLog.w("GameActivity", "disc query failed", it) }.getOrNull()
-                } ?: return@launch
-                menuModel?.takeIf { it === model }?.let { it.setDiscs(current, count); menuState.value = it.state }
-            }
-        }
+        refreshDiscs()
+        syncPanelClock()
         menuState.value = model.state
         menuAxes.reset()
         stickRouter.onMenuToggled()
@@ -3104,15 +3763,20 @@ class GameActivity : ComponentActivity() {
                             onDismiss = { if (!quitting) menuModel?.let { val e = it.press(NxButton.B); menuState.value = it.state; handle(e) } },
                             onChange = { d -> if (!quitting) menuModel?.let { val e = it.press(if (d > 0) NxButton.RIGHT else NxButton.LEFT); menuState.value = it.state; handle(e) } },
                             onPress = ::onMenuPress,
-                            achievementDetail = menuModel?.achievementDetail(),
                             badgePath = { a -> menuModel?.badgePath(a) },
-                            muted = { id -> id in (achievements?.muted ?: emptySet()) },
+                            rowAchievement = { r -> menuModel?.achievementOf(r) },   // the Achievements page's rows as the panel's
                             onInfoTruncated = { info, t -> if (!quitting) menuModel?.let { it.setInfoTruncated(info, t); menuState.value = it.state } },
                             // Two panes on a wide area (the unfolded Fold, a phone in landscape), as Settings.
-                            preview = { row -> menuModel?.previewFor(row) },
                             onSplit = { split -> menuModel?.split = split },
                             onParentTap = { kind, i -> if (!quitting) menuModel?.let { m -> val e = m.tapParent(kind, i); menuState.value = m.state; handle(e) } },
-                            onPreviewTap = { i -> if (!quitting) menuModel?.let { m -> val e = m.tapPreview(i); menuState.value = m.state; handle(e) } },
+                            // The game panel beside the root list (the model caches it until its inputs change).
+                            panel = menuModel?.panelState(),
+                            onPanelEvent = { ev -> if (!quitting) menuModel?.let { m -> val e = m.panelEvent(ev); menuState.value = m.state; handle(e) } },
+                            onPanelColumns = { c -> menuModel?.panelColumns = c },
+                            // Not in netplay: the header over Continue / Leave only.
+                            panelBeside = menuModel?.panelBeside ?: true,
+                            // In the dual-screen panel's place: opaque, as the panel it replaces.
+                            opaque = mainPanel.value != null,
                         )
                     }
                     }
@@ -3120,16 +3784,19 @@ class GameActivity : ComponentActivity() {
             }
         }
         menuView = overlay
-        root.addView(overlay, menuLayoutParams(resources.configuration.orientation))
+        root.addView(overlay, menuLayoutParams(resources.configuration.orientation, overPanel = mainPanelShown()))
+        syncMainPanelHost()
         updatePadVisibility()
     }
 
     /**
      * Portrait: confine the modal to the top game area so the bottom controls stay visible and can drive
      * the menu (the whole height when the band is dropped). Landscape: cover the whole screen. Re-applied by
-     * [applyLayout] (rotation, controller change) while the menu is open.
+     * [applyLayout] (rotation, controller change) while the menu is open. [overPanel]: the menu takes the place of the
+     * dual-screen panel, which fills the window (no pad below): the whole window too.
      */
-    private fun menuLayoutParams(orientation: Int): FrameLayout.LayoutParams {
+    private fun menuLayoutParams(orientation: Int, overPanel: Boolean = false): FrameLayout.LayoutParams {
+        if (overPanel) return FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         // Tabletop: confined above the hinge, the controls below still drive it.
         tabletop()?.let { tt -> return FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, tt.gameBottom, Gravity.TOP) }
         return if (orientation == Configuration.ORIENTATION_PORTRAIT) {
@@ -3145,10 +3812,14 @@ class GameActivity : ComponentActivity() {
         menuOpen = false
         menuRouter.releaseAll()
         stickRouter.onMenuToggled()
+        // The dual-screen panel comes back on the tab the menu's panel left.
+        menuState.value?.panelTab?.takeIf { mainPanelShown() && it != dualPanelTab }?.let { dualPanelTab = it; refreshDualPanel() }
         menuView?.let { findViewById<FrameLayout>(R.id.root).removeView(it) }
         menuView = null
+        syncMainPanelHost()
         menuModel = null
         menuState.value = null
+        syncPanelClock()
         updatePadVisibility()
         netplayGame?.takeIf { it.live }?.resume()   // netplay: input goes out again (see openMenu)
         if (!netplayStartFailed) {   // netplay: a failed start keeps the game paused behind its dialog
@@ -3176,8 +3847,9 @@ class GameActivity : ComponentActivity() {
             MenuEffect.Quit -> quitWithAutoState(chosen = true)
             // Quit's "Quit": the battery save as ever, the resume point on disk left as it is.
             MenuEffect.QuitWithoutResume -> quitWithAutoState(chosen = true, autoState = false)
-            // netplay: DISCONNECT and shut the engine down (off main), then quit; saveStates is null: no auto state.
-            MenuEffect.LeaveNetplay -> { netplayGame?.leave(); quitWithAutoState(chosen = true) }
+            // netplay: DISCONNECT and shut the engine down (off main), then quit; saveStates is null: no auto state. A
+            // link session ends the link instead and plays on, the menu open on the normal root.
+            MenuEffect.LeaveNetplay -> if (netplay?.endsAsLocalGame == true) leaveLink() else { netplayGame?.leave(); quitWithAutoState(chosen = true) }
             is MenuEffect.SaveSlot -> saveToSlot(effect.slot)
             is MenuEffect.LoadSlot -> loadFromSlot(effect.slot)
             is MenuEffect.ToggleMute -> toggleMute(effect.id)
@@ -3214,14 +3886,23 @@ class GameActivity : ComponentActivity() {
                 if (gameReady) retroView?.let(::applyCheats)
             }
             is MenuEffect.ChangeDisc -> retroView?.let { view ->
+                discs = discs?.let { effect.index to it.second }
+                // The menu panel's Swap disc says so, as the dual-screen panel's does; the Disc row shows it in place.
+                if (effect.toast) discs?.let { (index, count) -> discToast(index, count) }
+                refreshDualPanel()
                 lifecycleScope.launch(Dispatchers.IO) {
                     runCatching { view.changeDisk(effect.index) }.onFailure { NxLog.w("GameActivity", "disc change failed", it) }
                 }
+            }
+            is MenuEffect.SetSecondScreen -> {
+                appSettings.secondScreen = effect.on
+                syncDual()
             }
             MenuEffect.SaveForConsole -> saveOptions(game = false)
             MenuEffect.SaveForGame -> saveOptions(game = true)
             MenuEffect.RestoreDefaults -> restoreOptions()
             is MenuEffect.SetPlayer -> slots?.let { s ->
+                val benchedBefore = s.outOfPlay
                 s.assign(effect.slot, effect.key?.let(::DeviceKey)).forEach { port ->
                     releasePort(port)
                     // The rumble follows the pad now in the slot (none: silent; port 0 falls back to the phone).
@@ -3229,17 +3910,15 @@ class GameActivity : ComponentActivity() {
                     rumbles.getOrNull(port)?.useDevice(id)
                 }
                 connectDolphinPorts()   // a slot filled here is connected; one emptied stays so (no unplug prompt)
-                menuModel?.let(::publishPlayers)
-            }
-            is MenuEffect.SetPlaying -> slots?.let { s ->
-                s.setOutOfPlay(DeviceKey(effect.key), out = !effect.playing)?.let { port ->
-                    releasePort(port)
-                    rumbles.getOrNull(port)?.useDevice(null)
+                if (s.outOfPlay != benchedBefore) {
+                    // Empty benched the pad that was there (for this session only), or a benched pad was chosen: the
+                    // layout again as on a connect or disconnect (a benched pad does not hide the on-screen pad,
+                    // [layoutControllerNames]), which republishes the Players page and the panel.
+                    onInputDevicesChanged()
+                } else {
+                    menuModel?.let(::publishPlayers)
+                    refreshDualPanel()
                 }
-                AndroidAppSettings(this).benchedPads = s.outOfPlay.map { it.value }.toSet()
-                // As on a connect or disconnect: the layout again (a Not playing pad does not hide the on-screen pad,
-                // [layoutControllerNames]) and the Players page republished.
-                onInputDevicesChanged()
             }
         }
     }
@@ -3249,7 +3928,7 @@ class GameActivity : ComponentActivity() {
      * [withCoreOptions] read sees them.
      */
     private fun applyOptions(vars: List<Variable>) {
-        if (netplay != null) return   // netplay: no core option changes mid-session (the other device would not follow)
+        if (netplayNow != null) return   // netplay: no core option changes mid-session (the other device would not follow)
         val view = retroView ?: return
         if (vars.isEmpty()) return
         view.queueEvent { runCatching { view.updateVariables(*vars.toTypedArray()) }.onFailure { NxLog.w("GameActivity", "setting options failed", it) } }
@@ -3284,6 +3963,9 @@ class GameActivity : ComponentActivity() {
         }
     }
 
+    /** The 3DS options the second-screen split holds for the session: a save keeps their stored values. */
+    private fun dualForcedOptions(): Set<String> = if (isN3ds) DualScreen.n3dsCoreOptions(dualMode)?.keys.orEmpty() else emptySet()
+
     /**
      * Reads the core's options on the emulation thread, then runs [then] on the main thread and redraws.
      * [then] gets null when the read failed.
@@ -3314,7 +3996,7 @@ class GameActivity : ComponentActivity() {
                 // meanwhile has already applied its value, so this write keeps it instead of bringing back the old one.
                 val written = configWrites.withLock {
                     // A key Graphics API forced for this launch keeps its stored value: the running one is the session's only.
-                    val values = CoreConfig.valuesToSave(all.map { it.key to it.value }, storedValues, graphicsForcedOptions) + frontendValues.toList() +
+                    val values = CoreConfig.valuesToSave(all.map { it.key to it.value }, storedValues, graphicsForcedOptions + dualForcedOptions()) + frontendValues.toList() +
                         ShaderOptions.activeParamEntries(shaderValues, shaderParams) +
                         if (game) listOf(FrontendOptions.CHEATS to CheatSet.encode(cheatSet.enabledKeys())) else emptyList()
                     withContext(Dispatchers.IO) {
@@ -3363,10 +4045,11 @@ class GameActivity : ComponentActivity() {
                 } else {
                     // The renderer is never switched live; the restored config picks it at the next launch.
                     pendingRestartOptions.clear()
+                    val dualForced = dualForcedOptions()   // the split's; leaving it puts the restored ones back
                     applyOptions(all.mapNotNull { o ->
                         if (o.key in NdsRenderer.APPLY_ON_RESTART) return@mapNotNull null
                         // A forced option keeps what the launch set (picodrive_input1 follows Controller Type through applyFrontend).
-                        if (o.key in forcedOptions || o.key in graphicsForcedOptions) return@mapNotNull null
+                        if (o.key in forcedOptions || o.key in graphicsForcedOptions || o.key in dualForced) return@mapNotNull null
                         val target = next.values[o.key] ?: o.defaultValue
                         if (target.isNotEmpty() && target != o.value) Variable(o.key, target) else null
                     })
@@ -3471,7 +4154,8 @@ class GameActivity : ComponentActivity() {
         slotsJob?.cancel()
         slotsJob = lifecycleScope.launch {
             val (slots, last) = withContext(Dispatchers.IO) {
-                runCatching { readSlots(ss) to ss.lastSlot() }.onFailure { NxLog.w("GameActivity", "could not list the slots", it) }.getOrNull()
+                runCatching { readSlots(ss) to ss.lastSlot() }
+                    .onFailure { NxLog.w("GameActivity", "could not list the slots", it) }.getOrNull()
             } ?: return@launch
             slotsUi.value = slots
             lastSlotCache = last
@@ -3479,18 +4163,20 @@ class GameActivity : ComponentActivity() {
     }
 
     /** The slot strip for [ss]: file listings and thumbnail bounds. Blocking I/O. */
-    private fun readSlots(ss: SaveStates): List<SlotUi> =
-        ss.slots().map { s ->
-            val sub = if (s.occupied) formatSlotTime(s.timestampMillis) else "empty"
-            val thumb = s.thumb?.let { Uri.fromFile(it).buildUpon().fragment(it.lastModified().toString()).build().toString() }
-            SlotUi(
-                label = "Slot ${s.index}",
-                subtitle = sub,
-                thumbPath = thumb,
-                occupied = s.occupied,
-                aspect = s.thumb?.let { thumbAspect(it) } ?: (4f / 3f),
-            )
-        }
+    private fun readSlots(ss: SaveStates): List<SlotUi> = ss.slots().map { slotUi(it, "Slot ${it.index}") }
+
+    /** One slot as the strip shows it; the thumbnail's URI carries its mtime, so a new save reloads it. Blocking I/O. */
+    private fun slotUi(s: SaveStates.Slot, label: String): SlotUi {
+        val sub = if (s.occupied) formatSlotTime(s.timestampMillis) else "empty"
+        val thumb = s.thumb?.let { Uri.fromFile(it).buildUpon().fragment(it.lastModified().toString()).build().toString() }
+        return SlotUi(
+            label = label,
+            subtitle = sub,
+            thumbPath = thumb,
+            occupied = s.occupied,
+            aspect = s.thumb?.let { thumbAspect(it) } ?: (4f / 3f),
+        )
+    }
 
     /** Reads a thumbnail's width/height (bounds only) to get its aspect, so the preview frame hugs it. */
     private fun thumbAspect(file: File): Float {
@@ -3515,24 +4201,33 @@ class GameActivity : ComponentActivity() {
                     if (bmp != null) ss.writeThumb(slot, bmp)
                 }.isSuccess
                 withContext(Dispatchers.Main) {
-                    if (ok) { refreshSlots(); toast("Saved to slot $slot") } else toast("Save failed")
+                    if (ok) { lastSlotCache = slot; refreshSlots(); toast("Saved to slot $slot") } else toast("Save failed")
                 }
             })
         }
     }
 
+    /** Loads manual [slot] and records it as the last used one; the menu closes on success. */
     private fun loadFromSlot(slot: Int) {
         val view = retroView ?: return
         val ss = saveStates ?: return
         // The read is in the job too, not on main: a state file is up to tens of MB (PSP and DC).
         trackSlotJob(lifecycleScope.launch(Dispatchers.IO) {
-            val read = runCatching { ss.readState(slot) }.onFailure { NxLog.e("GameActivity", "could not read slot $slot", it) }
+            val read = runCatching { ss.readState(slot) }
+                .onFailure { NxLog.e("GameActivity", "could not read slot $slot", it) }
             if (read.getOrNull() == null && read.isSuccess) return@launch   // empty slot: ignore (the menu stays open)
             val ok = read.getOrNull()?.let { bytes -> runCatching { view.unserializeState(bytes) }.getOrDefault(false) } ?: false
             if (ok) runCatching { saveStates?.rememberSlot(slot) }
                 .onFailure { NxLog.e("GameActivity", "could not record last slot", it) }
             // The loaded state's rumble may stay latched unreported: start from still rather than re-apply the old one.
-            withContext(Dispatchers.Main) { if (ok) { rumbles.forEach { it.forget() }; refreshSlots(); closeMenu() } else toast("Load failed") }   // refresh: the pointer moved
+            withContext(Dispatchers.Main) {
+                if (ok) {
+                    rumbles.forEach { it.forget() }
+                    lastSlotCache = slot   // the pointer moved: a save or load right after follows it before the refresh lands
+                    refreshSlots()
+                    closeMenu()
+                } else toast("Load failed")
+            }
         })
     }
 
@@ -3665,10 +4360,12 @@ class GameActivity : ComponentActivity() {
                 if (netplayPillShown) notifications.hideProgress()
                 netplayPillShown = false
                 notifications.push(notice.text, null, NETPLAY_NOTICE_MS, now)
-                // The ended session holds no frames: an open menu pauses the game as for any other launch.
-                if (menuOpen) retroView?.frameSpeed = 0
-                netplayEnded = true
-                menuModel?.let { it.netplayEnded = true; it.refresh(); menuState.value = it.state }
+                if (netplay?.endsAsLocalGame == true) linkEnded() else {
+                    // The ended session holds no frames: an open menu pauses the game as for any other launch.
+                    if (menuOpen) retroView?.frameSpeed = 0
+                    netplayEnded = true
+                    menuModel?.let { it.endNetplay(local = false); menuState.value = it.state }
+                }
             }
             is NetplayNotice.Failed -> {
                 if (netplayPillShown) notifications.hideProgress()
@@ -3677,6 +4374,68 @@ class GameActivity : ComponentActivity() {
             }
         }
         publishNotifications()
+    }
+
+    /**
+     * netplay link: Leave. The link ends and the game plays on ([linkEnded]); the menu stays open on the normal root and
+     * the player leaves later with Quit. A GBA link's engine sends DISCONNECT and shuts down off main; [NetplayRun.leave]
+     * detaches it first, so no Ended notice follows. GB link has no engine: gambatte's network serial stops on its mode's
+     * variable update, read at the next frame (the menu holds frames, so on Continue). Set past [applyOptions]' guard and
+     * not stored: the link options are this launch's ([graphicsForcedOptions]), never the user's config.
+     */
+    private fun leaveLink() {
+        netplayGame?.leave()
+        if (netplayPillShown) { notifications.hideProgress(); netplayPillShown = false; publishNotifications() }   // the ticker is gone
+        if (netplay?.let { NetplayCores.link(it.coreId) } == NetplayLinkKind.GBLINK) retroView?.let { view ->
+            val off = Variable(NetplayLinkOptions.GB_MODE, NetplayLinkOptions.GB_OFF)
+            view.queueEvent { runCatching { view.updateVariables(off) }.onFailure { NxLog.w("GameActivity", "ending the GB link failed", it) } }
+        }
+        linkEnded()
+    }
+
+    /**
+     * netplay link: the session is over, from the other side or the network ([NetplayNotice.Ended]) or by Leave
+     * ([leaveLink]): the game is a local one from here ([playLocally]); an open menu stays open, paused, and becomes the
+     * normal root on the slot a normal launch shows.
+     */
+    private fun linkEnded() {
+        // The link holds no frames now: an open menu pauses the game as for any other launch.
+        if (menuOpen) retroView?.frameSpeed = 0
+        netplayEnded = true
+        playLocally()
+        menuModel?.let {
+            it.cheatsAvailable = cheatsSupported
+            lastSlotCache?.let { slot -> it.showSlot(slot - 1) }
+            it.endNetplay(local = true)
+            menuState.value = it.state
+        }
+    }
+
+    /**
+     * netplay link: the session ended (the other player left, it dropped, or this player left). Each player ran their own game on their own
+     * save (never a copy: [NetplaySession.onCopy]), so from here it is the normal launch of that game: save states, the
+     * auto state on Quit and on stop, cheats (loaded now, the saved ones applied), Options and the panel, as [netplayNow]
+     * is null. The link engine is idle already (or shutting down after Leave); [netplay] stays for onDestroy (the engine release, the USB cable).
+     * Achievements need nothing here: a link session ran them from launch ([NetplaySession.allowsAchievements]).
+     */
+    private fun playLocally() {
+        if (netplayLocal) return
+        netplayLocal = true
+        saveStates = SaveStates(sdRoot, paths).also { ss ->
+            // Read now, as openMenu does for a menu opened before the first read: an open menu shows this slot.
+            lastSlotCache = ss.lastSlot()
+        }
+        refreshSlots()
+        localCheats?.let { load ->
+            localCheats = null
+            val job = load().also { cheatsLoad = it }
+            lifecycleScope.launch {
+                job.join()
+                if (!quitting && cheatSet.enabledCodes().isNotEmpty()) retroView?.let(::applyCheats)
+            }
+        }
+        refreshDiscs()
+        refreshDualPanel()
     }
 
     // ------------------------------------------------------------------ achievements
@@ -3734,6 +4493,7 @@ class GameActivity : ComponentActivity() {
 
     private fun refreshMenuAchievements() {
         menuModel?.let { applyAchievements(it); menuState.value = it.state }
+        refreshDualPanel()
     }
 
     private fun toggleMute(id: Int) {
@@ -4042,7 +4802,7 @@ class GameActivity : ComponentActivity() {
     /**
      * The port [device]'s input goes to: 0 for a one-player core, the on-screen pad or a non-pad device; else its
      * player slot, claimed when [claim] (a key-down, an axis past half) and it has none. Null drops the input: every
-     * slot is taken, or the pad is Not playing.
+     * slot is taken, or the pad is benched (its slot set to Empty on the Players page).
      */
     private fun portFor(device: InputDevice?, claim: Boolean): Int? {
         val s = slots ?: return 0
@@ -4062,9 +4822,16 @@ class GameActivity : ComponentActivity() {
         publishNotifications()
     }
 
-    /** The Players page's data: each slot (Empty, a live pad, a held one) and each connected pad, names numbered. */
+    /** The Players page's data in the open menu. */
     private fun publishPlayers(model: InGameMenuModel) {
-        val s = slots ?: return
+        val (slotRows, padRows) = playerRows() ?: return
+        model.setPlayers(slotRows, padRows)
+        menuState.value = model.state
+    }
+
+    /** The Players page's rows: each slot (Empty, a live pad, a held one) and each connected pad, names numbered; null without slots. */
+    private fun playerRows(): Pair<List<PlayerSlotRow>, List<PlayerPadRow>>? {
+        val s = slots ?: return null
         val pads = connectedPads()
         pads.forEach {
             val key = DeviceKey(it.descriptor)
@@ -4074,17 +4841,13 @@ class GameActivity : ComponentActivity() {
         val keys = pads.map { DeviceKey(it.descriptor) }
         val numbered = keys.zip(PadNames.numbered(pads.map { it.name })).toMap()
         fun name(k: DeviceKey) = numbered[k] ?: padNames[k] ?: "Controller"
-        model.setPlayers(
-            s.slots().map { v ->
-                when (v) {
-                    SlotView.Empty -> PlayerSlotRow(null, "", connected = false)
-                    is SlotView.Playing -> PlayerSlotRow(v.key.value, name(v.key), connected = true)
-                    is SlotView.Held -> PlayerSlotRow(v.key.value, name(v.key), connected = false)
-                }
-            },
-            keys.map { k -> PlayerPadRow(k.value, name(k), playing = k !in s.outOfPlay) },
-        )
-        menuState.value = model.state
+        return s.slots().map { v ->
+            when (v) {
+                SlotView.Empty -> PlayerSlotRow(null, "", connected = false)
+                is SlotView.Playing -> PlayerSlotRow(v.key.value, name(v.key), connected = true)
+                is SlotView.Held -> PlayerSlotRow(v.key.value, name(v.key), connected = false)
+            }
+        } to keys.map { k -> PlayerPadRow(k.value, name(k)) }
     }
 
     /** The connected physical pads, one per descriptor (a pad may show as several input devices). */
@@ -4105,13 +4868,15 @@ class GameActivity : ComponentActivity() {
         if (keyCode == KeyEvent.KEYCODE_BACK) { if (event.repeatCount == 0) backPressed(); return true }
         val first = event.repeatCount == 0
         val button = PadKeymap.buttonFor(keyCode)
-        // Any pad can pause, before the slot lookup: also one with no slot (table full) or set Not playing. It claims nothing.
+        // Any pad can pause, before the slot lookup: also one with no slot (table full) or benched. It claims nothing.
         if (button == NxButton.MENU) { if (first) toggleMenu(); return true }
         val port = portFor(event.device, claim = true) ?: return true   // no slot: dropped
         // Wii: the left-stick click recentres the phone's motion, the right-stick click is HOME ([pressWiiHome]); neither
         // reaches the core as itself.
         if (WiiShortcuts.isRecenter(isWii, keyCode)) { if (first) recenterWiiMotion(); return true }
         if (WiiShortcuts.isHome(isWii, keyCode)) { if (first) pressWiiHome(); return true }
+        // 3DS split: the left-stick click is SWAP between the displays.
+        if (keyCode == KeyEvent.KEYCODE_BUTTON_THUMBL && onN3dsSwapPressed(down = first)) return true
         noteRumbleDevice(event.device, port)
         // SELECT + START opens the menu: P1's (port 0's) only. Held state follows every down, repeats too.
         if (button != null && inputs.menuChord(port, button, down = true) && first) { toggleMenu(); return true }
@@ -4141,6 +4906,7 @@ class GameActivity : ComponentActivity() {
         if (keyCode == KeyEvent.KEYCODE_BACK) return true
         val port = portFor(event.device, claim = false) ?: return true
         if (WiiShortcuts.isRecenter(isWii, keyCode) || WiiShortcuts.isHome(isWii, keyCode)) return true
+        if (keyCode == KeyEvent.KEYCODE_BUTTON_THUMBL && onN3dsSwapPressed(down = false)) return true
         PadKeymap.buttonFor(keyCode)?.let { inputs.menuChord(port, it, down = false) }
         if (isNds) PadKeymap.buttonFor(positionOf(event, keyCode))?.let { b ->   // as on the down
             if (b == NxButton.L2 || b == NxButton.R2) { if (routeTriggerKey(b, down = false)) routeNds(b, down = false); return true }
@@ -4270,3 +5036,10 @@ private fun NdsRegion.toScreenRegion(w: Float, h: Float) = ScreenRegion(
     touch = touch,
     alpha = alpha,
 )
+
+/** The second display's surface and its size in px. */
+private data class SecondSurface(val surface: Surface, val width: Int, val height: Int)
+
+/** A display's real size in px and its density: a change needs a new window on it. */
+private data class DisplayShape(val width: Int, val height: Int, val densityDpi: Int)
+

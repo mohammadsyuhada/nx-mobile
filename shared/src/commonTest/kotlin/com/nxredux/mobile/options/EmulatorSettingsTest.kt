@@ -28,6 +28,14 @@ class EmulatorSettingsTest {
         assertTrue(keys.containsAll(listOf(GraphicsApiOptions.KEY, WiiOptions.SCREEN, WiiOptions.POINTER_WIDTH, WiiOptions.POINTER_HEIGHT, WiiOptions.POINTER_OFFSET)), "$keys")
     }
 
+    // Bottom screen shows only while a second screen is connected; the stored value stays in the file.
+    @Test fun bottom_screen_row_shows_only_with_a_second_screen() {
+        val gba = com.nxredux.mobile.runner.CoreRegistry.forTag("GBA")!!
+        fun keys(second: Boolean) = EmulatorSettings.page("GBA", gba, null, gba.defaultOptions, cfg("nx_bottom_screen = main\n"), null, forGame = false, secondScreen = second).console.map { it.option.key }
+        assertTrue(BottomScreenOptions.KEY in keys(true))
+        assertTrue(BottomScreenOptions.KEY !in keys(false))
+    }
+
     // The Graphics API row's info notes a Vulkan failure recorded for the core on this phone.
     @Test fun the_graphics_api_row_notes_a_vulkan_failure() {
         val n64 = com.nxredux.mobile.runner.CoreRegistry.forTag("N64")!!
@@ -63,8 +71,8 @@ class EmulatorSettingsTest {
 
     @Test fun console_rows_follow_the_tag_and_read_the_cfg() {
         val p = EmulatorSettings.page("MD", descriptor, table, descriptor.defaultOptions, cfg("nx_sega_pad_type = 6\n"), null, forGame = false)
-        assertEquals(listOf(PadOptions.SEGA_PAD, PadOptions.LAYOUT), p.console.map { it.option.key })
-        assertEquals("6", p.console[0].value); assertEquals(PadOptions.AUTO, p.console[1].value)
+        assertEquals(listOf(BottomScreenOptions.KEY, PadOptions.SEGA_PAD, PadOptions.LAYOUT), p.console.map { it.option.key })
+        assertEquals("6", p.console[1].value); assertEquals(PadOptions.AUTO, p.console[2].value)
     }
 
     @Test fun game_page_reads_the_game_file_instead_of_the_console_file() {
@@ -77,7 +85,7 @@ class EmulatorSettingsTest {
 
     @Test fun no_table_gives_null_core_and_keeps_console_rows() {
         val p = EmulatorSettings.page("MD", descriptor, null, descriptor.defaultOptions, null, null, forGame = false)
-        assertNull(p.core); assertEquals(2, p.console.size)
+        assertNull(p.core); assertEquals(3, p.console.size)
     }
 
     @Test fun offline_hidden_options_never_reach_the_page() {
@@ -157,7 +165,7 @@ class EmulatorSettingsTest {
 
     @Test fun a_console_row_locked_in_the_cfg_is_hidden() {
         val p = EmulatorSettings.page("MD", descriptor, table, descriptor.defaultOptions, cfg("-${PadOptions.LAYOUT} = xbox\n"), null, forGame = false)
-        assertEquals(listOf(PadOptions.SEGA_PAD), p.console.map { it.option.key })
+        assertEquals(listOf(BottomScreenOptions.KEY, PadOptions.SEGA_PAD), p.console.map { it.option.key })
     }
 
     @Test fun a_legacy_minarch_key_is_renamed_in_place_on_a_one_key_write() {

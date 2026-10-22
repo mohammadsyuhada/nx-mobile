@@ -12,9 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
+import com.nxredux.mobile.runner.goImmersive
 import com.nxredux.mobile.settings.AndroidAppSettings
 import com.nxredux.mobile.settings.PadLayouts
 import com.nxredux.mobile.settings.PadScreen
@@ -42,11 +40,7 @@ class PadLayoutActivity : ComponentActivity() {
         requestedOrientation = if (shape == PadShape.PORTRAIT) ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         super.onCreate(savedInstanceState)
         // Full screen like the game (GameActivity): the pad is edited where it will be drawn, under no system bars.
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        WindowInsetsControllerCompat(window, window.decorView).apply {
-            hide(WindowInsetsCompat.Type.systemBars())
-            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        }
+        window.goImmersive()
         val key = intent.getStringExtra(EXTRA_KEY) ?: PadLayouts.SHARED_KEY
         val tag = intent.getStringExtra(EXTRA_TAG).orEmpty()
         val title = intent.getStringExtra(EXTRA_TITLE) ?: "Shared"

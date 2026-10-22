@@ -101,13 +101,13 @@ object NdsLayout {
      * A full-size screen's whole-pixel size within [fitWidth] x (fitWidth x 3/4): the height rounded down, the width the
      * nearest to 4:3 of it that still fits.
      */
-    private class ScreenSize(fitWidth: Float) {
-        val height = wholePx(fitWidth / ASPECT)
-        val width = min(round(height * ASPECT), wholePx(fitWidth))
+    internal class ScreenSize(fitWidth: Float, aspect: Float = ASPECT) {
+        val height = wholePx(fitWidth / aspect)
+        val width = min(round(height * aspect), wholePx(fitWidth))
     }
 
     /** Rounds down, forgiving float error just under a whole pixel (1500 x 4/3 / 2 is 1000, not 999). */
-    private fun wholePx(v: Float): Float = floor(v + 0.001f).coerceAtLeast(0f)
+    internal fun wholePx(v: Float): Float = floor(v + 0.001f).coerceAtLeast(0f)
 
     private fun full(screen: NdsScreen, dst: PxRect) =
         NdsRegion(screen, src(screen), dst, shaded = true, touch = screen == NdsScreen.BOTTOM)

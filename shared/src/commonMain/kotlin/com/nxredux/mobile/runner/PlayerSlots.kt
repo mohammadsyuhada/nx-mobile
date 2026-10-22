@@ -14,10 +14,11 @@ sealed interface SlotView {
 /**
  * Which physical pad is which player, for a core with more than one controller port: slot N is libretro port N. A pad
  * claims the lowest free slot on its first press ([claim]); a disconnected pad's slot is held for it ([disconnected])
- * and given to another pad only when no slot is free. [outOfPlay] pads (a handheld's built-in controls benched on the
- * Players page) never claim. One instance per game session; touch is never a key here.
+ * and given to another pad only when no slot is free. [outOfPlay] pads (a slot set to Empty on the Players page benches
+ * the pad that was in it, a handheld's built-in controls say) never claim until picked for a slot again; the bench lasts
+ * this session only. One instance per game session; touch is never a key here.
  */
-class PlayerSlots(val players: Int, outOfPlay: Set<DeviceKey> = emptySet()) {
+class PlayerSlots(val players: Int) {
     init { require(players in 2..4) { "players must be 2..4" } }
 
     /** [port] is the pad's slot; [joined]: it was not live in it before this press (a new or returning pad). */
@@ -25,7 +26,7 @@ class PlayerSlots(val players: Int, outOfPlay: Set<DeviceKey> = emptySet()) {
 
     private val keys = arrayOfNulls<DeviceKey>(players)
     private val live = BooleanArray(players)
-    private val benched = outOfPlay.toMutableSet()
+    private val benched = mutableSetOf<DeviceKey>()   // this session only: every launch starts with none
 
     val outOfPlay: Set<DeviceKey> get() = benched.toSet()
 
@@ -49,15 +50,18 @@ class PlayerSlots(val players: Int, outOfPlay: Set<DeviceKey> = emptySet()) {
     fun disconnected(key: DeviceKey): Int? = keys.indexOf(key).takeIf { it >= 0 }?.also { live[it] = false }
 
     /**
-     * Puts [key] in [slot] (a connected pad), or empties it for null. A pad already in another slot swaps with whatever
-     * [slot] held. Returns the slots whose pad changed, for the host to release their held input.
+     * Puts [key] in [slot] (a connected pad, back in play if it was benched), or empties it for null, benching the pad
+     * that was there so its presses no longer claim a slot. A pad already in another slot swaps with whatever [slot]
+     * held. Returns the slots whose pad changed, for the host to release their held input.
      */
     fun assign(slot: Int, key: DeviceKey?): Set<Int> {
         if (key == null) {
-            if (keys[slot] == null) return emptySet()
+            val was = keys[slot] ?: return emptySet()
+            benched.add(was)
             keys[slot] = null; live[slot] = false
             return setOf(slot)
         }
+        benched.remove(key)
         val from = keys.indexOf(key)
         if (from == slot) return emptySet()
         if (from >= 0) {
@@ -67,15 +71,6 @@ class PlayerSlots(val players: Int, outOfPlay: Set<DeviceKey> = emptySet()) {
         }
         keys[slot] = key; live[slot] = true
         return setOf(slot)
-    }
-
-    /** Benches or un-benches [key]; benching frees its slot, returned (null when it had none). */
-    fun setOutOfPlay(key: DeviceKey, out: Boolean): Int? {
-        if (!out) { benched.remove(key); return null }
-        benched.add(key)
-        val slot = keys.indexOf(key).takeIf { it >= 0 } ?: return null
-        keys[slot] = null; live[slot] = false
-        return slot
     }
 
     fun slots(): List<SlotView> = keys.indices.map { i ->
@@ -94,7 +89,7 @@ class PlayerSlots(val players: Int, outOfPlay: Set<DeviceKey> = emptySet()) {
  */
 object PadPresence {
     /**
-     * [pads] less the Not playing ones in a multiplayer game ([outOfPlay]: its slots' benched pads, [key] each pad's
+     * [pads] less the benched ones in a multiplayer game ([outOfPlay]: its slots' benched pads, [key] each pad's
      * identity), since the game ignores those: benching the only pad brings the touch pad back for Player 1. A one-player
      * game passes null and every pad counts.
      */

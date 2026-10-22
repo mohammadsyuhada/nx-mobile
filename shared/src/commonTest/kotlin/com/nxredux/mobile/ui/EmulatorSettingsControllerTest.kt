@@ -4,6 +4,7 @@ import com.nxredux.mobile.achievements.RaSortOrder
 import com.nxredux.mobile.library.FakeRomsSource
 import com.nxredux.mobile.library.GameEntry
 import com.nxredux.mobile.library.SystemFolder
+import com.nxredux.mobile.options.BottomScreenOptions
 import com.nxredux.mobile.options.ConfigFile
 import com.nxredux.mobile.options.ConsoleRow
 import com.nxredux.mobile.options.CoreConfig
@@ -203,8 +204,8 @@ class EmulatorSettingsControllerTest {
      * scheduler: one thread, virtual time. On the real Dispatchers.Default a wall-time poll could time out under load,
      * and the work landed on pool threads while the test thread drove the same state.
      */
-    private fun TestScope.TestState(configs: MemoryConfigs, src: FakeRomsSource = source) = AppState(
-        AppDeps(MemorySettings(ContentRef("Home")), src, Runner, Picker, coreOptions = Tables(), emulatorConfigs = configs, compute = UnconfinedTestDispatcher(testScheduler)),
+    private fun TestScope.TestState(configs: MemoryConfigs, src: FakeRomsSource = source, tables: CoreOptionSource = Tables()) = AppState(
+        AppDeps(MemorySettings(ContentRef("Home")), src, Runner, Picker, coreOptions = tables, emulatorConfigs = configs, compute = UnconfinedTestDispatcher(testScheduler)),
         CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
     )
 
@@ -353,6 +354,31 @@ class EmulatorSettingsControllerTest {
         state.emulatorSettings.openGame(games.entries[0])
         await { state.screen.value is Screen.EmulatorOptions }
         return games
+    }
+
+    // An open Game Settings page (the console rows are shared with Emulator Settings) follows a second screen coming and going.
+    @Test fun an_open_page_gains_and_loses_the_bottom_screen_row_with_the_second_screen() = runTest {
+        val state = TestState(MemoryConfigs())
+        openGame(state)
+        fun keys() = options(state).rows.filterIsInstance<EmulatorRow.Console>().map { it.row.option.key }
+        assertFalse(BottomScreenOptions.KEY in keys())
+        state.onSecondScreenChanged(true)
+        await { BottomScreenOptions.KEY in keys() }
+        state.onSecondScreenChanged(false)
+        await { BottomScreenOptions.KEY !in keys() }
+    }
+
+    // GBA with its Controller Layout locked in the cfg and no core options: Bottom screen is the page's only row.
+    @Test fun a_page_left_empty_when_the_second_screen_goes_closes() = runTest {
+        val noOptions = object : CoreOptionSource { override fun table(coreId: String) = CoreOptionTable(coreId, "gpSP", emptyList()) }
+        val state = TestState(MemoryConfigs(mapOf("GBA-gpsp/minarch.cfg" to "-${PadOptions.LAYOUT} = ${PadOptions.AUTO}\n")), tables = noOptions)
+        state.onSecondScreenChanged(true)
+        openCore(state, "gpsp")
+        await { state.screen.value is Screen.EmulatorOptions }
+        assertEquals(listOf(BottomScreenOptions.KEY), options(state).rows.filterIsInstance<EmulatorRow.Console>().map { it.row.option.key })
+        state.onSecondScreenChanged(false)
+        await { state.screen.value is Screen.EmulatorList }   // back to the core list, as B goes
+        assertEquals("gpsp", assertIs<Screen.EmulatorList>(state.screen.value).rows[state.selection.value.index].coreId)
     }
 
     @Test fun a_first_game_change_writes_a_snapshot_with_the_console_binds() = runTest {

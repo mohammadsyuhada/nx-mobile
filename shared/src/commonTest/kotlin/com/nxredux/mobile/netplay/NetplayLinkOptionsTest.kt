@@ -65,4 +65,21 @@ class NetplayLinkOptionsTest {
         assertFalse(NetplaySession(NetplayRole.HOST, "1.2.3.4", "mgba", "mgba").onCopy)
         assertTrue(NetplaySession(NetplayRole.CLIENT, "1.2.3.4", "snes9x", "snes9x").onCopy)   // lockstep: unchanged
     }
+
+    @Test fun only_a_link_session_ends_as_a_local_game() {
+        assertTrue(session(NetplayRole.CLIENT, "gpsp").endsAsLocalGame)
+        assertTrue(NetplaySession(NetplayRole.HOST, "1.2.3.4", "mgba", "gpsp").endsAsLocalGame)
+        assertTrue(NetplaySession(NetplayRole.CLIENT, "1.2.3.4", "gambatte", "gambatte").endsAsLocalGame)
+        // Lockstep: the client ran the host's synced state, so the ended game stays a netplay one.
+        assertFalse(NetplaySession(NetplayRole.HOST, "1.2.3.4", "snes9x", "snes9x").endsAsLocalGame)
+        assertFalse(NetplaySession(NetplayRole.CLIENT, "1.2.3.4", "picodrive", "picodrive").endsAsLocalGame)
+    }
+
+    @Test fun only_a_link_session_runs_achievements() {
+        assertTrue(session(NetplayRole.HOST, "gpsp").allowsAchievements)
+        assertTrue(NetplaySession(NetplayRole.CLIENT, "1.2.3.4", "mgba", "mgba").allowsAchievements)
+        assertTrue(NetplaySession(NetplayRole.HOST, "1.2.3.4", "gambatte", "gambatte").allowsAchievements)
+        assertFalse(NetplaySession(NetplayRole.HOST, "1.2.3.4", "snes9x", "snes9x").allowsAchievements)
+        assertFalse(NetplaySession(NetplayRole.CLIENT, "1.2.3.4", "fceumm", "fceumm").allowsAchievements)
+    }
 }

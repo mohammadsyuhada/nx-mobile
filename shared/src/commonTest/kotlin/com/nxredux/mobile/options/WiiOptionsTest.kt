@@ -12,14 +12,14 @@ class WiiOptionsTest {
         assertEquals(
             listOf(
                 WiiOptions.CONTROLLER, WiiOptions.MOTION, WiiOptions.SCREEN, WiiOptions.POINTER_WIDTH, WiiOptions.POINTER_HEIGHT,
-                WiiOptions.POINTER_OFFSET, GraphicsApiOptions.KEY, PadOptions.LAYOUT,
+                WiiOptions.POINTER_OFFSET, GraphicsApiOptions.KEY, BottomScreenOptions.KEY, PadOptions.LAYOUT,
             ),
             ConsoleSettings.tableFor("WII").map { it.key },
         )
     }
 
     @Test fun gameCubeGetsNeither() {
-        assertEquals(listOf(GraphicsApiOptions.KEY, PadOptions.LAYOUT), ConsoleSettings.tableFor("GC").map { it.key })
+        assertEquals(listOf(GraphicsApiOptions.KEY, BottomScreenOptions.KEY, PadOptions.LAYOUT), ConsoleSettings.tableFor("GC").map { it.key })
         assertFalse(WiiOptions.appliesTo("GC"))
         assertTrue(WiiOptions.appliesTo(" wii "))
     }

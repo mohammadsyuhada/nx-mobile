@@ -42,6 +42,12 @@ class ScreenRegionsTest {
         assertNull(ScreenRegions.mapTouch(whole, right, 0.25f, 0.5f))
     }
 
+    // The second display's touches: dst is 0..1 of the whole second surface (GLRetroView.mapSecondaryTouch).
+    @Test fun whole_surface_viewport_maps_bottom_half() {
+        val bottom = listOf(ScreenRegion(ScreenRect(0f, 0.5f, 1f, 1f), full, shaded = true, touch = true))
+        assertEquals(FramePoint(0.5f, 0.75f), ScreenRegions.mapTouch(bottom, ScreenRect(0f, 0f, 1f, 1f), 0.5f, 0.5f))
+    }
+
     @Test fun no_regions_or_an_empty_viewport_map_nothing() {
         assertNull(ScreenRegions.mapTouch(emptyList(), full, 0.5f, 0.5f))
         assertNull(ScreenRegions.mapTouch(listOf(big), ScreenRect(0.5f, 0.5f, 0.5f, 0.5f), 0.5f, 0.5f))
