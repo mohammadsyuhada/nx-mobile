@@ -581,8 +581,15 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         GamePanelEvent.ShowGame -> null
     }
 
+    /**
+     * Whether the root draws the game panel beside its list: not in netplay ([netplay], also once it ended), where the
+     * menu is the game header over Continue / Leave (or Quit) and an empty right side.
+     */
+    val panelBeside: Boolean get() = !netplay
+
     /** The root's right side is the panel: the root on top with a row other than Save / Load (their slot card) highlighted. */
-    private fun panelShown(): Boolean = state.stack.size == 1 && state.page.rows.getOrNull(state.page.selected) !is MenuRow.Slot
+    private fun panelShown(): Boolean =
+        panelBeside && state.stack.size == 1 && state.page.rows.getOrNull(state.page.selected) !is MenuRow.Slot
 
     /** Achievements with a set; Players with more than one slot, never in netplay (the root had no Players row there). */
     private fun panelTabs(): List<GamePanelTab> =
@@ -870,9 +877,13 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         state = state.copy(stack = state.stack.take(ownerIndex) + owner.copy(selected = target) + adjustPage(targetKey))
     }
 
-    /** Rebuilds open Console Settings/Frontend/Shaders/ShaderParams/Adjust pages from the current values. */
+    /**
+     * Rebuilds open Console Settings/Frontend/Shaders/ShaderParams/Adjust pages from the current values. A Console Settings
+     * page left with no rows (its Bottom screen row went with the second display, the others locked) closes, with any page
+     * above it: back to Options, which no longer offers it.
+     */
     private fun refreshFrontendPages() {
-        state = state.copy(stack = state.stack.mapNotNull { p ->
+        val stack = state.stack.mapNotNull { p ->
             when (val k = p.kind) {
                 PageKind.ConsoleSettings -> rebuilt(p, consoleSettingsPage())
                 PageKind.Frontend -> rebuilt(p, frontendPage())
@@ -882,7 +893,9 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
                 is PageKind.Adjust -> if (isVanishedParam(k.key)) null else adjustPage(k.key)
                 else -> p
             }
-        })
+        }
+        val empty = stack.indexOfFirst { it.kind == PageKind.ConsoleSettings && it.rows.isEmpty() }
+        state = state.copy(stack = if (empty > 0) stack.take(empty) else stack)
     }
 
     private fun isVanishedParam(key: String) =

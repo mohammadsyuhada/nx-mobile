@@ -102,4 +102,15 @@ class DualScreenTest {
         assertEquals(NdsScreen.BOTTOM, DualScreen.splitMain(NdsScreen.TOP, PictureOn.SECOND))
         assertEquals(NdsScreen.TOP, DualScreen.splitMain(NdsScreen.BOTTOM, PictureOn.SECOND))
     }
+    @Test fun pen_goes_where_the_bottom_screen_is() {
+        val top = DualScreen.ndsScreen(1920f, 1080f, NdsScreen.TOP)
+        val bottom = DualScreen.ndsScreen(1240f, 1080f, NdsScreen.BOTTOM)
+        assertEquals(PictureOn.SECOND, DualScreen.penOn(main = top, second = bottom))       // split, bottom screen on the second display
+        assertEquals(PictureOn.MAIN, DualScreen.penOn(main = bottom, second = top))         // split, swapped
+        assertEquals(PictureOn.MAIN, DualScreen.penOn(main = bottom, second = emptyList())) // single screen
+        val both = DualScreen.ndsPanelUp(1920f, 1080f, NdsSettings())
+        assertEquals(PictureOn.SECOND, DualScreen.penOn(main = both, second = both))        // panel up, the picture on the second display
+        assertNull(DualScreen.penOn(main = top, second = emptyList()))                     // top screen alone
+        assertNull(DualScreen.penOn(emptyList(), emptyList()))                             // not split
+    }
 }

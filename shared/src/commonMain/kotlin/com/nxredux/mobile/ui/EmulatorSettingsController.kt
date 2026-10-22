@@ -371,14 +371,19 @@ internal class EmulatorSettingsController(
         }
     }
 
-    /** A second screen came or went: the open page (if any) is read again, so its Bottom screen row follows. */
+    /**
+     * A second screen came or went: the open page (if any) is read again, so its Bottom screen row follows. A page left
+     * with no rows at all (Bottom screen was its only one: the others locked, no core options) closes, as B would.
+     */
     fun refreshOpenPage() {
         val s = screen.value as? Screen.EmulatorOptions ?: return
         val d = descriptorOf(s) ?: return
         scope.launch {
             lock.withLock {
-                val page = withContext(work) { runCatching { readPage(s.page.tag, d, s.game) }.getOrNull() }
-                page?.let { show(s, it) }
+                val page = withContext(work) { runCatching { readPage(s.page.tag, d, s.game) }.getOrNull() } ?: return@withLock
+                val cur = screen.value as? Screen.EmulatorOptions
+                if (cur != null && samePage(cur, s) && EmulatorRows.build(page, null).isEmpty()) back(cur.copy(category = null))
+                else show(s, page)
             }
         }
     }

@@ -1125,6 +1125,17 @@ class InGameMenuModelTest {
         assertEquals(listOf("Frontend", "Shaders", "Core Options", "Cheats", "Save Changes"), m.state.page.rows.map { it.label })
     }
 
+    @Test fun console_settings_open_on_only_bottom_screen_closes_when_the_display_goes() {
+        val m = model()   // plainLocked: the plain console's only row locked
+        m.setSecondScreen(connected = true, on = true)
+        m.select(3); m.activate(3)                                         // Options
+        assertNull(m.activate(0))                                          // Console Settings
+        assertEquals(listOf("Bottom screen"), m.state.page.rows.map { it.label })
+        m.setSecondScreen(connected = false, on = true)
+        assertEquals(PageKind.Options, m.state.page.kind)                  // back to Options, never an empty page
+        assertEquals(listOf("Frontend", "Shaders", "Core Options", "Cheats", "Save Changes"), m.state.page.rows.map { it.label })
+    }
+
     @Test fun console_settings_is_not_offered_when_every_row_is_locked() {
         val m = model()   // plainLocked: the plain console's only row locked
         m.select(3); m.activate(3)
@@ -1475,6 +1486,29 @@ class InGameMenuModelTest {
         assertNull(m.press(NxButton.X))
         assertEquals(MenuEffect.QuitWithoutResume, m.press(NxButton.A))
         assertEquals(MenuEffect.QuitWithoutResume, m.activate(1))
+    }
+
+    @Test fun netplay_root_has_no_panel_beside_the_list() {
+        val m = model()
+        m.setAchievements(listOf(ach(1, RaAchievementState.UNLOCKED)), 1 to 1, RaSortOrder.DEFAULT, emptySet(), BADGES)
+        assertTrue(m.panelBeside)
+        m.netplay = true
+        m.refresh()
+        assertFalse(m.panelBeside)
+        val tab = m.state.panelTab
+        assertNull(m.press(NxButton.RIGHT))                  // on Continue: no panel to enter
+        assertNull(m.state.panelFocus)
+        m.press(NxButton.R1); m.press(NxButton.L1)
+        assertEquals(tab, m.state.panelTab)                  // no tabs to switch
+        // The UI passes panel = panelBeside: no ◄► Panel hint.
+        val hints = hintsFor(m.state.page, m.state.page.rows[0], panelFocus = m.state.panelFocus, panelTab = m.state.panelTab, panel = m.panelBeside)
+        assertTrue(hints.none { it.button == NxButton.RIGHT })
+        // Once the session ended (Continue / Quit): still no panel.
+        m.netplayEnded = true
+        m.refresh()
+        assertFalse(m.panelBeside)
+        assertNull(m.press(NxButton.RIGHT))
+        assertNull(m.state.panelFocus)
     }
 
     @Test fun panel_header_and_a_new_console_tag_bump_the_panel_version() {

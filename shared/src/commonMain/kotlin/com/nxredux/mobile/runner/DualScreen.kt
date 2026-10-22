@@ -77,6 +77,16 @@ object DualScreen {
     /** Split, the DS/3DS screen on the main display: the [picture] screen's own when the picture is on main, else the other. */
     fun splitMain(picture: NdsScreen, pictureOn: PictureOn): NdsScreen = if (pictureOn == PictureOn.MAIN) picture else picture.other
 
+    /**
+     * Which display the DS stylus cursor goes on: the one showing the bottom screen. The [second] display's screens (split,
+     * or both while the panel is on main) come first; else the [main] display's; null when neither shows it.
+     */
+    fun penOn(main: List<NdsRegion>, second: List<NdsRegion>): PictureOn? = when {
+        second.any { it.screen == NdsScreen.BOTTOM } -> PictureOn.SECOND
+        main.any { it.screen == NdsScreen.BOTTOM } -> PictureOn.MAIN
+        else -> null
+    }
+
     /** The whole core frame fitted at [aspect] in the area, centred, in whole px; empty without an area or aspect. */
     fun fullFrame(areaW: Float, areaH: Float, aspect: Float): PxRect {
         if (areaW <= 0f || areaH <= 0f || aspect <= 0f) return PxRect(0f, 0f, 0f, 0f)

@@ -35,7 +35,8 @@ import com.nxredux.mobile.ui.nx.PanelPill
 
 /**
  * The game's window on the second display: a black [FrameLayout] with a [SurfaceView] the GL thread draws part of the
- * frame on ([onSurface]), and a [ComposeView] above it for the game panel ([showPanel]) or the Panel pill ([showPanelPill]).
+ * frame on ([onSurface]), the DS stylus cursor over it ([showPen]), and a [ComposeView] above them for the game panel
+ * ([showPanel]) or the Panel pill ([showPanelPill]).
  * Compose runs on the [activity]'s lifecycle.
  */
 class SecondScreenPresentation(private val activity: ComponentActivity, display: Display) : Presentation(activity, display) {
@@ -55,6 +56,7 @@ class SecondScreenPresentation(private val activity: ComponentActivity, display:
     private var panelPill by mutableStateOf(false)
 
     private var pointerId = MotionEvent.INVALID_POINTER_ID
+    private var pen: PenDot? = null   // in a layer the size of the surface, between it and the Compose view
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -96,9 +98,12 @@ class SecondScreenPresentation(private val activity: ComponentActivity, display:
                 }
             }
         }
+        val penLayer = FrameLayout(context)
+        pen = PenDot(penLayer)
         val root = FrameLayout(context).apply {
             setBackgroundColor(Color.BLACK)
             addView(surfaceView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            addView(penLayer, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             addView(composeView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
         // Bars that stay (DeX's taskbar may not hide) pad the surface and the panel in: the surface size the GL path fits
@@ -125,6 +130,16 @@ class SecondScreenPresentation(private val activity: ComponentActivity, display:
     /** A short toast on this display (the picture's, when the game panel is on main): the panel's "Disc N of M". */
     fun toast(text: String) {
         Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+    }
+
+    /** The DS stylus cursor centred on ([cx], [cy]), px of the surface (the bottom screen is drawn here). */
+    fun showPen(cx: Float, cy: Float, pressed: Boolean) {
+        pen?.show(cx, cy, pressed)
+    }
+
+    /** No stylus cursor on this display. */
+    fun hidePen() {
+        pen?.hide()
     }
 
     /** Lifts a finger still held on the surface ([onTouch] with down false); nothing when none is. */

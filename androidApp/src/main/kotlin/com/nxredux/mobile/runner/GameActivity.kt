@@ -12,7 +12,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.PointF
 import android.graphics.RectF
-import android.graphics.drawable.GradientDrawable
 import android.hardware.input.InputManager
 import android.media.AudioManager
 import android.net.Uri
@@ -47,7 +46,6 @@ import com.nxredux.mobile.ui.nx.LocalWindowSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
@@ -179,7 +177,6 @@ import com.swordfish.libretrodroid.VirtualFile
 import com.nxredux.mobile.ui.nx.AxisDirections
 import com.nxredux.mobile.ui.nx.DpadHat
 import com.nxredux.mobile.ui.nx.LocalNxColors
-import com.nxredux.mobile.ui.nx.NxDefaults
 import com.nxredux.mobile.ui.nx.PadProfile
 import com.nxredux.mobile.ui.nx.GamePanelHeader
 import com.nxredux.mobile.ui.nx.InGameMenu
@@ -282,7 +279,6 @@ class GameActivity : ComponentActivity() {
         private const val PLAYER_NOTICE_MS = 2500L   // "Player 2: <pad>" when a pad takes a player slot
         private const val NETPLAY_NOTICE_MS = 5000L   // netplay: "Netplay ended ...", "Using <core> for this match ..."
         private const val NETPLAY_PILL_MS = 1000L     // netplay: a countdown pill outlives one 250 ms status tick
-        private const val PEN_DP = 14f           // the stylus cursor's size
         private const val PEN_TICK_MS = 16L
         /**
          * Cores that read the left stick as analog (N64, PSP, PS1 DualShock, Dreamcast, and Dolphin's GameCube stick and
@@ -571,6 +567,7 @@ class GameActivity : ComponentActivity() {
 
     // ---- Nintendo DS screens (NdsLayout regions) ----
     private var ndsRegions: List<NdsRegion> = emptyList()   // the DS screens as laid out now; empty = one picture
+    private var secondNdsRegions: List<NdsRegion> = emptyList()   // the DS screens on the second surface (px of it); empty = none
     private var ndsSplit = false                            // regions are on: the overlay is off and shown unavailable
     private var ndsFrameWarned = false                      // the "not 256x384" warning is logged once
     private var ndsRenderMode: String? = null               // melonds_render_mode this game started with (the notice's)
@@ -580,7 +577,7 @@ class GameActivity : ComponentActivity() {
     private var ndsHatY = 0
     private var sentPen: NdsPen? = null          // the pen as last sent (null = stylus off)
     private var penJob: Job? = null
-    private var penView: View? = null
+    private var penDot: PenDot? = null           // the stylus cursor on main, over the GL surface ([positionPen])
     private val configWrites = Mutex()           // hotkey saves land in press order
     private val isNds: Boolean get() = NdsOptions.appliesTo(gameTag)
 
@@ -2666,9 +2663,11 @@ class GameActivity : ComponentActivity() {
         // Before its first frame a DS game's frame size is unknown (0x0): it stays split as it started, overlay off.
         if (nds == null && ndsSplit && !gameReady) return
         ndsRegions = nds ?: emptyList()
-        positionPen()   // split with the bottom screen on the second display: no pen dot (nothing to point at here)
+        val secondDs = secondDsRegions(g)
+        secondNdsRegions = secondDs.takeIf { isNds }.orEmpty()
+        positionPen()   // on whichever display shows the bottom screen
         setNdsSplit(nds != null)
-        view.secondaryRegions = secondRegions(g)
+        view.secondaryRegions = secondRegions(g, secondDs)
         if (nds != null) {
             val whole = RectF(0f, 0f, 1f, 1f)
             if (lastViewport != whole) {
@@ -2747,24 +2746,35 @@ class GameActivity : ComponentActivity() {
     private fun mainPanelShown(): Boolean = mainPanel.value != null
 
     /**
-     * What the second display draws (dst 0..1 of its surface): split, the DS/3DS screen not on main; with the picture
-     * there, both DS screens side by side (panel up) or the whole frame fitted (3DS panel up, a regular game). Empty when
-     * it draws nothing or has no surface. [g]: the game geometry.
+     * The DS/3DS screens cut for the second display, in px of its surface: split, the screen not on main; with the picture
+     * there, both DS screens side by side (panel up). Empty when it draws nothing, has no surface, or (split) the DS frame
+     * is not the plain stack; null when it draws the whole frame instead ([secondRegions]). [g]: the game geometry.
      */
-    private fun secondRegions(g: FloatArray): List<ScreenRegion> {
+    private fun secondDsRegions(g: FloatArray): List<NdsRegion>? {
         val surface = secondSurface
         if (!secondDraws() || surface == null || surface.width <= 0 || surface.height <= 0) return emptyList()
         val sw = surface.width.toFloat()
         val sh = surface.height.toFloat()
         val dsFrame = isNds && NdsLayout.isDsFrame(g[0].roundToInt(), g[1].roundToInt())
-        val regions = when {
+        return when {
             // Not the plain DS stack (no frame yet, or another layout): main draws it whole, so nothing is cut for here.
-            dualMode == DualMode.SPLIT && isNds -> if (!dsFrame) return emptyList() else DualScreen.ndsScreen(sw, sh, DualScreen.splitMain(NdsSettings.parse(frontendValues).big, pictureOn).other)
+            dualMode == DualMode.SPLIT && isNds -> if (!dsFrame) emptyList() else DualScreen.ndsScreen(sw, sh, DualScreen.splitMain(NdsSettings.parse(frontendValues).big, pictureOn).other)
             dualMode == DualMode.SPLIT && isN3ds -> DualScreen.n3dsScreen(sw, sh, DualScreen.splitMain(n3dsPicture, pictureOn).other)
             dualMode == DualMode.PANEL_UP && dsFrame -> DualScreen.ndsPanelUp(sw, sh, NdsSettings.parse(frontendValues))
-            else -> return listOfNotNull(wholeFrameRegion(sw, sh, g))
+            else -> null
         }
-        return regions.map { it.toScreenRegion(sw, sh) }
+    }
+
+    /**
+     * What the second display draws (dst 0..1 of its surface): the DS/3DS screens cut for it ([ds], from [secondDsRegions]),
+     * or with the picture there and nothing cut, the whole frame fitted (3DS panel up, a regular game). Empty when it draws
+     * nothing or has no surface. [g]: the game geometry.
+     */
+    private fun secondRegions(g: FloatArray, ds: List<NdsRegion>?): List<ScreenRegion> {
+        val surface = secondSurface ?: return emptyList()
+        val sw = surface.width.toFloat()
+        val sh = surface.height.toFloat()
+        return ds?.map { it.toScreenRegion(sw, sh) } ?: listOfNotNull(wholeFrameRegion(sw, sh, g))
     }
 
     /**
@@ -2946,6 +2956,8 @@ class GameActivity : ComponentActivity() {
         secondSurface = null
         pushSecondSurface()
         retroView?.secondaryRegions = emptyList()
+        secondNdsRegions = emptyList()
+        positionPen()
     }
 
     /**
@@ -3348,34 +3360,26 @@ class GameActivity : ComponentActivity() {
         }
     }
 
-    /** The stylus cursor over the bottom screen wherever it is shown (the inset included); hidden without stylus mode. */
+    /**
+     * The stylus cursor over the bottom screen wherever it is shown ([DualScreen.penOn]): on main (the inset included), or
+     * on the second display when the bottom screen is drawn there; hidden on the other display, and without stylus mode.
+     */
     private fun positionPen() {
-        val region = ndsRegions.firstOrNull { it.screen == NdsScreen.BOTTOM }
-        if (!ndsHotkeys.stylus || region == null) { penView?.visibility = View.GONE; return }
-        val v = ensurePenView()
-        val size = (PEN_DP * resources.displayMetrics.density).roundToInt()
+        val on = if (ndsHotkeys.stylus) DualScreen.penOn(ndsRegions, secondNdsRegions) else null
         val pen = ndsHotkeys.pen
-        val (cx, cy) = NdsLayout.pointIn(region, pen.x, pen.y)
-        v.layoutParams = FrameLayout.LayoutParams(size, size, Gravity.TOP or Gravity.START).apply {
-            leftMargin = (cx - size / 2f).roundToInt()
-            topMargin = (cy - size / 2f).roundToInt()
+        val mainRegion = ndsRegions.firstOrNull { it.screen == NdsScreen.BOTTOM }.takeIf { on == PictureOn.MAIN }
+        if (mainRegion == null) penDot?.hide() else {
+            val (cx, cy) = NdsLayout.pointIn(mainRegion, pen.x, pen.y)
+            // Above the GL surface in the game container.
+            (penDot ?: PenDot(findViewById(R.id.gameContainer)).also { penDot = it }).show(cx, cy, pen.pressed)
         }
-        v.alpha = if (pen.pressed) 1f else 0.6f
-        v.visibility = View.VISIBLE
-    }
-
-    /** A plain, non-clickable view above the GL surface in the game container: touches pass through to the game. */
-    private fun ensurePenView(): View = penView ?: View(this).also { v ->
-        v.background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(NxDefaults.colors.main.toArgb())   // the UI ink
-            setStroke((2 * resources.displayMetrics.density).roundToInt(), 0xFF000000.toInt())
+        val secondRegion = secondNdsRegions.firstOrNull { it.screen == NdsScreen.BOTTOM }.takeIf { on == PictureOn.SECOND }
+        presentation?.let { p ->
+            if (secondRegion == null) p.hidePen() else {
+                val (cx, cy) = NdsLayout.pointIn(secondRegion, pen.x, pen.y)
+                p.showPen(cx, cy, pen.pressed)
+            }
         }
-        v.isClickable = false
-        v.isFocusable = false
-        v.visibility = View.GONE
-        findViewById<FrameLayout>(R.id.gameContainer).addView(v, FrameLayout.LayoutParams(0, 0, Gravity.TOP or Gravity.START))
-        penView = v
     }
 
     /**
@@ -3742,6 +3746,8 @@ class GameActivity : ComponentActivity() {
                             panel = menuModel?.panelState(),
                             onPanelEvent = { ev -> if (!quitting) menuModel?.let { m -> val e = m.panelEvent(ev); menuState.value = m.state; handle(e) } },
                             onPanelColumns = { c -> menuModel?.panelColumns = c },
+                            // Not in netplay: the header over Continue / Leave only.
+                            panelBeside = menuModel?.panelBeside ?: true,
                             // In the dual-screen panel's place: opaque, as the panel it replaces.
                             opaque = mainPanel.value != null,
                         )

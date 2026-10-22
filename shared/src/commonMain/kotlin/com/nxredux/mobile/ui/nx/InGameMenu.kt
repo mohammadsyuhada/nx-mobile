@@ -89,7 +89,7 @@ data class SlotUi(
  *
  * The [panel]'s header ([GamePanelHeaderBar]) spans the top of every page, in place of a page title (the page's name
  * without a panel). Beside the root list sits the rest of the game panel ([GamePanel]; its taps go to [onPanelEvent], its shortcut columns as drawn to
- * [onPanelColumns]), but for Save / Load, which show their slot card. While the controller is in the panel
+ * [onPanelColumns]), but for Save / Load, which show their slot card, and without [panelBeside] (netplay: an empty right side). While the controller is in the panel
  * ([MenuState.panelFocus]) the root list is dimmed. [opaque]: on the theme's background instead of the wash over the
  * paused frame (over the dual-screen panel, whose place the menu takes: the list seems to slide in beside it).
  *
@@ -117,6 +117,7 @@ fun InGameMenu(
     panel: GamePanelState? = null,
     onPanelEvent: (GamePanelEvent) -> Unit = {},
     onPanelColumns: (Int) -> Unit = {},
+    panelBeside: Boolean = true,
     opaque: Boolean = false,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
@@ -138,7 +139,7 @@ fun InGameMenu(
             val panes = if (split) menuPanes(under) else null
             val splitUi = panes?.let { SplitUi(it, onParentTap) }
             val panelUi = panel?.let { PanelUi(it, onPanelEvent, onPanelColumns) }
-            InGameMenuContent(under, slots, rowHeight, onSelect, onActivate, onDismiss, onChange, onPress, detail, onInfoTruncated, splitUi, panelUi, opaque)
+            InGameMenuContent(under, slots, rowHeight, onSelect, onActivate, onDismiss, onChange, onPress, detail, onInfoTruncated, splitUi, panelUi, panelBeside, opaque)
         }
         if (dialog != null) {
             // Only a tap opens it (a pad's A / X quit on the row itself), so no key hints.
@@ -189,9 +190,12 @@ private fun InGameMenuContent(
     onInfoTruncated: (String, Boolean) -> Unit,
     split: SplitUi?,
     panel: PanelUi?,
+    panelBeside: Boolean,
     opaque: Boolean,
 ) {
     val page = state.page
+    // Without the panel beside the root (netplay) the header stays; the root's right side is left empty.
+    val beside = panel?.takeIf { panelBeside }
     // The save-slot card's text: the list label size at the menu's row height.
     val slotTextSize = NxTextSizes.listLabel(rowHeight) * nxTextScale()   // Appearance → Text size
     val selectedRow = page.rows.getOrNull(page.selected)
@@ -206,9 +210,9 @@ private fun InGameMenuContent(
         // The game header on every page, where the dual-screen panel draws it; without a panel the standard page title.
         if (panel != null) GamePanelHeaderBar(panel.state.header) else NxPageTitle(page.title)
         if (split != null) {
-            SplitBody(state, split, panel, slots, rowHeight, slotTextSize, onSelect, onActivate, onDismiss, onChange, detail, onInfoTruncated, Modifier.weight(1f))
+            SplitBody(state, split, beside, slots, rowHeight, slotTextSize, onSelect, onActivate, onDismiss, onChange, detail, onInfoTruncated, Modifier.weight(1f))
         } else when (page.kind) {
-            PageKind.Root -> RootBody(state, panel, slots, rowHeight, slotTextSize, onSelect, onActivate, onChange, Modifier.weight(1f))
+            PageKind.Root -> RootBody(state, beside, slots, rowHeight, slotTextSize, onSelect, onActivate, onChange, Modifier.weight(1f))
             PageKind.Message -> MessageBody(page, onDismiss, Modifier.weight(1f))
             PageKind.Achievements -> AchievementsBody(page, detail, onSelect, Modifier.weight(1f))
             // Keyed by page so each page gets its own scroll position; whole width, so its name shows in the title row.
@@ -225,7 +229,7 @@ private fun InGameMenuContent(
             Modifier
         }
         NxHintBar(
-            hintsFor(page, selectedRow, state.selectedInfoTruncated, state.panelFocus, state.panelTab, panel = panel != null), hintModifier,
+            hintsFor(page, selectedRow, state.selectedInfoTruncated, state.panelFocus, state.panelTab, panel = beside != null), hintModifier,
             onHint = { onPress(menuHintButton(it)) },
         )
     }
