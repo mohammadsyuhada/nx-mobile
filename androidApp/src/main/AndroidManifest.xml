@@ -97,6 +97,16 @@
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode"
             android:theme="@style/Theme.NxMobile" />
 
+        <!-- Dual mode: an app opened on the top screen's display starts from this invisible stand-in, which waits behind
+             it there and tells the menu when the app has gone (TopScreenHost). Its own task; never in Recents. -->
+        <activity
+            android:name=".launcher.TopScreenHost"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|keyboard|keyboardHidden|navigation|uiMode"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- Controls → Pad layout's editor: holds the edited shape's orientation (PadLayoutActivity). -->
         <activity
             android:name=".padlayout.PadLayoutActivity"

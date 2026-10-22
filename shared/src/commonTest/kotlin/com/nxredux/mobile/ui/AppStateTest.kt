@@ -1243,7 +1243,7 @@ class AppStateTest {
     private fun libraryPageOf(kind: SettingsKind): SettingsSection = when (kind) {
         SettingsKind.HOME, SettingsKind.ADD_EXTRA, SettingsKind.EXTRA -> SettingsSection.ROM_FOLDERS
         SettingsKind.DEFAULT_TAG -> SettingsSection.DEFAULT_EMULATORS
-        SettingsKind.EMULATORS, SettingsKind.DEFAULTS, SettingsKind.SAVES, SettingsKind.SECOND_SCREEN -> SettingsSection.EMULATORS
+        SettingsKind.EMULATORS, SettingsKind.DEFAULTS, SettingsKind.SAVES -> SettingsSection.EMULATORS
         SettingsKind.SECOND_SCREEN_ENABLE, SettingsKind.BOTTOM_SCREEN -> SettingsSection.SECOND_SCREEN
         else -> SettingsSection.LIBRARY
     }
@@ -5185,7 +5185,7 @@ class AppStateTest {
         st.onButton(NxButton.DOWN); st.onButton(NxButton.A)                                      // Emulators
         val e = assertIs<Screen.Settings>(st.screen.value)
         assertEquals(SettingsSection.EMULATORS, e.section)
-        assertEquals(listOf(SettingsRow(SettingsKind.DEFAULTS, "Default emulators"), SettingsRow(SettingsKind.EMULATORS, "Settings"), SettingsRow(SettingsKind.SAVES, "Saves"), SettingsRow(SettingsKind.SECOND_SCREEN, "Second screen")), e.rows)
+        assertEquals(listOf(SettingsRow(SettingsKind.DEFAULTS, "Default emulators"), SettingsRow(SettingsKind.EMULATORS, "Settings"), SettingsRow(SettingsKind.SAVES, "Saves")), e.rows)
         assertTrue(e.details.isEmpty())
         st.onButton(NxButton.A)                                                                  // Default emulators
         assertEquals(SettingsSection.DEFAULT_EMULATORS, assertIs<Screen.Settings>(st.screen.value).section)
@@ -9846,45 +9846,49 @@ class AppStateTest {
         assertEquals("On", rows()[0].secondary)
     }
 
-    // Settings → Emulators → Second screen: an entry (a sub-page like Saves) that exists only while a second screen is connected.
-    @Test fun the_second_screen_entry_exists_only_while_a_second_screen_is_connected() = runTest {
+    // Settings → Second screen: a root section between Controls and Launcher that exists only while a second screen is connected.
+    @Test fun the_second_screen_section_is_on_the_root_only_while_a_second_screen_is_connected() = runTest {
         val state = state(MemorySettings(ContentRef("Home")))
         state.load()
-        state.openSettings(SettingsSection.EMULATORS)
-        fun labels() = assertIs<Screen.Settings>(state.screen.value).rows.map { it.label }
-        assertEquals(listOf("Default emulators", "Settings", "Saves"), labels())
-        state.onSecondScreenChanged(true)                       // plugged in while the page is open
-        assertEquals(listOf("Default emulators", "Settings", "Saves", "Second screen"), labels())
+        state.openSettingsMenu()
+        fun sections() = assertIs<Screen.SettingsMenu>(state.screen.value).sections
+        assertTrue(SettingsSection.SECOND_SCREEN !in sections())
+        state.onSecondScreenChanged(true)                       // plugged in while the root is open
+        val s = sections()
+        assertEquals(SettingsSection.CONTROLS, s[s.indexOf(SettingsSection.SECOND_SCREEN) - 1])
+        assertEquals(SettingsSection.DEVELOPER, s[s.indexOf(SettingsSection.SECOND_SCREEN) + 1])   // no launcher in the test deps; Launcher follows on Android
         state.onSecondScreenChanged(false)
-        assertEquals(listOf("Default emulators", "Settings", "Saves"), labels())
+        assertTrue(SettingsSection.SECOND_SCREEN !in sections())
+        state.openSettings(SettingsSection.EMULATORS)
+        state.onSecondScreenChanged(true)
+        assertEquals(listOf("Default emulators", "Settings", "Saves"), assertIs<Screen.Settings>(state.screen.value).rows.map { it.label })   // no row under Emulators any more
     }
 
-    @Test fun the_second_screen_page_has_enable_then_bottom_screen_and_b_returns_to_its_entry() = runTest {
+    @Test fun the_second_screen_page_has_enable_then_bottom_screen_and_b_returns_to_the_root_on_it() = runTest {
         val settings = MemorySettings(ContentRef("Home"))
         val state = state(settings)
         state.load()
         state.onSecondScreenChanged(true)
-        state.openSettings(SettingsSection.EMULATORS)
-        state.select(assertIs<Screen.Settings>(state.screen.value).rows.indexOfFirst { it.kind == SettingsKind.SECOND_SCREEN })
+        state.openSettingsMenu()
+        val sections = assertIs<Screen.SettingsMenu>(state.screen.value).sections
+        state.select(sections.indexOf(SettingsSection.SECOND_SCREEN))
         state.onButton(NxButton.A)
         val page = assertIs<Screen.Settings>(state.screen.value)
         assertEquals(SettingsSection.SECOND_SCREEN, page.section)
         assertEquals(listOf(SettingsRow(SettingsKind.SECOND_SCREEN_ENABLE, "Enable", "On"), SettingsRow(SettingsKind.BOTTOM_SCREEN, "Bottom screen", "Auto")), page.rows)
         state.onButton(NxButton.B)
-        val back = assertIs<Screen.Settings>(state.screen.value)
-        assertEquals(SettingsSection.EMULATORS, back.section)
-        assertEquals(SettingsKind.SECOND_SCREEN, back.rows[state.selection.value.index].kind)
+        assertIs<Screen.SettingsMenu>(state.screen.value)
+        assertEquals(sections.indexOf(SettingsSection.SECOND_SCREEN), state.selection.value.index)
     }
 
-    @Test fun the_second_screen_page_goes_back_to_emulators_when_the_screen_is_removed() = runTest {
+    @Test fun the_second_screen_page_goes_back_to_the_root_when_the_screen_is_removed() = runTest {
         val state = state(MemorySettings(ContentRef("Home")))
         state.load()
         state.onSecondScreenChanged(true)
         state.openSettings(SettingsSection.SECOND_SCREEN)
         state.onSecondScreenChanged(false)
-        val page = assertIs<Screen.Settings>(state.screen.value)
-        assertEquals(SettingsSection.EMULATORS, page.section)
-        assertEquals(SettingsKind.SAVES, page.rows[state.selection.value.index].kind)
+        val root = assertIs<Screen.SettingsMenu>(state.screen.value)
+        assertTrue(SettingsSection.SECOND_SCREEN !in root.sections)
     }
 
     // Enable is On by default; two values, so A, left and right each flip it.

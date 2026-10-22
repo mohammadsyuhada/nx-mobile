@@ -139,6 +139,7 @@ class SettingsSplitTest {
         assertNull(settingsCategoryOf(Screen.SettingsMenu(SettingsSection.entries)))
         assertEquals(listOf(SettingsSection.LIBRARY, SettingsSection.EMULATORS, SettingsSection.APPEARANCE, SettingsSection.MAIN_MENU, SettingsSection.CONTROLS, SettingsSection.DEVELOPER, SettingsSection.ABOUT), settingsCategories())
         assertEquals(listOf(SettingsSection.LIBRARY, SettingsSection.EMULATORS, SettingsSection.APPEARANCE, SettingsSection.MAIN_MENU, SettingsSection.CONTROLS, SettingsSection.LAUNCHER, SettingsSection.DEVELOPER, SettingsSection.ABOUT), settingsCategories(launcher = true))
+        assertEquals(listOf(SettingsSection.LIBRARY, SettingsSection.EMULATORS, SettingsSection.APPEARANCE, SettingsSection.MAIN_MENU, SettingsSection.CONTROLS, SettingsSection.SECOND_SCREEN, SettingsSection.LAUNCHER, SettingsSection.DEVELOPER, SettingsSection.ABOUT), settingsCategories(launcher = true, secondScreen = true))
         assertEquals(SettingsSection.LAUNCHER, settingsCategoryOf(Screen.Settings(SettingsSection.LAUNCHER, emptyList())))
     }
 }

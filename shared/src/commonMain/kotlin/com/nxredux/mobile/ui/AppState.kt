@@ -417,7 +417,7 @@ sealed interface Screen {
     data class ArtworkReset(val scopes: List<ResetScope>, val confirm: ResetScope? = null) : Screen
 }
 
-enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SECOND_SCREEN, SECOND_SCREEN_ENABLE, BOTTOM_SCREEN, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_FOLDER, IMPORT_ZIP, IMPORT_RETROARCH, IMPORT_DONE, RESET_DEFAULTS, ALL_FILES,
+enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SECOND_SCREEN_ENABLE, BOTTOM_SCREEN, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_FOLDER, IMPORT_ZIP, IMPORT_RETROARCH, IMPORT_DONE, RESET_DEFAULTS, ALL_FILES,
     LAYOUT_HOME, LAYOUT_CONSOLES, LAYOUT_COLLECTIONS, LAYOUT_TOOLS, LAYOUT_GAME_LISTS, LAYOUT_TITLE_HINTS, LAYOUT_SWITCHER, TEXT_SIZE }
 
 /**
@@ -426,11 +426,11 @@ enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASS
  * Appearance, as NX Redux's main page category.
  */
 enum class SettingsSection(val label: String, val parent: SettingsSection? = null, val opener: SettingsKind? = null) {
-    LIBRARY("Library"), EMULATORS("Emulators"), APPEARANCE("Appearance"), MAIN_MENU("Layouts"), CONTROLS("Controls"), LAUNCHER("Launcher"), DEVELOPER("Developer"), ABOUT("About"),
+    LIBRARY("Library"), EMULATORS("Emulators"), APPEARANCE("Appearance"), MAIN_MENU("Layouts"), CONTROLS("Controls"),
+    // Only while a second screen is connected: Enable and Bottom screen.
+    SECOND_SCREEN("Second screen"), LAUNCHER("Launcher"), DEVELOPER("Developer"), ABOUT("About"),
     ROM_FOLDERS("ROM folders", LIBRARY, SettingsKind.FOLDERS), DEFAULT_EMULATORS("Default emulators", EMULATORS, SettingsKind.DEFAULTS),
     PAD_LAYOUT("Pad layout", CONTROLS, SettingsKind.PAD_LAYOUT), SAVES("Saves", EMULATORS, SettingsKind.SAVES),
-    // Only while a second screen is connected: Enable and Bottom screen.
-    SECOND_SCREEN("Second screen", EMULATORS, SettingsKind.SECOND_SCREEN),
     IMPORT_SAVES("Import saves", SAVES, SettingsKind.IMPORT_SAVES),
     // An import's results; Done and B go back to Saves ([AppState.leaveSubPage]), past Import saves.
     IMPORT_RESULT("Import results", IMPORT_SAVES),
@@ -1849,17 +1849,18 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private var secondConnected = false
 
     /**
-     * A qualifying second screen was connected or removed (the platform reports it): Settings → Emulators and an open
-     * Emulator or Game Settings page add or drop their dual-screen rows at once (the Second screen page, open, goes back). Stored values are untouched.
+     * A qualifying second screen was connected or removed (the platform reports it): the Settings root's Second screen
+     * section and an open Emulator or Game Settings page add or drop their dual-screen rows at once (the Second screen
+     * page, open, goes back to the root). Stored values are untouched.
      */
     fun onSecondScreenChanged(connected: Boolean) {
         if (secondConnected == connected) return
         secondConnected = connected
         when ((_screen.value as? Screen.Settings)?.section) {
-            SettingsSection.EMULATORS -> refreshSettings()
-            SettingsSection.SECOND_SCREEN -> if (!connected) showSettingsOn(SettingsSection.EMULATORS, SettingsKind.SAVES)   // its entry is gone: back to Emulators
+            SettingsSection.SECOND_SCREEN -> if (!connected) showSettingsMenu()   // its section is gone: back to the root
             else -> Unit
         }
+        if (_screen.value is Screen.SettingsMenu) showSettingsMenu()   // the root's sections follow
         emulatorSettings.refreshOpenPage()
     }
 
@@ -3095,7 +3096,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     }
 
     /** The Settings root's categories on this platform ([settingsCategories]); the two-pane left pane lists the same. */
-    internal fun settingsSections(): List<SettingsSection> = settingsCategories(launcher = deps.launcher != null)
+    internal fun settingsSections(): List<SettingsSection> = settingsCategories(launcher = deps.launcher != null, secondScreen = secondConnected)
 
     private fun showSettingsMenu() {
         val sections = settingsSections()   // sub-pages open from their section
@@ -3265,7 +3266,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             SettingsRow(SettingsKind.DEFAULTS, "Default emulators"),
             SettingsRow(SettingsKind.EMULATORS, "Settings"),
             SettingsRow(SettingsKind.SAVES, "Saves"),
-        ) + if (secondConnected) listOf(SettingsRow(SettingsKind.SECOND_SCREEN, "Second screen")) else emptyList()   // absent, not disabled, without one
+        )
         SettingsSection.SECOND_SCREEN -> listOf(
             SettingsRow(SettingsKind.SECOND_SCREEN_ENABLE, "Enable", if (deps.settings.secondScreen) "On" else "Off"),
             SettingsRow(SettingsKind.BOTTOM_SCREEN, "Bottom screen", bottomScreenLabel(deps.settings.bottomScreen)),
@@ -3547,13 +3548,13 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         refreshSettings()
     }
 
-    /** Emulators → Second screen: two values, so every press flips it. */
+    /** Settings → Second screen → Enable: two values, so every press flips it. */
     private fun flipSecondScreen() {
         deps.settings.secondScreen = !deps.settings.secondScreen
         refreshSettings()
     }
 
-    /** Emulators → Bottom screen: Auto, Main screen, Second screen (LEFT back, RIGHT and A forward, wrapping). */
+    /** Settings → Second screen → Bottom screen: Auto, Main screen, Second screen (LEFT back, RIGHT and A forward, wrapping). */
     private fun cycleBottomScreen(step: Int) {
         val all = BottomScreen.entries
         deps.settings.bottomScreen = all[(all.indexOf(deps.settings.bottomScreen) + step).mod(all.size)]
@@ -5437,7 +5438,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     SettingsKind.PAGE_TITLE -> flipPageTitle()
                     SettingsKind.DEBUG_LOG -> flipDebugLog()
                     SettingsKind.SECOND_SCREEN_ENABLE -> flipSecondScreen()
-                    SettingsKind.SECOND_SCREEN -> { sectionSelections[s.section] = _selection.value; openSettings(SettingsSection.SECOND_SCREEN) }
                     SettingsKind.BOTTOM_SCREEN -> cycleBottomScreen(1)
                     SettingsKind.MENU_PAD -> flipMenuPad()
                     SettingsKind.BUTTON_HINTS -> flipButtonHints()

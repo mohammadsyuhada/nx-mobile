@@ -35,7 +35,7 @@ private const val DIVIDER_ALPHA = 0.08f
  */
 @Composable
 internal fun SettingsSplitScreen(state: AppState, s: Screen, selection: State<ListSelection>, page: @Composable () -> Unit) {
-    val categories = remember(state) { state.settingsSections() }
+    val categories = state.settingsSections()   // not remembered: a second screen coming or going changes it
     SplitPanes(
         left = {
             if (s is Screen.SettingsMenu) {
