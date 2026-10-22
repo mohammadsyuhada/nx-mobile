@@ -417,7 +417,7 @@ sealed interface Screen {
     data class ArtworkReset(val scopes: List<ResetScope>, val confirm: ResetScope? = null) : Screen
 }
 
-enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SECOND_SCREEN_ENABLE, BOTTOM_SCREEN, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_FOLDER, IMPORT_ZIP, IMPORT_RETROARCH, IMPORT_DONE, RESET_DEFAULTS, ALL_FILES,
+enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SECOND_SCREEN_ENABLE, BOTTOM_SCREEN, PAUSE_UNFOCUSED, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_FOLDER, IMPORT_ZIP, IMPORT_RETROARCH, IMPORT_DONE, RESET_DEFAULTS, ALL_FILES,
     LAYOUT_HOME, LAYOUT_CONSOLES, LAYOUT_COLLECTIONS, LAYOUT_TOOLS, LAYOUT_GAME_LISTS, LAYOUT_TITLE_HINTS, LAYOUT_SWITCHER, TEXT_SIZE }
 
 /**
@@ -3287,6 +3287,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             SettingsRow(SettingsKind.DEFAULTS, "Default emulators"),
             SettingsRow(SettingsKind.EMULATORS, "Settings"),
             SettingsRow(SettingsKind.SAVES, "Saves"),
+            SettingsRow(SettingsKind.PAUSE_UNFOCUSED, "Pause when unfocused", if (deps.settings.pauseWhenUnfocused) "On" else "Off"),
         )
         SettingsSection.SECOND_SCREEN -> listOf(
             SettingsRow(SettingsKind.SECOND_SCREEN_ENABLE, "Enable", if (deps.settings.secondScreen) "On" else "Off"),
@@ -3566,6 +3567,12 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** Developer → Debug log: two values, so every press flips it. */
     private fun flipDebugLog() {
         deps.settings.debugLog = !deps.settings.debugLog
+        refreshSettings()
+    }
+
+    /** Settings → Emulators → Pause when unfocused: two values, so every press flips it. */
+    private fun flipPauseUnfocused() {
+        deps.settings.pauseWhenUnfocused = !deps.settings.pauseWhenUnfocused
         refreshSettings()
     }
 
@@ -4026,6 +4033,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     SettingsKind.PAGE_TITLE -> flipPageTitle()
                     SettingsKind.DEBUG_LOG -> flipDebugLog()
                     SettingsKind.SECOND_SCREEN_ENABLE -> flipSecondScreen()
+                    SettingsKind.PAUSE_UNFOCUSED -> flipPauseUnfocused()
                     SettingsKind.BOTTOM_SCREEN -> cycleBottomScreen(step)
                     SettingsKind.MENU_PAD -> flipMenuPad()
                     SettingsKind.BUTTON_HINTS -> flipButtonHints()
@@ -5459,6 +5467,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     SettingsKind.PAGE_TITLE -> flipPageTitle()
                     SettingsKind.DEBUG_LOG -> flipDebugLog()
                     SettingsKind.SECOND_SCREEN_ENABLE -> flipSecondScreen()
+                    SettingsKind.PAUSE_UNFOCUSED -> flipPauseUnfocused()
                     SettingsKind.BOTTOM_SCREEN -> cycleBottomScreen(1)
                     SettingsKind.MENU_PAD -> flipMenuPad()
                     SettingsKind.BUTTON_HINTS -> flipButtonHints()

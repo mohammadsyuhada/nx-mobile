@@ -453,6 +453,11 @@ class GameActivity : ComponentActivity() {
 
     // ---- in-game pause menu ----
     private var menuOpen = false
+    /**
+     * Settings → Emulators → Pause when unfocused: another app took the top focus while this window stays visible (split
+     * screen, a freeform window, an app on another display), so the game holds, as under the menu, until it is back.
+     */
+    private var focusPaused = false
     private var menuView: ComposeView? = null
     private var menuModel: InGameMenuModel? = null
     private val menuState = mutableStateOf<MenuState?>(null)
@@ -873,11 +878,42 @@ class GameActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // The core runs again only with the menu closed (closeMenu resumes it then); a quit never does.
-        if (!menuOpen && !quitting) rumbles.forEach { it.resume() }
-        if (!menuOpen) netplayGame?.resume()   // netplay: input flows again; with the menu open it stays paused until Continue
+        // The core runs again only with the menu closed (closeMenu resumes it then); a quit never does. Focus held
+        // elsewhere: focusResume does, once this window is the top one again.
+        if (!menuOpen && !focusPaused && !quitting) rumbles.forEach { it.resume() }
+        if (!menuOpen && !focusPaused) netplayGame?.resume()   // netplay: input flows again; with the menu open it stays paused until Continue
         syncMotionSensors(foreground = true)
         syncDual()   // Settings → Second screen may have changed meanwhile
+    }
+
+    /** API 29+: multi-resume keeps this activity resumed while another app has the focus; only the top one is told. */
+    override fun onTopResumedActivityChanged(isTopResumedActivity: Boolean) {
+        super.onTopResumedActivityChanged(isTopResumedActivity)
+        if (isTopResumedActivity) focusResume() else if (AndroidAppSettings(this).pauseWhenUnfocused) focusPause()
+    }
+
+    /** The game holds as under the menu (see openMenu); an open menu has already paused it. */
+    private fun focusPause() {
+        if (focusPaused || quitting) return
+        focusPaused = true
+        if (menuOpen) return
+        releaseAllGameInput()
+        netplayGame?.takeIf { it.live }?.pause() ?: run { retroView?.frameSpeed = 0 }
+        retroView?.audioEnabled = false
+        rumbles.forEach { it.pause() }
+    }
+
+    /** Focused again: the game plays on, unless the menu opened meanwhile (closeMenu resumes it then). */
+    private fun focusResume() {
+        if (!focusPaused) return
+        focusPaused = false
+        if (menuOpen || quitting || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
+        netplayGame?.takeIf { it.live }?.resume()
+        if (!netplayStartFailed) {
+            retroView?.frameSpeed = 1
+            retroView?.audioEnabled = true
+        }
+        rumbles.forEach { it.resume() }
     }
 
     /**
@@ -1480,6 +1516,7 @@ class GameActivity : ComponentActivity() {
         if (isN3ds) offerN3dsMotion()
         val view = GLRetroView(this, data)
         retroView = view
+        if (focusPaused) { view.frameSpeed = 0; view.audioEnabled = false }   // focus went to another app while loading
         // Collected before the view is added (its ON_CREATE) and long before the first frame: the runner reports a
         // change only, from an unbuffered flow, so a missed event would leave the motor wrong until the next one.
         if (gameRumble != GameRumble.OFF) lifecycleScope.launch {
@@ -1612,7 +1649,7 @@ class GameActivity : ComponentActivity() {
                     fail(NetplayText.FAILED, NetplayText.FAILED)
                     return@launch
                 }
-                if (menuOpen || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) netplayGame?.pause()
+                if (menuOpen || focusPaused || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) netplayGame?.pause()
                 val now = SystemClock.elapsedRealtime()
                 netplayFirstFrameNotices(np, descriptor?.name ?: coreId, netplayOwnCopyFailed).forEach {
                     notifications.push(it, null, NETPLAY_NOTICE_MS, now)
@@ -3821,6 +3858,7 @@ class GameActivity : ComponentActivity() {
         menuState.value = null
         syncPanelClock()
         updatePadVisibility()
+        if (focusPaused) { syncMotionSensors(); return }   // another app has the focus: focusResume plays on later
         netplayGame?.takeIf { it.live }?.resume()   // netplay: input goes out again (see openMenu)
         if (!netplayStartFailed) {   // netplay: a failed start keeps the game paused behind its dialog
             retroView?.frameSpeed = 1
@@ -4362,7 +4400,7 @@ class GameActivity : ComponentActivity() {
                 notifications.push(notice.text, null, NETPLAY_NOTICE_MS, now)
                 if (netplay?.endsAsLocalGame == true) linkEnded() else {
                     // The ended session holds no frames: an open menu pauses the game as for any other launch.
-                    if (menuOpen) retroView?.frameSpeed = 0
+                    if (menuOpen || focusPaused) retroView?.frameSpeed = 0
                     netplayEnded = true
                     menuModel?.let { it.endNetplay(local = false); menuState.value = it.state }
                 }
@@ -4400,7 +4438,7 @@ class GameActivity : ComponentActivity() {
      */
     private fun linkEnded() {
         // The link holds no frames now: an open menu pauses the game as for any other launch.
-        if (menuOpen) retroView?.frameSpeed = 0
+        if (menuOpen || focusPaused) retroView?.frameSpeed = 0
         netplayEnded = true
         playLocally()
         menuModel?.let {

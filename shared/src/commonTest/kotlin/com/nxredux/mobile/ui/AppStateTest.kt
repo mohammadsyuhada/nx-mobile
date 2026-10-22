@@ -154,6 +154,7 @@ class AppStateTest {
         override var padLayouts: com.nxredux.mobile.settings.PadLayoutMap = emptyMap()
         override var debugLog = false
         override var secondScreen = true
+        override var pauseWhenUnfocused = true
         override var bottomScreen = com.nxredux.mobile.runner.BottomScreen.AUTO
         override var menuPad = true
         override var saveFormat = SaveFormat.DEFAULT
@@ -5003,7 +5004,7 @@ class AppStateTest {
         state.onButton(NxButton.DOWN); state.onButton(NxButton.A)       // Emulators
         val emu = assertIs<Screen.Settings>(state.screen.value)
         assertEquals(SettingsSection.EMULATORS, emu.section)
-        assertEquals(listOf("Default emulators", "Settings", "Saves"), emu.rows.map { it.label })   // no second screen: no Second screen row
+        assertEquals(listOf("Default emulators", "Settings", "Saves", "Pause when unfocused"), emu.rows.map { it.label })   // no second screen: no Second screen row
         state.onButton(NxButton.B)
         assertEquals(ListSelection(1, 7), state.selection.value)
         state.onButton(NxButton.DOWN); state.onButton(NxButton.A)       // Appearance
@@ -5185,7 +5186,7 @@ class AppStateTest {
         st.onButton(NxButton.DOWN); st.onButton(NxButton.A)                                      // Emulators
         val e = assertIs<Screen.Settings>(st.screen.value)
         assertEquals(SettingsSection.EMULATORS, e.section)
-        assertEquals(listOf(SettingsRow(SettingsKind.DEFAULTS, "Default emulators"), SettingsRow(SettingsKind.EMULATORS, "Settings"), SettingsRow(SettingsKind.SAVES, "Saves")), e.rows)
+        assertEquals(listOf(SettingsRow(SettingsKind.DEFAULTS, "Default emulators"), SettingsRow(SettingsKind.EMULATORS, "Settings"), SettingsRow(SettingsKind.SAVES, "Saves"), SettingsRow(SettingsKind.PAUSE_UNFOCUSED, "Pause when unfocused", "On")), e.rows)
         assertTrue(e.details.isEmpty())
         st.onButton(NxButton.A)                                                                  // Default emulators
         assertEquals(SettingsSection.DEFAULT_EMULATORS, assertIs<Screen.Settings>(st.screen.value).section)
@@ -9846,6 +9847,24 @@ class AppStateTest {
         assertEquals("On", rows()[0].secondary)
     }
 
+    // Settings → Emulators → Pause when unfocused, On by default; two values, so A, left and right each flip it.
+    @Test fun pause_when_unfocused_row_flips_on_a_left_and_right() = runTest {
+        val settings = MemorySettings(ContentRef("Home"))
+        val state = state(settings)
+        state.load()
+        state.openSettings(SettingsSection.EMULATORS)
+        fun row() = assertIs<Screen.Settings>(state.screen.value).rows.single { it.kind == SettingsKind.PAUSE_UNFOCUSED }
+        assertEquals("Pause when unfocused" to "On", row().label to row().secondary)
+        repeat(3) { state.onButton(NxButton.DOWN) }   // the last row
+        state.onButton(NxButton.A)
+        assertEquals(false, settings.pauseWhenUnfocused)
+        assertEquals("Off", row().secondary)
+        state.onButton(NxButton.RIGHT)
+        assertEquals(true, settings.pauseWhenUnfocused)
+        state.onButton(NxButton.LEFT)
+        assertEquals(false, settings.pauseWhenUnfocused)
+    }
+
     // Settings → Second screen: a root section between Controls and Launcher that exists only while a second screen is connected.
     @Test fun the_second_screen_section_is_on_the_root_only_while_a_second_screen_is_connected() = runTest {
         val state = state(MemorySettings(ContentRef("Home")))
@@ -9861,7 +9880,7 @@ class AppStateTest {
         assertTrue(SettingsSection.SECOND_SCREEN !in sections())
         state.openSettings(SettingsSection.EMULATORS)
         state.onSecondScreenChanged(true)
-        assertEquals(listOf("Default emulators", "Settings", "Saves"), assertIs<Screen.Settings>(state.screen.value).rows.map { it.label })   // no row under Emulators any more
+        assertEquals(listOf("Default emulators", "Settings", "Saves", "Pause when unfocused"), assertIs<Screen.Settings>(state.screen.value).rows.map { it.label })   // no row under Emulators any more
     }
 
     @Test fun the_second_screen_page_has_enable_then_bottom_screen_and_b_returns_to_the_root_on_it() = runTest {

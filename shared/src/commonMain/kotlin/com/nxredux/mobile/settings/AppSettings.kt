@@ -330,6 +330,14 @@ interface AppSettings {
         set(@Suppress("UNUSED_PARAMETER") value) {}
 
     /**
+     * Settings → Emulators → Pause when unfocused (default on): a game whose window loses the focus to another app (split
+     * screen, a freeform window, an app on another display) pauses until it is focused again. Defaulted, like [debugLog].
+     */
+    var pauseWhenUnfocused: Boolean
+        get() = true
+        set(@Suppress("UNUSED_PARAMETER") value) {}
+
+    /**
      * First setup's All files access step was answered (Allow or Skip); it is never shown again. Defaulted, like
      * [debugLog].
      */

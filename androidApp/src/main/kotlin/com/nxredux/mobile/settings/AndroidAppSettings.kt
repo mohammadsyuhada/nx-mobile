@@ -232,6 +232,12 @@ class AndroidAppSettings(context: Context) : AppSettings {
             prefs.edit { putString(KEY_BOTTOM_SCREEN, value.value) }
         }
 
+    override var pauseWhenUnfocused: Boolean
+        get() = prefs.getBoolean(KEY_PAUSE_UNFOCUSED, true)
+        set(value) {
+            prefs.edit { putBoolean(KEY_PAUSE_UNFOCUSED, value) }
+        }
+
     override var debugLog: Boolean
         get() = prefs.getBoolean(KEY_DEBUG_LOG, false)
         set(value) {
@@ -331,6 +337,7 @@ class AndroidAppSettings(context: Context) : AppSettings {
         private const val KEY_DEBUG_LOG = "debug_log"
         private const val KEY_SECOND_SCREEN = "second_screen"
         private const val KEY_BOTTOM_SCREEN = "bottom_screen"
+        private const val KEY_PAUSE_UNFOCUSED = "pause_unfocused"
         private const val KEY_MENU_PAD = "menu_pad"
         private const val KEY_SAVE_FORMAT = "save_format"
         private const val KEY_STATE_FORMAT = "state_format"
