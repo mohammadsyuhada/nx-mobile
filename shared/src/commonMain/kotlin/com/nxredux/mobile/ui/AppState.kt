@@ -802,24 +802,45 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     fun onDualMenu(active: Boolean) {
         if (_dualMenu.value == active) return
         _dualMenu.value = active
+        if (active) closeRaPanel()   // the panel is a single-screen overlay: dual mode shows the details pane instead
         followSecondList()
         followRaDetails()
     }
 
+    /** What the shown [secondList] was built from: the source, the library snapshot, and for a collection its row (name and count). */
+    private data class SecondKey(val source: ListSource, val library: List<SystemFolder>, val row: MainRow?)
+    private var secondKey: SecondKey? = null
+    /** How many times the preview was built (test hook): a same-source, same-content republish must not add one. */
+    internal var secondListBuilds = 0
+        private set
+
     /**
      * Recomputes [secondList] from the screen and the highlighted row: a console's list at once (no I/O), a collection's
-     * after its file is read. A newer call cancels an older read. The same row again keeps what shows until the new read lands.
+     * after its file is read. A newer call cancels an older read. The same source over the same library snapshot (and,
+     * for a collection, the same row) keeps the shown list untouched: a rescan or a collection edit changes one of those.
      */
     private fun followSecondList() {
-        secondListJob?.cancel()
         val source = highlightedSecondSource()
+        val row = if (source is ListSource.Collection) (_screen.value as? Screen.Systems)?.rows?.getOrNull(_selection.value.index) else null
+        val key = source?.let { SecondKey(it, systemsCache, row) }
+        if (key != null && _secondList.value?.source == source) {
+            val k = secondKey
+            if (k != null && k.source == key.source && k.library === key.library && k.row == key.row) return
+        }
+        secondListJob?.cancel()
+        secondKey = null
         if (source == null) { _secondList.value = null; return }
-        if (source is ListSource.Console) { _secondList.value = SecondList(source, consoleEntries(source.systems), 0); return }
+        if (source is ListSource.Console) {
+            secondListBuilds++
+            _secondList.value = SecondList(source, consoleEntries(source.systems), 0)
+            secondKey = key
+            return
+        }
         if (_secondList.value?.source != source) _secondList.value = null
         secondListJob = scope.launch {
             val entries = entriesFor(source)
             ensureActive()
-            if (highlightedSecondSource() == source) _secondList.value = SecondList(source, entries, 0)
+            if (highlightedSecondSource() == source) { secondListBuilds++; _secondList.value = SecondList(source, entries, 0); secondKey = key }
         }
     }
 

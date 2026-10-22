@@ -12327,6 +12327,27 @@ class AppStateTest {
         assertEquals(ListSource.Console(second.system), state.secondList.value?.source)
     }
 
+    @Test fun the_preview_is_not_rebuilt_for_the_same_console_and_library_but_is_after_a_rescan() = runTest {
+        val state = dualState()
+        state.openConsolesTab(); advanceUntilIdle()
+        val preview = assertNotNull(state.secondList.value)
+        val builds = state.secondListBuilds
+        state.openConsolesTab(); advanceUntilIdle()   // the same screen published again
+        assertSame(preview, state.secondList.value)
+        assertEquals(builds, state.secondListBuilds)
+        state.rescan(); advanceUntilIdle()
+        assertTrue(state.secondListBuilds > builds)
+    }
+
+    @Test fun an_open_achievements_panel_closes_when_dual_mode_turns_on() = runTest {
+        val f = panelFixture()
+        f.state.openConsole("GB")
+        f.state.onButton(NxButton.X); advanceUntilIdle()
+        assertNotNull(f.state.raPanel.value)
+        f.state.onDualMenu(true)
+        assertNull(f.state.raPanel.value)
+    }
+
     @Test fun no_preview_off_dual_or_on_home() = runTest {
         val state = dualState()
         state.openConsolesTab(); advanceUntilIdle()
