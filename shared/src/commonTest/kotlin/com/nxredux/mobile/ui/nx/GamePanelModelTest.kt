@@ -90,4 +90,16 @@ class GamePanelModelTest {
         assertEquals(GamePanelEvent.SetPlaying("a", false), GamePanelModel.togglePlaying(PlayerPadRow("a", "Pad A", playing = true)))
         assertEquals(GamePanelEvent.SetPlaying("c", true), GamePanelModel.togglePlaying(PlayerPadRow("c", "Pad C", playing = false)))
     }
+
+    @Test fun disc_toast_is_one_based() {
+        assertEquals("Disc 2 of 3", GamePanelModel.discToast(1, 3))
+        assertEquals("Disc 1 of 2", GamePanelModel.discToast(0, 2))
+    }
+
+    @Test fun next_disc_cycles() {
+        assertEquals(1, GamePanelModel.nextDisc(0, 3))
+        assertEquals(2, GamePanelModel.nextDisc(1, 3))
+        assertEquals(0, GamePanelModel.nextDisc(2, 3))
+        assertEquals(0, GamePanelModel.nextDisc(5, 3))   // a stale index out of range wraps too
+    }
 }

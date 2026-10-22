@@ -53,9 +53,6 @@ class SaveStates(private val root: File, private val paths: NxPaths) {
 
     fun slots(): List<Slot> = (1..SLOT_COUNT).map { i -> slot(i, i - 1) }
 
-    /** The auto-resume state (disk [NxPaths.AUTO_SLOT]) as a slot with index 0, for lists that show it before slot 1. */
-    fun autoSlot(): Slot = slot(0, NxPaths.AUTO_SLOT)
-
     /** Disk [diskSlot]'s state and thumbnail as the slot numbered [index]. */
     private fun slot(index: Int, diskSlot: Int): Slot {
         val s = existing(diskSlot)

@@ -22,6 +22,12 @@ internal fun boxShown(boxart: String?, box2d: String?, grid: String?, failed: Se
 }
 
 /**
+ * The game panel's header picture (the launcher hands it to the game screen): the 3D box, else the 2D cover, the grid
+ * or the screenshot; null draws the console logo.
+ */
+internal fun panelArt(boxart: String?, box2d: String?, grid: String?, screenshot: String?): String? = boxart ?: box2d ?: grid ?: screenshot
+
+/**
  * A full-screen background: the game's screenshot; without one the SteamGridDB hero when the screen is landscape, the
  * grid when [portrait]. Never the other shape's stand-in: a wide hero cropped to portrait (or a tall grid to landscape)
  * reads as noise, so that case is the plain background.

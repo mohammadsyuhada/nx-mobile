@@ -99,7 +99,7 @@ private fun PanelHeader(h: GamePanelHeader) {
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(h.title, color = colors.listText, fontFamily = font, fontSize = GP_TITLE_SIZE, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(GamePanelModel.timeLine(h), color = colors.hint, fontFamily = font, fontSize = GP_SMALL_SIZE, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(GamePanelModel.timeLine(h), color = colors.hint, fontFamily = font, fontSize = GP_SMALL_SIZE, maxLines = 2, overflow = TextOverflow.Ellipsis)
             h.ra?.let { (unlocked, total) ->
                 Text("Achievements $unlocked / $total", color = colors.hint, fontFamily = font, fontSize = GP_SMALL_SIZE, maxLines = 1)
             }
@@ -269,6 +269,32 @@ private fun RowText(text: String, selected: Boolean, modifier: Modifier = Modifi
         text, modifier = modifier, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = LocalNxFont.current, fontSize = GP_LABEL_SIZE,
         color = if (selected) colors.onAccent else colors.listText,
     )
+}
+
+/** A small hollow pill ([nxButtonRing]) on black: the panel's Game pill, and the Panel pill over the DS/3DS screen. */
+@Composable
+fun PanelPill(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val colors = LocalNxColors.current
+    Box(
+        modifier.clip(RoundedCornerShape(50)).background(colors.background).nxButtonRing(colors).clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+    ) {
+        Text(label, color = colors.listText, fontFamily = LocalNxFont.current, fontSize = GP_SMALL_SIZE, maxLines = 1)
+    }
+}
+
+/** Onboarding's Bottom screen step on the second display: one big "This is the bottom screen" button in the middle. */
+@Composable
+fun BottomScreenButton(onClick: () -> Unit) {
+    val colors = LocalNxColors.current
+    Box(Modifier.fillMaxSize().background(colors.background), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.clip(RoundedCornerShape(50)).nxButtonRing(colors).clickable(onClick = onClick)
+                .padding(horizontal = 32.dp, vertical = 18.dp),
+        ) {
+            Text("This is the bottom screen", color = colors.listText, fontFamily = LocalNxFont.current, fontSize = 22.sp, maxLines = 1)
+        }
+    }
 }
 
 private val GP_GUTTER = 16.dp

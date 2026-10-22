@@ -377,12 +377,14 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
      * ([overlayAvailable] is false while the DS screens are split). Refreshes open Console Settings/Frontend/Adjust pages.
      */
     fun setFrontend(values: Map<String, String>, overlays: List<String>, locked: Set<String>, tag: String = "", overlayAvailable: Boolean = true) {
+        val tagChanged = tag != frontendTag
         frontendTag = tag
         this.overlayAvailable = overlayAvailable
         frontend = FrontendOptions.fromConfig(values, tag)
         this.overlays = overlays
         frontendLocked = locked
         refreshFrontendPages()
+        if (tagChanged) fixPanel()   // the panel's header falls back to the console's logo
     }
 
     /**

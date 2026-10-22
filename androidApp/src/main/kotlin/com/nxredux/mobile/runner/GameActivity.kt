@@ -5,6 +5,7 @@ import android.app.ActivityManager
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -79,6 +80,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.Alignment
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
@@ -102,6 +104,10 @@ import com.nxredux.mobile.cheats.CheatSet
 import com.nxredux.mobile.cheats.DolphinCheats
 import com.nxredux.mobile.gametime.GameTimeRecorder
 import com.nxredux.mobile.gametime.GameTimeService
+import com.nxredux.mobile.gametime.GameTotal
+import com.nxredux.mobile.gametime.PanelPlayTime
+import com.nxredux.mobile.gametime.systemLocalCalendar
+import com.nxredux.mobile.gametime.GameSession as PlaySession
 import com.nxredux.mobile.library.ArcadeCompanions
 import com.nxredux.mobile.library.NaomiSets
 import com.nxredux.mobile.library.Names
@@ -150,6 +156,7 @@ import com.nxredux.mobile.shaders.ScaleType
 import com.nxredux.mobile.shaders.ShaderLut
 import com.nxredux.mobile.shaders.ShaderParam
 import com.nxredux.mobile.shaders.WrapMode
+import com.nxredux.mobile.storage.FileRefs
 import com.nxredux.mobile.storage.GamePath
 import com.nxredux.mobile.storage.NdsResumeCleanup
 import com.nxredux.mobile.storage.NdsDsvSave
@@ -181,11 +188,12 @@ import com.nxredux.mobile.ui.nx.PadProfile
 import com.nxredux.mobile.ui.nx.GamePanelHeader
 import com.nxredux.mobile.ui.nx.InGameMenu
 import com.nxredux.mobile.ui.nx.NxTheme
-import com.nxredux.mobile.ui.nx.PanelEvent
+import com.nxredux.mobile.ui.nx.GamePanel
+import com.nxredux.mobile.ui.nx.GamePanelEvent
+import com.nxredux.mobile.ui.nx.GamePanelModel
+import com.nxredux.mobile.ui.nx.GamePanelState
+import com.nxredux.mobile.ui.nx.GamePanelTab
 import com.nxredux.mobile.ui.nx.PanelPill
-import com.nxredux.mobile.ui.nx.PanelState
-import com.nxredux.mobile.ui.nx.PanelTab
-import com.nxredux.mobile.ui.nx.SecondScreenPanel
 import com.nxredux.mobile.ui.nx.nxColorsFor
 import com.nxredux.mobile.ui.nx.InGameMenuModel
 import com.nxredux.mobile.ui.nx.InputRouter
@@ -223,6 +231,7 @@ import com.nxredux.mobile.ui.nx.VirtualStickRouter
 import com.nxredux.mobile.ui.nx.padBandPx
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -258,6 +267,7 @@ class GameActivity : ComponentActivity() {
         const val EXTRA_SYSTEM_SETS = "system_sets"          // String[]: arcade BIOS sets not beside the game, looked for in the system dir
         const val EXTRA_LAUNCH_ID = "launch_id"      // Long: the launcher's PendingLaunches entry, told once the game runs
         const val EXTRA_GAME_PATH = "game_path"      // the library path (GamePath): game time's identity; absent = not recorded
+        const val EXTRA_ART_PATH = "art_path"        // the game's box art (GameSession.artPath): the game panel's header; absent = the console logo
         const val EXTRA_FORCE_GLES = "force_gles"    // Boolean: the relaunch after Vulkan could not start (VulkanFallback)
         private const val SIMULATE_VULKAN_FAIL = "simulate_vulkan_fail"   // debug builds only: see startEmulator
         // netplay: a Wi-Fi netplay launch (GameSession.netplay); all absent for every other launch. The run core is EXTRA_CORE_ID.
@@ -439,6 +449,7 @@ class GameActivity : ComponentActivity() {
     private fun onInputDevicesChanged() {
         applyLayout(resources.configuration.orientation)
         if (menuOpen) menuModel?.let(::publishPlayers)
+        refreshDualPanel()
     }
     /** The controller names of the last [applyLayout] (logged once per change, to confirm hardware names). */
     private var loggedControllers: List<String>? = null
@@ -600,11 +611,16 @@ class GameActivity : ComponentActivity() {
     private var pictureOn = PictureOn.MAIN       // the wider display: the picture there, touch things on the other
     private var n3dsPicture = NdsScreen.TOP      // the 3DS screen on the picture screen while split (session only)
     private var orientationBeforeDual: Int? = null   // requestedOrientation before the second screen locked landscape
-    // The panel on the second display (PANEL, PANEL_UP): its tab, the slots (Auto first) and the achievements.
-    private val panelTab = mutableStateOf(PanelTab.STATES)
-    private val panelSlots = mutableStateOf<List<SlotUi>>(emptyList())
-    private val panelAchievements = mutableStateOf<PanelAchievements?>(null)
-    private var panelWasShown = false            // at the last syncPanel: it re-reads the slots and achievements as the panel comes up
+    // The game panel on the second display (PANEL, PANEL_UP), or on main while the picture is on the second one: its tab
+    // and what it draws ([panelState], rebuilt by [refreshDualPanel] while it is up).
+    private var dualPanelTab = GamePanelTab.SHORTCUTS
+    private val dualPanel = mutableStateOf<GamePanelState?>(null)
+    private var panelWasShown = false            // at the last syncPanel: it re-reads the discs and play time as the panel comes up
+    // The game panel's data, shared by the in-game menu's panel and the dual-screen one.
+    private var discs: Pair<Int, Int>? = null    // the core's (current disc 0-based, count), once asked ([refreshDiscs])
+    private var playTimeBase: Pair<GameTotal?, List<PlaySession>>? = null   // the store's figures for this game ([refreshPlayTime])
+    private var sliceStartedAt: Long? = null     // the open game-time slice's start (wall clock); null while none runs
+    private var panelClockJob: Job? = null       // the header's minute tick while a panel shows ([syncPanelClock])
     // The panel (or the Panel pill) in the game's own window, while the picture is on the second display.
     private var mainPanelHost: FrameLayout? = null
     private val mainPanel = mutableStateOf<(@Composable () -> Unit)?>(null)
@@ -876,7 +892,8 @@ class GameActivity : ComponentActivity() {
         if (isN3ds) syncN3dsCursor()
         secondScreens.start()   // the collector shows the presentation again
         // onStop closed the session: back in the foreground, a new one on the same game (background time is not play)
-        gameTime?.let { if (!isFinishing && !quitting) { it.resume(); startGameTimeTicker(it) } }
+        gameTime?.let { if (!isFinishing && !quitting) { it.resume(); startGameTimeTicker(it); sliceStartedAt = System.currentTimeMillis() } }
+        refreshPlayTime()   // the slice onStop closed is in the store now
     }
 
     /** Main thread. Before onStop's auto state: keep it for onStop. After it: queue it behind that state. */
@@ -897,6 +914,8 @@ class GameActivity : ComponentActivity() {
         gameTime?.pause()   // the session ends here: a kill in the background loses nothing, a return opens a new one
         gameTimeTicker?.cancel()
         gameTimeTicker = null
+        sliceStartedAt = null
+        panelClockJob?.cancel(); panelClockJob = null   // onResume's syncDual starts it again
         // Leaving via Home/recents: the process may be killed in the background, so keep the spot. Also when
         // finishing without a quit: sharing the menu's task, a launch of the singleTask menu (app icon, notification)
         // clears this screen. A quit writes its own; a game that never got ready writes nothing (writeAutoStateOnStop);
@@ -1036,6 +1055,7 @@ class GameActivity : ComponentActivity() {
     private fun endGameTime() {
         gameTimeTicker?.cancel(); gameTimeTicker = null
         gameTime?.end(); gameTime = null
+        sliceStartedAt = null
     }
 
     private suspend fun startEmulator() {
@@ -1507,8 +1527,9 @@ class GameActivity : ComponentActivity() {
                     val rec = withContext(Dispatchers.IO) { GameTimeService.recorder(this@GameActivity) }
                     rec.start(path, tag, name)
                     gameTime = rec
+                    sliceStartedAt = System.currentTimeMillis()
                     // Ready while stopped (onStop already ran): close it at once, as onStop would; onStart resumes it.
-                    if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) rec.pause()
+                    if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) { rec.pause(); sliceStartedAt = null }
                     startGameTimeTicker(rec)
                 }
             }
@@ -1536,6 +1557,7 @@ class GameActivity : ComponentActivity() {
                 syncMotionSensors()
             }
             pushSecondSurface()   // a presentation shown before the view ran
+            if (panelShown()) refreshDiscs()   // a panel up before the game ran asked too early
             // A core may change its geometry later (SET_GEOMETRY), as Azahar does a frame or so after the dual modes switch
             // its layout: both displays are laid out again from the new size and aspect, or the second one keeps fitting
             // the new frame at the old aspect. A core turning its picture (a WonderSwan game held upright) moves the
@@ -2949,7 +2971,7 @@ class GameActivity : ComponentActivity() {
 
     /**
      * The panel follows the mode, on the touch screen ([pictureOn]'s other display): the panel over it in PANEL and
-     * PANEL_UP (its slots and achievements re-read), the Panel pill over the DS/3DS screen in SPLIT.
+     * PANEL_UP (its discs and play time re-read), the Panel pill over the DS/3DS screen in SPLIT.
      */
     private fun syncPanel() {
         val p = presentation
@@ -2964,12 +2986,14 @@ class GameActivity : ComponentActivity() {
             updatePadVisibility()
             if (mainPanelShown()) releaseAllGameInput()   // the pad went from under the fingers: nothing it held may stick
         }
-        // Re-read as it comes up; while up, each save, load and RA event refreshes it.
+        // Re-read as it comes up; while up, each RA event, player, disc and setting change refreshes it.
         if (shown && !panelWasShown) {
-            refreshSlots()
-            refreshPanelAchievements()
+            refreshDiscs()
+            refreshPlayTime()
         }
         panelWasShown = shown
+        if (shown) refreshDualPanel() else dualPanel.value = null
+        syncPanelClock()
     }
 
     /** The panel is up, on either display (PANEL, PANEL_UP). */
@@ -3012,37 +3036,164 @@ class GameActivity : ComponentActivity() {
         host.visibility = View.VISIBLE
     }
 
-    /** The panel, live on its tab, slots and achievements; [gamePill]: the DS/3DS Game pill. */
+    /** The game panel, live on [dualPanel], touch-only; [gamePill]: the DS/3DS Game pill. */
     private fun panelContent(gamePill: Boolean): @Composable () -> Unit = {
-        val ach = panelAchievements.value
-        SecondScreenPanel(
-            PanelState(panelTab.value, panelSlots.value, ach?.list, ach?.summary, ach?.badges.orEmpty(), showGamePill = gamePill),
-            onTab = { panelTab.value = it },
-            onEvent = ::onPanelEvent,
+        dualPanel.value?.let { GamePanel(it.copy(showGamePill = gamePill), ::onGamePanelEvent) }
+    }
+
+    /**
+     * The dual-screen panel's state: the header ([panelHeader], with the achievement count while there is a set), the tabs
+     * that apply, the Shortcuts (Swap disc for a multi-disc game outside netplay, Second screen, the future ones), this
+     * game's achievements in the menu's order, and the Players page's rows.
+     */
+    private fun panelState(): GamePanelState {
+        val b = achievements?.takeIf { it.available }
+        val summary = b?.summary()
+        val list = if (b != null && summary != null) b.list().sortedBy(appSettings.raSortOrder) else emptyList()
+        val players = playerRows()
+        val tabs = GamePanelModel.tabs(raAvailable = list.isNotEmpty(), playerSlots = if (netplay != null) 0 else players?.first?.size ?: 0)
+        val (disc, count) = discs ?: (0 to 0)
+        return GamePanelState(
+            header = panelHeader().copy(ra = summary.takeIf { GamePanelTab.ACHIEVEMENTS in tabs }),
+            tabs = tabs,
+            tab = GamePanelModel.resolveTab(dualPanelTab, tabs),
+            shortcuts = GamePanelModel.shortcuts(count, disc, secondScreens.current.value != null, appSettings.secondScreen, netplay != null),
+            achievements = list,
+            badges = b?.badges.orEmpty(),
+            players = players?.first.orEmpty(),
+            playerPads = players?.second.orEmpty(),
+            touchOnly = true,
+            showGamePill = dualMode == DualMode.PANEL_UP,
         )
     }
 
-    /** A touch on the panel: the save-state actions run as the menu's, the Game pill flips the DS/3DS screen back. */
-    private fun onPanelEvent(e: PanelEvent) {
-        // Before the resume state lands a save would store the fresh boot, and a load would be overwritten by it.
-        if (quitting || ((!gameReady || resumePending) && e != PanelEvent.ShowGame)) return
+    /** Rebuilds [dualPanel] while the dual-screen panel is up; nothing otherwise ([syncPanel] builds it as it comes up). */
+    private fun refreshDualPanel() {
+        if (panelShown()) dualPanel.value = panelState()
+    }
+
+    /**
+     * A touch on the dual-screen panel: Swap disc, Second screen and the Players rows as the in-game menu's own effects
+     * (the menu, if open over the game, follows), a tab, or the Game pill flipping the DS/3DS screen back. An achievement
+     * opens nothing here (no detail page on the touch screen).
+     */
+    private fun onGamePanelEvent(e: GamePanelEvent) {
+        if (quitting) return
         when (e) {
-            // Synchronous, so the slot job is tracked before a Quit can wait for it.
-            PanelEvent.QuickSave -> lastSlot()?.let { saveToSlot(it) }
-            PanelEvent.QuickLoad -> lastSlot()?.let { loadFromSlot(it, loaded = "Loaded slot $it") }
-            is PanelEvent.Load -> if (e.slot == 0) loadFromSlot(null, loaded = "Loaded auto save") else loadFromSlot(e.slot, loaded = "Loaded slot ${e.slot}")
-            is PanelEvent.Save -> saveToSlot(e.slot)
-            PanelEvent.ShowGame -> { panelUp = false; syncDual() }
+            GamePanelEvent.SwapDisc -> swapDisc()
+            is GamePanelEvent.SetSecondScreen -> {
+                handle(MenuEffect.SetSecondScreen(e.on))
+                menuModel?.let(::publishSecondScreen)
+            }
+            is GamePanelEvent.SelectTab -> { dualPanelTab = e.tab; refreshDualPanel() }
+            is GamePanelEvent.OpenAchievement -> Unit
+            is GamePanelEvent.SetPlayer -> handle(MenuEffect.SetPlayer(e.slot, e.key))
+            is GamePanelEvent.SetPlaying -> handle(MenuEffect.SetPlaying(e.key, e.playing))
+            GamePanelEvent.ShowGame -> { panelUp = false; syncDual() }
         }
     }
 
     /**
-     * The last-used slot without a thread hop: the cache [refreshSlots] (and each save or load) keeps current, else read
-     * once here as the menu's open does; null without save states (netplay).
+     * The panel's Swap disc: the next disc through the same core call as the menu's Disc row (on the emulation thread),
+     * a "Disc N of M" toast on the picture's display, and the menu's Disc row (if open) following.
      */
-    private fun lastSlot(): Int? {
-        val ss = saveStates ?: return null
-        return lastSlotCache ?: runCatching { ss.lastSlot() }.getOrDefault(1).also { lastSlotCache = it }
+    private fun swapDisc() {
+        val view = retroView ?: return
+        if (!gameReady || netplay != null) return
+        val (current, count) = discs ?: return
+        if (count < 2) return
+        val next = GamePanelModel.nextDisc(current, count)
+        discs = next to count
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { view.changeDisk(next) }.onFailure { NxLog.w("GameActivity", "disc change failed", it) }
+        }
+        val text = GamePanelModel.discToast(next, count)
+        val p = presentation
+        if (p != null && pictureOn == PictureOn.SECOND) p.toast(text) else toast(text)
+        menuModel?.let { it.setDiscs(next, count); menuState.value = it.state }
+        refreshDualPanel()
+    }
+
+    /**
+     * Asks the core for its discs (disk-control interface: an m3u, a multi-disc PBP) on IO and hands them to the open
+     * menu and the dual-screen panel. Not before the game runs, nor in netplay (no disc swaps there).
+     */
+    private fun refreshDiscs() {
+        val view = retroView?.takeIf { gameReady && netplay == null } ?: return
+        lifecycleScope.launch {
+            val (count, current) = withContext(Dispatchers.IO) {
+                runCatching { view.getAvailableDisks() to view.getCurrentDisk() }
+                    .onFailure { NxLog.w("GameActivity", "disc query failed", it) }.getOrNull()
+            } ?: return@launch
+            discs = current to count
+            menuModel?.let { it.setDiscs(current, count); menuState.value = it.state }
+            refreshDualPanel()
+        }
+    }
+
+    /**
+     * Reads this game's play time from the store on IO ([PanelPlayTime]'s inputs: its group's total and closed plays),
+     * then refreshes the headers. A game with no library path (game time not recorded) keeps 0.
+     */
+    private fun refreshPlayTime() {
+        val path = intent.getStringExtra(EXTRA_GAME_PATH) ?: return
+        lifecycleScope.launch {
+            val base = try {
+                val data = withContext(Dispatchers.IO) { GameTimeService.data(this@GameActivity) } ?: return@launch
+                val total = data.byPath()[path]
+                total to (total?.let { data.sessions(it.gameId).sessions } ?: emptyList())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                NxLog.w("GameActivity", "could not read play time", e)
+                return@launch
+            }
+            playTimeBase = base
+            refreshPanelHeader()
+        }
+    }
+
+    /**
+     * Both panels' header: the title, the launcher's box art (null: the console logo), play time today and in total (the
+     * running slice included), the clock and the battery. The achievement count is each panel's own.
+     */
+    private fun panelHeader(): GamePanelHeader {
+        val now = System.currentTimeMillis()
+        val (total, plays) = playTimeBase ?: (null to emptyList())
+        val time = PanelPlayTime.of(total, plays, systemLocalCalendar().dayStart(now), sliceStartedAt, now)
+        // A shared-storage ref as its plain path: the game screen's image loader may not have the app's ref mapper.
+        val art = intent.getStringExtra(EXTRA_ART_PATH)?.let { FileRefs.artPath(it) ?: it }
+        val clock = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(now))
+        return GamePanelHeader(intent.getStringExtra(EXTRA_TITLE) ?: "Paused", art, layoutTag(), time.todayMs, time.totalMs, null, clock, batteryPercent())
+    }
+
+    /** The battery level from the sticky battery broadcast (no receiver is kept); null when it can't be read. */
+    private fun batteryPercent(): Int? {
+        val i = ContextCompat.registerReceiver(this, null, IntentFilter(Intent.ACTION_BATTERY_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED)
+            ?: return null
+        val level = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = i.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+        return if (level >= 0 && scale > 0) level * 100 / scale else null
+    }
+
+    /** The header again (clock, battery, the running play time) in the open menu and the dual-screen panel. */
+    private fun refreshPanelHeader() {
+        menuModel?.let { it.setPanelHeader(panelHeader()); menuState.value = it.state }
+        refreshDualPanel()
+    }
+
+    /** While the menu is open or the dual-screen panel up (and the screen started), the header refreshes on each minute. */
+    private fun syncPanelClock() {
+        val want = (menuOpen || panelShown()) && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        if (!want) { panelClockJob?.cancel(); panelClockJob = null; return }
+        if (panelClockJob?.isActive == true) return
+        panelClockJob = lifecycleScope.launch {
+            while (true) {
+                delay(60_000L - System.currentTimeMillis() % 60_000L)
+                refreshPanelHeader()
+                refreshPlayTime()   // a slice closed meanwhile (a stop and start) lands in the store's figures
+            }
+        }
     }
 
     /** Stops drawing on the second display, then closes its window. */
@@ -3496,18 +3647,12 @@ class GameActivity : ComponentActivity() {
         publishPlayers(model)
         publishSecondScreen(model)
         applyAchievements(model)
-        model.setPanelHeader(menuPanelHeader())
+        model.setPanelHeader(panelHeader())
         menuModel = model
         // Multi-disc content (an m3u, a multi-disc PBP): the core reports its discs through the disk-control interface.
-        retroView?.takeIf { gameReady && netplay == null }?.let { view ->
-            lifecycleScope.launch {
-                val (count, current) = withContext(Dispatchers.IO) {
-                    runCatching { view.getAvailableDisks() to view.getCurrentDisk() }
-                        .onFailure { NxLog.w("GameActivity", "disc query failed", it) }.getOrNull()
-                } ?: return@launch
-                menuModel?.takeIf { it === model }?.let { it.setDiscs(current, count); menuState.value = it.state }
-            }
-        }
+        refreshDiscs()
+        refreshPlayTime()
+        syncPanelClock()
         menuState.value = model.state
         menuAxes.reset()
         stickRouter.onMenuToggled()
@@ -3576,17 +3721,6 @@ class GameActivity : ComponentActivity() {
     }
 
     /**
-     * The in-game menu panel's header for now: the game's title and console, the clock and battery at the open. No box
-     * art or play time yet (0); the achievement count comes from the menu model's own set.
-     */
-    private fun menuPanelHeader(): GamePanelHeader {
-        val battery = (getSystemService(BATTERY_SERVICE) as? BatteryManager)
-            ?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it in 0..100 }
-        val clock = android.text.format.DateFormat.getTimeFormat(this).format(java.util.Date())
-        return GamePanelHeader(intent.getStringExtra(EXTRA_TITLE) ?: "Paused", null, gameTag, 0L, 0L, null, clock, battery)
-    }
-
-    /**
      * Portrait: confine the modal to the top game area so the bottom controls stay visible and can drive
      * the menu (the whole height when the band is dropped). Landscape: cover the whole screen. Re-applied by
      * [applyLayout] (rotation, controller change) while the menu is open.
@@ -3611,6 +3745,7 @@ class GameActivity : ComponentActivity() {
         menuView = null
         menuModel = null
         menuState.value = null
+        syncPanelClock()
         updatePadVisibility()
         netplayGame?.takeIf { it.live }?.resume()   // netplay: input goes out again (see openMenu)
         if (!netplayStartFailed) {   // netplay: a failed start keeps the game paused behind its dialog
@@ -3676,6 +3811,8 @@ class GameActivity : ComponentActivity() {
                 if (gameReady) retroView?.let(::applyCheats)
             }
             is MenuEffect.ChangeDisc -> retroView?.let { view ->
+                discs = discs?.let { effect.index to it.second }
+                refreshDualPanel()
                 lifecycleScope.launch(Dispatchers.IO) {
                     runCatching { view.changeDisk(effect.index) }.onFailure { NxLog.w("GameActivity", "disc change failed", it) }
                 }
@@ -3696,6 +3833,7 @@ class GameActivity : ComponentActivity() {
                 }
                 connectDolphinPorts()   // a slot filled here is connected; one emptied stays so (no unplug prompt)
                 menuModel?.let(::publishPlayers)
+                refreshDualPanel()
             }
             is MenuEffect.SetPlaying -> slots?.let { s ->
                 s.setOutOfPlay(DeviceKey(effect.key), out = !effect.playing)?.let { port ->
@@ -3940,12 +4078,11 @@ class GameActivity : ComponentActivity() {
         val ss = saveStates ?: run { slotsUi.value = emptyList(); return }
         slotsJob?.cancel()
         slotsJob = lifecycleScope.launch {
-            val (slots, last, auto) = withContext(Dispatchers.IO) {
-                runCatching { Triple(readSlots(ss), ss.lastSlot(), slotUi(ss.autoSlot(), "Auto")) }
+            val (slots, last) = withContext(Dispatchers.IO) {
+                runCatching { readSlots(ss) to ss.lastSlot() }
                     .onFailure { NxLog.w("GameActivity", "could not list the slots", it) }.getOrNull()
             } ?: return@launch
             slotsUi.value = slots
-            panelSlots.value = listOf(auto) + slots
             lastSlotCache = last
         }
     }
@@ -3953,7 +4090,7 @@ class GameActivity : ComponentActivity() {
     /** The slot strip for [ss]: file listings and thumbnail bounds. Blocking I/O. */
     private fun readSlots(ss: SaveStates): List<SlotUi> = ss.slots().map { slotUi(it, "Slot ${it.index}") }
 
-    /** One slot as the strip and the panel show it; the thumbnail's URI carries its mtime, so a new save reloads it. Blocking I/O. */
+    /** One slot as the strip shows it; the thumbnail's URI carries its mtime, so a new save reloads it. Blocking I/O. */
     private fun slotUi(s: SaveStates.Slot, label: String): SlotUi {
         val sub = if (s.occupied) formatSlotTime(s.timestampMillis) else "empty"
         val thumb = s.thumb?.let { Uri.fromFile(it).buildUpon().fragment(it.lastModified().toString()).build().toString() }
@@ -3995,32 +4132,25 @@ class GameActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Loads manual [slot] and records it as the last used one; null loads the auto-resume state (the panel's Auto row),
-     * the resume pointer staying where it is. [loaded]: the toast on success (the panel's loads; the menu's close the
-     * menu instead).
-     */
-    private fun loadFromSlot(slot: Int?, loaded: String? = null) {
+    /** Loads manual [slot] and records it as the last used one; the menu closes on success. */
+    private fun loadFromSlot(slot: Int) {
         val view = retroView ?: return
         val ss = saveStates ?: return
         // The read is in the job too, not on main: a state file is up to tens of MB (PSP and DC).
         trackSlotJob(lifecycleScope.launch(Dispatchers.IO) {
-            val read = runCatching { if (slot != null) ss.readState(slot) else ss.readSlotState(NxPaths.AUTO_SLOT) }
+            val read = runCatching { ss.readState(slot) }
                 .onFailure { NxLog.e("GameActivity", "could not read slot $slot", it) }
             if (read.getOrNull() == null && read.isSuccess) return@launch   // empty slot: ignore (the menu stays open)
             val ok = read.getOrNull()?.let { bytes -> runCatching { view.unserializeState(bytes) }.getOrDefault(false) } ?: false
-            if (ok && slot != null) runCatching { saveStates?.rememberSlot(slot) }
+            if (ok) runCatching { saveStates?.rememberSlot(slot) }
                 .onFailure { NxLog.e("GameActivity", "could not record last slot", it) }
             // The loaded state's rumble may stay latched unreported: start from still rather than re-apply the old one.
             withContext(Dispatchers.Main) {
                 if (ok) {
                     rumbles.forEach { it.forget() }
-                    if (slot != null) {
-                        lastSlotCache = slot   // the pointer moved: a quick save or load right after follows it before the refresh lands
-                        refreshSlots()
-                    }
+                    lastSlotCache = slot   // the pointer moved: a save or load right after follows it before the refresh lands
+                    refreshSlots()
                     closeMenu()
-                    loaded?.let(::toast)
                 } else toast("Load failed")
             }
         })
@@ -4224,20 +4354,7 @@ class GameActivity : ComponentActivity() {
 
     private fun refreshMenuAchievements() {
         menuModel?.let { applyAchievements(it); menuState.value = it.state }
-        refreshPanelAchievements()
-    }
-
-    /**
-     * The panel's Achievements tab: the set and its summary while there is a session with a set, else none (no tab). Only
-     * while the panel is up ([syncPanel] reads it as it comes up).
-     */
-    private fun refreshPanelAchievements() {
-        if (!panelShown()) return
-        val b = achievements?.takeIf { it.available }
-        val summary = b?.summary()
-        panelAchievements.value = if (b != null && summary != null) {
-            PanelAchievements(b.list().sortedBy(appSettings.raSortOrder), summary, b.badges)   // the menu's order
-        } else null
+        refreshDualPanel()
     }
 
     private fun toggleMute(id: Int) {
@@ -4566,9 +4683,16 @@ class GameActivity : ComponentActivity() {
         publishNotifications()
     }
 
-    /** The Players page's data: each slot (Empty, a live pad, a held one) and each connected pad, names numbered. */
+    /** The Players page's data in the open menu. */
     private fun publishPlayers(model: InGameMenuModel) {
-        val s = slots ?: return
+        val (slotRows, padRows) = playerRows() ?: return
+        model.setPlayers(slotRows, padRows)
+        menuState.value = model.state
+    }
+
+    /** The Players page's rows: each slot (Empty, a live pad, a held one) and each connected pad, names numbered; null without slots. */
+    private fun playerRows(): Pair<List<PlayerSlotRow>, List<PlayerPadRow>>? {
+        val s = slots ?: return null
         val pads = connectedPads()
         pads.forEach {
             val key = DeviceKey(it.descriptor)
@@ -4578,17 +4702,13 @@ class GameActivity : ComponentActivity() {
         val keys = pads.map { DeviceKey(it.descriptor) }
         val numbered = keys.zip(PadNames.numbered(pads.map { it.name })).toMap()
         fun name(k: DeviceKey) = numbered[k] ?: padNames[k] ?: "Controller"
-        model.setPlayers(
-            s.slots().map { v ->
-                when (v) {
-                    SlotView.Empty -> PlayerSlotRow(null, "", connected = false)
-                    is SlotView.Playing -> PlayerSlotRow(v.key.value, name(v.key), connected = true)
-                    is SlotView.Held -> PlayerSlotRow(v.key.value, name(v.key), connected = false)
-                }
-            },
-            keys.map { k -> PlayerPadRow(k.value, name(k), playing = k !in s.outOfPlay) },
-        )
-        menuState.value = model.state
+        return s.slots().map { v ->
+            when (v) {
+                SlotView.Empty -> PlayerSlotRow(null, "", connected = false)
+                is SlotView.Playing -> PlayerSlotRow(v.key.value, name(v.key), connected = true)
+                is SlotView.Held -> PlayerSlotRow(v.key.value, name(v.key), connected = false)
+            }
+        } to keys.map { k -> PlayerPadRow(k.value, name(k), playing = k !in s.outOfPlay) }
     }
 
     /** The connected physical pads, one per descriptor (a pad may show as several input devices). */
@@ -4784,5 +4904,3 @@ private data class SecondSurface(val surface: Surface, val width: Int, val heigh
 /** A display's real size in px and its density: a change needs a new window on it. */
 private data class DisplayShape(val width: Int, val height: Int, val densityDpi: Int)
 
-/** The panel's Achievements tab: the set in the menu's order, its (unlocked, total) summary and the badge listing. */
-private data class PanelAchievements(val list: List<RaAchievement>, val summary: Pair<Int, Int>, val badges: Map<String, String>)

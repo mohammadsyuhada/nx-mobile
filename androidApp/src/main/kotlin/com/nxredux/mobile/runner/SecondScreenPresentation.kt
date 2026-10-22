@@ -16,6 +16,7 @@ import android.view.WindowManager
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,7 +35,7 @@ import com.nxredux.mobile.ui.nx.PanelPill
 
 /**
  * The game's window on the second display: a black [FrameLayout] with a [SurfaceView] the GL thread draws part of the
- * frame on ([onSurface]), and a [ComposeView] above it for the panel ([showPanel]) or the Panel pill ([showPanelPill]).
+ * frame on ([onSurface]), and a [ComposeView] above it for the game panel ([showPanel]) or the Panel pill ([showPanelPill]).
  * Compose runs on the [activity]'s lifecycle.
  */
 class SecondScreenPresentation(private val activity: ComponentActivity, display: Display) : Presentation(activity, display) {
@@ -119,6 +120,11 @@ class SecondScreenPresentation(private val activity: ComponentActivity, display:
     fun showPanel(content: (@Composable () -> Unit)?) {
         if (content != null) releaseTouch()   // the surface stops forwarding touches under the panel: a held finger lifts now
         panel = content
+    }
+
+    /** A short toast on this display (the picture's, when the game panel is on main): the panel's "Disc N of M". */
+    fun toast(text: String) {
+        Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
     }
 
     /** Lifts a finger still held on the surface ([onTouch] with down false); nothing when none is. */

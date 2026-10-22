@@ -28,6 +28,8 @@ data class GameSession(
     val systemSets: List<String> = emptyList(),
     /** The library path (GamePath, the Recently Played key) — game time's identity; null when unknown. */
     val gamePath: String? = null,
+    /** The game's box art as the library resolved it ([com.nxredux.mobile.ui.panelArt]): the game panel's header picture; null, none. */
+    val artPath: String? = null,
     /** Set for a Wi-Fi netplay launch: this device's role, the peer and the agreed core; null for every other launch. */
     val netplay: NetplaySession? = null,
 )

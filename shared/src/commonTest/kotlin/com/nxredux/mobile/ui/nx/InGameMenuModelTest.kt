@@ -1462,4 +1462,17 @@ class InGameMenuModelTest {
         assertEquals(MenuEffect.QuitWithoutResume, m.press(NxButton.A))
         assertEquals(MenuEffect.QuitWithoutResume, m.activate(1))
     }
+
+    @Test fun panel_header_and_a_new_console_tag_bump_the_panel_version() {
+        val m = model()
+        val v0 = m.state.panelVersion
+        m.setPanelHeader(GamePanelHeader("Tetris", null, plainTag, 0L, 0L, null, "12:01", 80))
+        assertTrue(m.state.panelVersion > v0)
+        assertEquals("12:01", m.panelState().header.clockText)
+        val v1 = m.state.panelVersion
+        m.setFrontend(FrontendOptions.defaults(plainTag), emptyList(), plainLocked, plainTag)   // same tag: the panel is unchanged
+        assertEquals(v1, m.state.panelVersion)
+        m.setFrontend(FrontendOptions.defaults("PS"), emptyList(), plainLocked, "PS")
+        assertTrue(m.state.panelVersion > v1)
+    }
 }

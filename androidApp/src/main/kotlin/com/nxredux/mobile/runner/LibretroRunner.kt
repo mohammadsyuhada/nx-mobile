@@ -28,6 +28,7 @@ class LibretroRunner(private val context: Context, private val ownTask: () -> Bo
             .putExtra(GameActivity.EXTRA_SYSTEM_SETS, session.systemSets.toTypedArray())
             .apply { session.resumeSlot?.let { putExtra(GameActivity.EXTRA_RESUME_SLOT, it) } }
             .apply { session.gamePath?.let { putExtra(GameActivity.EXTRA_GAME_PATH, it) } }
+            .apply { session.artPath?.let { putExtra(GameActivity.EXTRA_ART_PATH, it) } }
             .apply {
                 session.netplay?.let {
                     putExtra(GameActivity.EXTRA_NETPLAY_ROLE, it.role.name)

@@ -4413,7 +4413,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             // a save that just arrived.
             SaveTransferRules.launchRefusal(deps.saveTransfer?.importing == true, deps.deviceSync?.running == true)?.let { showNotice(it); return@launch }
             dropPushedTab()
-            deps.runner.launch(GameSession(sys.tag, game.shownName, core, game.ref, game.folder, game.fileName, resumeSlot, all, systemSets = systemSets, gamePath = game.path, netplay = netplay)) {
+            deps.runner.launch(GameSession(sys.tag, game.shownName, core, game.ref, game.folder, game.fileName, resumeSlot, all, systemSets = systemSets, gamePath = game.path,
+                artPath = panelArt(game.boxartRef?.value, game.box2dRef?.value, game.gridRef?.value, game.screenshotRef?.value), netplay = netplay)) {
                 recorder.record(recent)
             }
         }

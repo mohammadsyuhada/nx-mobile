@@ -125,6 +125,12 @@ object GamePanelModel {
         else -> "${s.name} (disconnected)"
     }
 
+    /** The disc after [index] (0-based) of [count], wrapping, as each Swap disc tap steps it. */
+    fun nextDisc(index: Int, count: Int): Int = if (count <= 0) 0 else (index + 1).mod(count)
+
+    /** The toast a Swap disc tap shows: "Disc 2 of 3" ([index] 0-based). */
+    fun discToast(index: Int, count: Int): String = "Disc ${index + 1} of $count"
+
     /** The header's play line: "Today 23m 4s · Total 4h 12m". */
     fun timeLine(h: GamePanelHeader): String =
         "Today ${GameTimeFormat.duration(h.todayMs)} · Total ${GameTimeFormat.duration(h.totalMs)}"
