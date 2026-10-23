@@ -2,7 +2,7 @@ package com.nxredux.mobile.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -65,8 +65,8 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 
-/** The picker's page title: what it picks. */
-internal fun toolAppsTitle(pick: AppPick): String = if (pick == AppPick.GAMES) "Android games" else "Android apps"
+/** The grid's page title: the app drawer's tool name, or what the games picker picks. */
+internal fun toolAppsTitle(pick: AppPick): String = if (pick == AppPick.GAMES) "Android games" else checkNotNull(ToolKind.APPS.toolName)
 
 /** The picker's side margin and the gap between its tiles, dp. */
 internal const val TOOL_APPS_GUTTER = 16f
@@ -99,18 +99,22 @@ internal fun toolAppsTileWidth(widthDp: Float, columns: Int): Float =
     (widthDp - 2 * TOOL_APPS_GUTTER - (columns - 1) * TOOL_APPS_GAP) / columns
 
 /**
- * Settings -> Launcher -> Android apps: every launchable app as a tile, its own icon over its name. A shown app (in
- * Tools) carries a check badge, a hidden one is dimmed. The d-pad moves by tiles (AppState learns the columns through
- * [onColumns]), A or a tap on the selected tile shows or hides it, B goes back. [titled]: the two-pane Settings' right
- * pane, which names the page as the Settings pages do.
+ * Every launchable app as a tile, its own icon over its name. The app drawer (Tools → Apps): an app in Tools carries a
+ * check badge; A or a tap on the selected tile opens it, MENU or a long press ([onLongPress]) its menu. The Android games
+ * picker: an app in the console carries the badge, the rest are dimmed, and A shows or hides one. The d-pad moves by
+ * tiles (AppState learns the columns through [onColumns]), B goes back. [titled]: the games picker in the two-pane
+ * Settings' right pane, which names the page as the Settings pages do; the drawer is always titled.
  */
 @Composable
 fun ToolAppsScreen(
     screen: Screen.ToolApps, selectedIndex: Int,
     onSelect: (Int) -> Unit, onOpen: (Int) -> Unit, onColumns: (Int) -> Unit, modifier: Modifier = Modifier,
     onHint: ((NxButton) -> Unit)? = null,
+    onLongPress: ((Int) -> Unit)? = null,
     titled: Boolean = false,
+    hints: Boolean = true,   // false: the second display's unfocused preview, with no hint bar
 ) {
+    val drawer = screen.pick == AppPick.TOOLS
     // No other launchable app: a short note in place of the grid, B still going back.
     if (screen.apps.isEmpty()) {
         NxEmptyState("No apps to show", "No other launchable app is installed.", listOf(Hint(NxButton.B, "Back")), onHint ?: {}, modifier)
@@ -118,9 +122,15 @@ fun ToolAppsScreen(
     }
     NxScreenScaffold(
         rows = emptyList(), selectedIndex = selectedIndex, showArt = false,
-        hints = listOf(Hint(NxButton.B, "Back"), Hint(NxButton.A, "Select")),
+        hints = if (!hints) emptyList() else if (drawer) listOf(Hint(NxButton.MENU, "Options"), Hint(NxButton.B, "Back"), Hint(NxButton.A, "Open"))
+            else listOf(Hint(NxButton.B, "Back"), Hint(NxButton.A, "Select")),
         onSelect = onSelect, onOpen = onOpen, onHint = onHint, modifier = modifier,
-        grid = { m -> ToolAppsGrid(screen.apps, selectedIndex, onSelect, onOpen, onColumns, if (titled) toolAppsTitle(screen.pick) else null, m) },
+        grid = { m ->
+            ToolAppsGrid(
+                screen.apps, selectedIndex, onSelect, onOpen, onColumns, onLongPress.takeIf { drawer },
+                if (titled || drawer) toolAppsTitle(screen.pick) else null, dimHidden = !drawer, m,
+            )
+        },
     )
 }
 
@@ -128,7 +138,7 @@ fun ToolAppsScreen(
 @Composable
 private fun ToolAppsGrid(
     apps: List<ToolAppRow>, selectedIndex: Int, onSelect: (Int) -> Unit, onOpen: (Int) -> Unit, onColumns: (Int) -> Unit,
-    title: String?, modifier: Modifier,
+    onLongPress: ((Int) -> Unit)?, title: String?, dimHidden: Boolean, modifier: Modifier,
 ) {
     val tapOpens = LocalNxTapOpens.current
     BoxWithConstraints(modifier) {
@@ -159,27 +169,29 @@ private fun ToolAppsGrid(
                 horizontalArrangement = Arrangement.spacedBy(TOOL_APPS_GAP.dp), verticalArrangement = Arrangement.spacedBy(TOOL_APPS_GAP.dp),
             ) {
                 itemsIndexed(apps, key = { _, app -> app.id }) { i, app ->
-                    // A tap selects a tile; a tap on the selected one shows or hides it, as A does.
-                    ToolAppTile(app, lit = i == selectedIndex, tileW) { nxTap(i, i == selectedIndex, tapOpens(i), onSelect, onOpen) }
+                    // A tap selects a tile; a tap on the selected one acts as A does; a long press opens the drawer's menu.
+                    ToolAppTile(app, lit = i == selectedIndex, tileW, dim = dimHidden && !app.shown, onLongPress = onLongPress?.let { f -> { f(i) } }) {
+                        nxTap(i, i == selectedIndex, tapOpens(i), onSelect, onOpen)
+                    }
                 }
             }
         }
     }
 }
 
-/** One app: its icon (the generic app glyph until it loads, or when it has none) over its name on two lines. */
+/** One app: its icon (the generic app glyph until it loads, or when it has none) over its name on two lines; [dim]: faded. */
 @Composable
-private fun ToolAppTile(app: ToolAppRow, lit: Boolean, tileW: Float, onTap: () -> Unit) {
+private fun ToolAppTile(app: ToolAppRow, lit: Boolean, tileW: Float, dim: Boolean, onLongPress: (() -> Unit)?, onTap: () -> Unit) {
     val colors = LocalNxColors.current
     val content = if (lit) colors.onAccent else colors.listText
     val iconDp = min(tileW * TOOL_APPS_ICON_SHARE, TOOL_APPS_ICON_MAX)
     Box(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(NX_TILE_CORNER.dp))
             .then(if (lit) Modifier.background(nxHighlight()) else Modifier.tilePlate(colors.background, colors.main))
-            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onTap),
+            .combinedClickable(remember { MutableInteractionSource() }, indication = null, onLongClick = onLongPress, onClick = onTap),
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 10.dp).alpha(if (app.shown) 1f else TOOL_APPS_HIDDEN_ALPHA),
+            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 10.dp).alpha(if (dim) TOOL_APPS_HIDDEN_ALPHA else 1f),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             ToolIcon(toolIcon(ToolKind.APP), app.id, content, Modifier.size(iconDp.dp))

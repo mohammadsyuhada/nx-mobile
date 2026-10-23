@@ -36,7 +36,8 @@ fun settingsCategories(launcher: Boolean = false, secondScreen: Boolean = false)
 fun settingsPane(screen: Screen): SettingsPane? = when (screen) {
     is Screen.SettingsMenu -> SettingsPane.LEFT
     is Screen.EmulatorOptions -> if (gameSettingsModal(screen)) null else SettingsPane.RIGHT
-    is Screen.Settings, is Screen.EmulatorList, is Screen.EmulatorConsoles, is Screen.ToolApps -> SettingsPane.RIGHT
+    is Screen.Settings, is Screen.EmulatorList, is Screen.EmulatorConsoles -> SettingsPane.RIGHT
+    is Screen.ToolApps -> if (screen.pick == AppPick.GAMES) SettingsPane.RIGHT else null   // the app drawer is a tool, drawn whole
     else -> null
 }
 
@@ -56,11 +57,11 @@ fun gameSettingsModal(screen: Screen): Boolean = screen is Screen.EmulatorOption
 fun settingsMarkShift(split: Boolean): Float =
     if (split) SETTINGS_SPLIT_LEFT + (1f - SETTINGS_SPLIT_LEFT) / 2f - 0.5f else 0f
 
-/** The category a right-pane [screen] belongs to (its top section; Emulator Settings is under Emulators, Android apps under Launcher); null otherwise. */
+/** The category a right-pane [screen] belongs to (its top section; Emulator Settings is under Emulators, Android games under Launcher); null otherwise. */
 fun settingsCategoryOf(screen: Screen): SettingsSection? = when (screen) {
     is Screen.Settings -> generateSequence(screen.section) { it.parent }.last()
     is Screen.EmulatorList, is Screen.EmulatorConsoles, is Screen.EmulatorOptions -> SettingsSection.EMULATORS
-    is Screen.ToolApps -> SettingsSection.LAUNCHER
+    is Screen.ToolApps -> if (screen.pick == AppPick.GAMES) SettingsSection.LAUNCHER else null
     else -> null
 }
 

@@ -20,6 +20,7 @@ class AppIconsTest {
         override fun isHome() = false
         override fun setHome(on: Boolean) = Unit
         override suspend fun icon(id: String): ImageBitmap? { asked += id; gate?.await(); return null }
+        override suspend fun silhouette(id: String): ImageBitmap? { asked += "mono $id"; gate?.await(); return null }
     }
 
     @Test fun nothingIsCachedBeforeALoad() = runTest {
@@ -71,5 +72,15 @@ class AppIconsTest {
         launcher.gate = null
         icons.load("b/B")
         assertEquals(listOf("b/B", "b/B"), launcher.asked)
+    }
+
+    // The colour icon and the mono one are separate loads, each cached once; retaining an app keeps both.
+    @Test fun monoIsItsOwnLoad() = runTest {
+        val launcher = CountingLauncher()
+        val icons = AppIcons(launcher, backgroundScope)
+        icons.load("a/A"); icons.load("a/A", mono = true); icons.load("a/A", mono = true); icons.load("b/B", mono = true)
+        icons.retain(listOf("a/A"))
+        icons.load("a/A"); icons.load("a/A", mono = true); icons.load("b/B", mono = true)
+        assertEquals(listOf("a/A", "mono a/A", "mono b/B", "mono b/B"), launcher.asked)
     }
 }

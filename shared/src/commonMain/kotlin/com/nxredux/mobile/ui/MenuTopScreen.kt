@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +32,8 @@ import com.nxredux.mobile.ui.nx.LauncherChrome
 import com.nxredux.mobile.ui.nx.ListSelection
 import com.nxredux.mobile.ui.nx.LocalLauncherChrome
 import com.nxredux.mobile.ui.nx.LocalNxColors
+import com.nxredux.mobile.ui.nx.LocalNxTapOpens
+import com.nxredux.mobile.ui.nx.NxLoadingOverlay
 import com.nxredux.mobile.ui.nx.LocalPortrait
 import com.nxredux.mobile.ui.nx.LocalWindowSize
 import com.nxredux.mobile.ui.nx.NxScreenBackground
@@ -45,7 +48,9 @@ import org.jetbrains.compose.resources.painterResource
  * The top screen while the main menu is on the second display ([AppState.dualMenu]): the same [AppState] as [App], drawn
  * by [DualMenu.top]. A [TopContent.Preview] of the highlighted console's or collection's games (unfocused: no hints, a
  * tap opens the list there, a swipe only scrolls); the [TopContent.GameList] itself while it has focus, with its hints,
- * every overlay and the Netplay sheet (the modals follow the focused screen); else the [TopContent.Backdrop]. It has the
+ * every overlay and the Netplay sheet (the modals follow the focused screen); the highlighted Apps tile's drawer as a
+ * [TopContent.AppsPreview] (a tap opens it there on that app); a [TopContent.Tool] opened from the menu, with the focus,
+ * its loading, dialogs and notices; else the [TopContent.Backdrop]. It has the
  * theme and the launcher locals [App] has ([MenuLocals]), from the same settings; the image loader is App's (process-wide).
  * There is no pad here, so the footer follows a connected controller alone.
  */
@@ -53,6 +58,8 @@ import org.jetbrains.compose.resources.painterResource
 fun MenuTopScreen(state: AppState) {
     val screen by state.screen.collectAsState()
     val secondList by state.secondList.collectAsState()
+    val drawerPreview by state.drawerPreview.collectAsState()
+    val toolOnTop by state.toolOnTop.collectAsState()
     val dual by state.dualMenu.collectAsState()
     val selection = state.selection.collectAsState()
     val resumeInfo = state.resumeInfo.collectAsState()
@@ -70,8 +77,23 @@ fun MenuTopScreen(state: AppState) {
             ) {
                 // No HandheldShell here: the screen's own shape and size, as the shell gives App's pages.
                 CompositionLocalProvider(LocalPortrait provides (maxHeight > maxWidth), LocalWindowSize provides DpSize(maxWidth, maxHeight)) {
-                    when (val top = menuTop(dual, screen, secondList)) {
+                    when (val top = menuTop(dual, screen, secondList, drawerPreview, toolOnTop)) {
                         is TopContent.Preview -> PreviewList(state, top.list, gameInfo)
+                        is TopContent.AppsPreview -> AppsPreview(state, top.apps)
+                        TopContent.Tool -> Box(Modifier.fillMaxSize()) {
+                            // Laid out here: this window decides whether Settings splits (App reports the bottom's otherwise).
+                            val split = settingsSplit(LocalWindowSize.current)
+                            LaunchedEffect(split) { state.onSettingsSplit(split) }
+                            val live = remember { mutableStateOf(true) }
+                            val chooser by state.chooser.collectAsState()
+                            val error by state.error.collectAsState()
+                            val notice by state.notice.collectAsState()
+                            val loading by state.loading.collectAsState()
+                            val loadingMessage by state.loadingMessage.collectAsState()
+                            PageContent(state, screen, selection, resumeInfo, gameInfo, live, onTop = true)
+                            if (loading) NxLoadingOverlay(loadingMessage)
+                            PageOverlays(state, chooser, error, notice, valueAnchor)
+                        }
                         TopContent.GameList -> (screen as? Screen.Games)?.let { s ->
                             val live = remember { mutableStateOf(true) }
                             val launcherInfo = launcherGameInfo(gameInfo, LocalLauncherChrome.current.extraInfo)
@@ -89,8 +111,23 @@ fun MenuTopScreen(state: AppState) {
 }
 
 /** [DualMenu.top] while the menu is on the second display ([dual]); else the backdrop, never a list. */
-internal fun menuTop(dual: Boolean, screen: Screen, preview: SecondList?): TopContent =
-    if (dual) DualMenu.top(screen, preview) else TopContent.Backdrop
+internal fun menuTop(dual: Boolean, screen: Screen, preview: SecondList?, apps: List<ToolAppRow>? = null, tool: Boolean = false): TopContent =
+    if (dual) DualMenu.top(screen, preview, apps, tool) else TopContent.Backdrop
+
+/**
+ * The highlighted Apps tile's drawer ([apps]), unfocused: no hints and no highlight until a swipe-free tap, which opens
+ * the drawer on the top screen on that app ([AppState.openDrawerPreviewApp]).
+ */
+@Composable
+private fun AppsPreview(state: AppState, apps: List<ToolAppRow>) {
+    val page = remember(apps) { Screen.ToolApps(apps, AppPick.TOOLS) }
+    val selection = remember(apps) { mutableStateOf(ListSelection(-1, apps.size)) }
+    val live = remember { mutableStateOf(true) }
+    PageBackground(state, page, state.styleOf(page), selection, live)
+    CompositionLocalProvider(LocalNxTapOpens provides { true }) {
+        ToolAppsScreen(page, -1, onSelect = {}, onOpen = state::openDrawerPreviewApp, onColumns = {}, hints = false)
+    }
+}
 
 /**
  * The highlighted console's or collection's games ([list]) in the game list layout (Settings → Layouts), over a game list's
