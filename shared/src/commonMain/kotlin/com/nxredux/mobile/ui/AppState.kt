@@ -13,17 +13,11 @@ import com.nxredux.mobile.library.rewriteLines
 import com.nxredux.mobile.library.RomMover
 import com.nxredux.mobile.library.MoveResult
 import com.nxredux.mobile.achievements.RaController
-import com.nxredux.mobile.achievements.RaDownloadPhase
-import com.nxredux.mobile.achievements.RaGameFetch
 import com.nxredux.mobile.achievements.RaGameView
 import com.nxredux.mobile.achievements.RaMessage
-import com.nxredux.mobile.achievements.RaPrefetch
 import com.nxredux.mobile.achievements.RaProgress
-import com.nxredux.mobile.achievements.RaSortOrder
 import com.nxredux.mobile.achievements.RaState
 import com.nxredux.mobile.achievements.RaStatus
-import com.nxredux.mobile.achievements.RaStoreException
-import com.nxredux.mobile.achievements.sortedBy
 import com.nxredux.mobile.cheats.db.CheatDbController
 import com.nxredux.mobile.cheats.db.CheatDbMessage
 import com.nxredux.mobile.sync.DeviceSyncController
@@ -143,12 +137,7 @@ import com.nxredux.mobile.storage.Shortcut
 import com.nxredux.mobile.storage.SidecarStore
 import com.nxredux.mobile.storage.ToolPins
 import com.nxredux.mobile.storage.UserDataStore
-import com.nxredux.mobile.ui.nx.HomeCarouselMove
-import com.nxredux.mobile.ui.nx.homeCarouselBottom
-import com.nxredux.mobile.ui.nx.homeCarouselStep
 import com.nxredux.mobile.ui.nx.HomeFrame
-import com.nxredux.mobile.ui.nx.HomeMemory
-import com.nxredux.mobile.ui.nx.HomeShape
 import com.nxredux.mobile.ui.nx.HomeShelf
 import com.nxredux.mobile.ui.nx.FooterMode
 import com.nxredux.mobile.ui.nx.LauncherChrome
@@ -159,13 +148,8 @@ import com.nxredux.mobile.ui.nx.NxButton
 import com.nxredux.mobile.ui.nx.gridAtTop
 import com.nxredux.mobile.ui.nx.gridBottom
 import com.nxredux.mobile.ui.nx.gridStep
-import com.nxredux.mobile.ui.nx.homeAtTop
-import com.nxredux.mobile.ui.nx.homeBoard
 import com.nxredux.mobile.ui.nx.homeBottom
 import com.nxredux.mobile.ui.nx.homeClamp
-import com.nxredux.mobile.ui.nx.homeRemember
-import com.nxredux.mobile.ui.nx.homeShape
-import com.nxredux.mobile.ui.nx.homeStep
 import com.nxredux.mobile.ui.nx.rowStep
 import com.nxredux.mobile.ui.nx.stackStep
 import kotlinx.coroutines.CancellationException
@@ -519,12 +503,6 @@ private const val NOTICE_MILLIS = 3_000L
  */
 internal const val ANDROID_ASK_GUARD_MILLIS = 300L
 
-/** Home's frame before its screen reports one: a 960 × 344 landscape stand-in. */
-private val HOME_STAND_IN = HomeFrame(960f, 344f, false)
-
-/** How many Home builds [AppState] keeps, to know the frame and strip lines older rows on screen were built for. */
-private const val HOME_BUILDS_KEPT = 8
-
 /**
  * A Minimal page's open: the other names fade out over [MINIMAL_LEAVE_MS] (a folder's list opens then), and a launch's
  * band grows over the screen as it goes black, the row opening this long after A; the band clears this long after.
@@ -532,8 +510,6 @@ private const val HOME_BUILDS_KEPT = 8
 internal const val MINIMAL_LEAVE_MS = 120L
 internal const val MINIMAL_OPEN_MS = MINIMAL_LEAVE_MS + 350L
 private const val MINIMAL_CLEAR_MS = 1_000L
-/** The details pane's achievements download only after the highlight has stayed on a game this long. */
-private const val DETAIL_RA_REST_MS = 500L
 /** A game's band stays black until the app is back in front ([AppState.onForeground]), or this long if it never left. */
 private const val MINIMAL_GAME_CLEAR_MS = 10_000L
 
@@ -550,9 +526,6 @@ private const val ART_MAX_WAIT_MS = 15_000L
  * false for a folder whose list is Minimal too, which only fades the other names before it morphs in.
  */
 data class MinimalOpening(val page: Any, val index: Int, val band: Boolean = true)
-
-/** One Home build: its [rows], their [view], and the [frame] and strip [lines] its board was made on. */
-private data class HomeBuild(val rows: List<MainRow>, val view: HomeView, val frame: HomeFrame, val lines: Int)
 
 /** The deepest a Settings right pane goes below its category (Library -> Emulator Settings -> consoles -> options), and some. */
 private const val SETTINGS_MAX_DEPTH = 6
@@ -767,7 +740,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private val tabSelections = HashMap<MenuCategory, ListSelection>()   // each tab's row, remembered across visits
     private var gridColumns = 0   // the Grid body's column count for the screen showing now; 0 until it lays out
     private var gridRows = 2      // and its row count: 2 on phones, 3–4 on a tablet-class window
-    private var toolAppsColumns = 0   // the Android apps picker's column count; 0 until it lays out (it steps as one column)
     private var installedCache: List<InstalledApp>? = null   // the last [AppLauncher.installedApps]; null until the first load
     private var installedJob: Job? = null
     /**
@@ -827,40 +799,49 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private val _gridPresses = MutableStateFlow(0)
     /** Counts the d-pad presses a laid-out Grid takes (a move or not): the Grid brings a swipe-scrolled selection back on one. */
     val gridPresses: StateFlow<Int> = _gridPresses.asStateFlow()
-    /** What [home] was built from (to rebuild it with new stats or a new frame, no I/O): [recent] are recent.txt's paths, for Not started. */
-    private data class HomeInputs(val last: MainRow.Continue?, val games: List<Listed>, val tools: List<ToolRow>, val recent: Set<String>)
-    private var homeInputs: HomeInputs? = null
-    private var homeFrame: HomeFrame? = null   // Home's body as its screen last reported it (null: not laid out yet)
-    private val _homeView = MutableStateFlow(HomeView(null, 1, 0, 0))
-    /** What Home draws beside its rows (the strip, the top section's size, the pinned counts), for the rows on screen. */
-    val homeView: StateFlow<HomeView> = _homeView.asStateFlow()
-    /** The last Home builds, newest first ([HOME_BUILDS_KEPT]): rows on screen may be older than the newest (a menu holds the swap back). */
-    private val homeBuilds = ArrayDeque<HomeBuild>()
-    /** Home's stats strip: the last result, kept while a newer one computes; "…" until the first (no achievements signed out). */
-    private var homeStats = HomeStats(null, null, signedIn = raSignedIn(), top = null, computed = false)
-    private var homeStatsDay = Long.MIN_VALUE   // the local day (its midnight) the last stats computation was asked on
-    private var homeStatsJob: Job? = null
-    private var homeStatsDirty = false   // a refresh was asked for while one ran: it runs once more
-    private var homeStatsAsked = false   // the first menu show asked for them
-    private val _homeCarouselRowLast = MutableStateFlow(0)
-    /**
-     * The Carousel Home's row item last on: UP from the dock lands there, and the carousel shows it while the dock has
-     * the focus ([com.nxredux.mobile.ui.nx.homeCarouselShownRow]). One memory for both, so they agree after Home leaves and comes back.
-     */
-    val homeCarouselRowLast: StateFlow<Int> = _homeCarouselRowLast.asStateFlow()
-    private var homeRowLast: Int
-        get() = _homeCarouselRowLast.value
-        set(v) { _homeCarouselRowLast.value = v }
-    private var homeDockLast: Int? = null   // its dock square last on
-    private var homeCarouselRows = -1   // the row count they were taken in
-    private var homeMemory = HomeMemory()   // Home's d-pad memory: the top tile last on, the one left before it, the pin last on
-    private var homeLastIndex = -1   // Home's focus as [homeMemory] last noted it (in [homeMemoryRows]), the move's start
-    private var homeSelShape: HomeShape? = null   // the Home shape the remembered Home row (tabSelections) was taken in
-    private var homeSelRow: MainRow? = null   // the remembered Home row itself
-    private var homeMemoryRows: List<MainRow>? = null   // the Home rows [homeMemory]'s indices were taken in
 
     private val _selection = MutableStateFlow(ListSelection(0, 0))
     val selection: StateFlow<ListSelection> = _selection.asStateFlow()
+
+    /** Home's builds, stats strip and d-pad memory; it reaches back into this state only through [HomeHost]. */
+    private val homeTab = HomeController(
+        scope, _screen, _selection, deps.calendar, deps.gameTime, deps.achievements, deps.compute,
+        host = object : HomeHost {
+            override fun homeStyle(): MenuStyle = this@AppState.homeStyle()
+            override fun clockNow(): Long = this@AppState.clockNow()
+            override fun raSignedIn(): Boolean = this@AppState.raSignedIn()
+            override fun resolveOne(path: String): Listed? = this@AppState.resolveOne(path)
+            override fun shelvesFor(inputs: HomeInputs): List<Pair<HomeShelf, List<Listed>>> = this@AppState.shelvesFor(inputs)
+            override fun rebuildHomeTab() = this@AppState.rebuildHomeTab()
+            override fun refreshResume() = this@AppState.refreshResume()
+            override fun toTabRow(repeat: Boolean) = this@AppState.toTabRow(repeat)
+            override fun switchTab(step: Int) = this@AppState.switchTab(step)
+        },
+    )
+    /** What Home draws beside its rows (the strip, the top section's size, the pinned counts), for the rows on screen. */
+    val homeView: StateFlow<HomeView> get() = homeTab.homeView
+    /** The Carousel Home's row item last on ([HomeController.homeCarouselRowLast]). */
+    val homeCarouselRowLast: StateFlow<Int> get() = homeTab.homeCarouselRowLast
+
+    /** The Android apps picker and app launches; it reaches back into this state only through [AppsHost]. */
+    private val androidApps = AppsController(
+        scope, _screen, _selection, deps.settings, loader, deps.launcher, appIcons,
+        host = object : AppsHost {
+            override fun showNotice(text: String) = this@AppState.showNotice(text)
+            override fun refreshInstalled() = this@AppState.refreshInstalled()
+            override fun installedLoaded(apps: List<InstalledApp>) { installedCache = apps }
+            override fun rememberSettingsRow() { (_screen.value as? Screen.Settings)?.let { sectionSelections[it.section] = _selection.value } }
+            override fun back(): Boolean = this@AppState.back()
+            override fun openSelected() = this@AppState.openSelected()
+            override fun openContextMenu() = this@AppState.openContextMenu()
+            override fun drawerRows(apps: List<InstalledApp>): List<ToolAppRow> = this@AppState.drawerRows(apps)
+            override fun toolOnTop() { _toolOnTop.value = true }
+            override suspend fun rebuildMainRows() = this@AppState.rebuildMainRows()
+            override fun swapMainRows() = this@AppState.swapMainRows()
+            override suspend fun moveToolPinsToAndroid(ids: List<String>) = this@AppState.moveToolPinsToAndroid(ids)
+            override suspend fun applyAndroidConsole() = this@AppState.applyAndroidConsole()
+        },
+    )
 
     private val _dualMenu = MutableStateFlow(false)
     /** The main menu is on the second display ([onDualMenu]): the preview and the game list's details live there. */
@@ -889,10 +870,10 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     fun onDualMenu(active: Boolean) {
         if (_dualMenu.value == active) return
         _dualMenu.value = active
-        if (active) closeRaPanel()   // the panel is a single-screen overlay: dual mode shows the details pane instead
+        if (active) ra.closeRaPanel()   // the panel is a single-screen overlay: dual mode shows the details pane instead
         followSecondList()
         followDrawerPreview()
-        followRaDetails()
+        ra.followRaDetails()
     }
 
     /** What the shown [secondList] was built from: the source, the library snapshot, and for a collection its row (name and count). */
@@ -1081,26 +1062,25 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** Every game's play time and RetroAchievements progress by library path (menus show the selected one's). */
     val gameInfo: StateFlow<Map<String, GameInfo>> = _gameInfo.asStateFlow()
     private var gameInfoJob: Job? = null
-    /** The cached RetroAchievements games' hashes by library path, read with the game info (for the panel). */
-    private var raHashes: Map<String, String> = emptyMap()
-    /**
-     * The panel's one-game downloads this run, by library path: null while one runs, else how it ended. Only a passing
-     * failure is tried again (on the panel's next open); an unrecognised or unreadable file stays marked, so reopening the
-     * panel never downloads it again (and in a later run its cached GameID 0 answers without a request).
-     */
-    private val raFetches = HashMap<String, RaGameFetch?>()
-    private val _raPanel = MutableStateFlow<RaPanel?>(null)
+    /** The RetroAchievements panel, details pane and screens; it reaches back into this state only through [RaScreenHost]. */
+    private val ra = RaScreenController(
+        scope, _screen, _selection, _error, deps.settings, loader, deps.achievements, _dualMenu,
+        host = object : RaScreenHost {
+            override fun showNotice(text: String) = this@AppState.showNotice(text)
+            override fun showTools() = this@AppState.showTools()
+            override fun openSelected() = this@AppState.openSelected()
+            override fun refreshResume() = this@AppState.refreshResume()
+            override fun refreshGameInfo() = this@AppState.refreshGameInfo()
+            override fun raSignedIn(): Boolean = this@AppState.raSignedIn()
+            override val touchMode: Boolean get() = this@AppState.touchMode
+            override fun <T> openValueChooser(title: String, v: SettingValue<T>, again: () -> SettingValue<*>?): Boolean =
+                this@AppState.openValueChooser(title, v, again)
+        },
+    )
     /** The achievements panel over a game list; null while closed. */
-    val raPanel: StateFlow<RaPanel?> = _raPanel.asStateFlow()
-    private var raPanelJob: Job? = null
-    private val _gameDetailRa = MutableStateFlow<RaPanel?>(null)
-    /**
-     * While [dualMenu] on a game list and signed in: the highlighted game's achievements, for the details pane on the second
-     * display (the panel's contents, without its row or detail state); else null. A game with no cached data downloads only
-     * once the highlight has rested on it for [DETAIL_RA_REST_MS], so scrolling past games requests nothing.
-     */
-    val gameDetailRa: StateFlow<RaPanel?> = _gameDetailRa.asStateFlow()
-    private var raDetailJob: Job? = null
+    val raPanel: StateFlow<RaPanel?> = ra.raPanel
+    /** The second display's details pane's achievements ([RaScreenController.gameDetailRa]); null unless [dualMenu] on a game list. */
+    val gameDetailRa: StateFlow<RaPanel?> = ra.gameDetailRa
     private var gameInfoDirty = false   // a refresh was asked for while one ran: it runs once more
     private val shelvesCache = HomeShelvesCache()   // Home's shelves while their inputs hold ([shelvesFor])
     private var gameInfoRead = false    // a [refreshGameInfo] pass has read play time: the shelves can go by play time
@@ -1165,11 +1145,11 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             }
         }
         // The achievements panel follows the game list's selection, and closes off the game list.
-        scope.launch { _selection.collect { followRaPanel(); followRaDetails(); followSecondList(); followDrawerPreview() } }
+        scope.launch { _selection.collect { ra.followRaPanel(); ra.followRaDetails(); followSecondList(); followDrawerPreview() } }
         scope.launch {
             _screen.collect {
                 if (setupScreen(it)) _toolOnTop.value = false   // a tool's page no more: setup takes the menu's screen
-                if (it !is Screen.Games) { closeRaPanel() } else { followRaPanel() }; followRaDetails(); followSecondList(); followDrawerPreview()
+                if (it !is Screen.Games) { ra.closeRaPanel() } else { ra.followRaPanel() }; ra.followRaDetails(); followSecondList(); followDrawerPreview()
             }
         }
         deps.achievements?.let { c ->
@@ -1182,9 +1162,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     if (wasBusy && !busy) refreshGameInfo()
                     wasBusy = busy
                     when (_screen.value) {
-                        // Busy shows no rows; back to idle it lands on the row that started the job.
-                        is Screen.RetroAchievements -> _selection.value = (if (_selection.value.count == 0) raSelection else _selection.value).clampedTo(raRows(s, c.download.value).size)
-                        is Screen.RaSettings -> if (s is RaState.Idle) onRaSettingsIdle()   // the rows after a sign-in, sign-out or reset
+                        // Busy shows no rows; back to idle it lands on the row that started the job. The settings page's rows follow.
+                        is Screen.RetroAchievements, is Screen.RaSettings -> ra.onRaState(s, c)
                         is Screen.Onboarding -> if (s is RaState.Idle) onRaIdleOnboarding(s.status)   // onboarding's sign-in ended
                         else -> Unit
                     }
@@ -1460,8 +1439,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val lookup = playable()
         val played = recents.map { it.path }.toSet() + resolveDistinct(lookup, recents.map { it.path }).map { it.game.path }
         val inputs = HomeInputs(last, resolveDistinct(lookup, pins.map { it.path }) + androidPinned(), pinnedToolRows(toolPins, tools + homeOnlyAppRows(tools)), played)
-        val built = homeFor(inputs)   // the stats as they are now, after the reads
-        homeInputs = inputs
+        val built = homeTab.homeFor(inputs)   // the stats as they are now, after the reads
+        homeTab.homeInputs = inputs
         allMenuTabs = buildMenuTabs(
             home = built,
             // One row per display name: SFC and SUPA are one "Super Nintendo ES" row, as NX Redux collates sibling folders.
@@ -1474,51 +1453,17 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             tools = tools,
             homeStyle = homeStyle(),
         )
-        noteHomeBuilt(built)
+        homeTab.noteHomeBuilt(built)
     }
 
     /** Rebuilds the Home tab alone from what it was last built from, with the stats, game info and frame as they are now (no I/O). */
     private fun rebuildHomeTab() {
-        val built = homeFor(homeInputs ?: return)   // the shelves too: the frame may have changed
+        val built = homeTab.homeFor(homeTab.homeInputs ?: return)   // the shelves too: the frame may have changed
         allMenuTabs = allMenuTabs.map { if (it.category == MenuCategory.HOME) MenuTab(MenuCategory.HOME, homeTabRows(built, homeStyle())) else it }
-        noteHomeBuilt(built)
+        homeTab.noteHomeBuilt(built)
         swapMainRows()
     }
 
-    /** Home's frame now: the last reported one, before one [HOME_STAND_IN]. */
-    private fun homeFrameNow(): HomeFrame = homeFrame ?: HOME_STAND_IN
-
-    /** Home's board for [tools], [games] and the large face's [shelves] on [frame] (the frame now) with the strip's [stripLines]. */
-    private fun homeBoardFor(stripLines: Int, tools: Int, games: Int, frame: HomeFrame = homeFrameNow(), shelves: List<Pair<HomeShelf, Int>> = emptyList()) =
-        homeBoard(frame, stripLines, tools, games, shelves)
-
-    /** The strip's lines: two, or one with no Most played ([homeStripLines]). */
-    private fun homeLinesFor(strip: HomeStrip?) = homeStripLines(strip)
-
-    /**
-     * Home from its [inputs], its slots from the board they make on the frame ([homeBoardFor]; the
-     * [com.nxredux.mobile.ui.nx.HomeToolMode.SPS3] split and the portrait type grow with the tools), with Home's shelves
-     * ([shelvesFor]) and the wide and large faces' inline games (the board's inlineGames).
-     */
-    private fun homeFor(inputs: HomeInputs): Home {
-        val (last, games, tools) = inputs
-        val strip = homeStrip(homeStats).takeIf { last != null || games.isNotEmpty() || tools.isNotEmpty() }
-        val shelves = shelvesFor(inputs)
-        when (homeStyle()) {
-            // List and Minimal: every tool is a row. Carousel: the dock's squares, "+N" for the rest.
-            MenuStyle.LIST, MenuStyle.MINIMAL -> return buildHome(last, games, tools, homeStats, Int.MAX_VALUE, shelves)
-            MenuStyle.CAROUSEL, MenuStyle.BACKDROP -> {
-                // The dock's squares are Grid Home's pinned tool squares on this frame ([homeDockSide]).
-                val f = homeFrameNow()
-                val side = homeDockSide(f, homeLinesFor(strip), games.count { it.game.path != last?.entry?.game?.path })
-                return buildHome(last, games, tools, homeStats, homeDockFit(f.w, f.portrait, side), shelves)
-            }
-            MenuStyle.GRID -> Unit
-        }
-        val gamesLeft = games.count { it.game.path != last?.entry?.game?.path }
-        val b = homeBoardFor(homeLinesFor(strip), tools.size, gamesLeft, shelves = shelves.map { it.first to it.second.size })
-        return buildHome(last, games, tools, homeStats, b.slots, shelves, b.inlineGames)
-    }
 
     /**
      * Home's shelves for [inputs] now, in every layout on every frame: the library, game info and today, [homeShelves].
@@ -1534,28 +1479,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         return shelvesCache.shelves(systemsCache, _gameInfo.value, inputs.recent, exclude, now, deps.calendar.dayStart(now)).filter { shelfShown(it.first) }
     }
 
-    /** [built] is the Home tab now: its view shows once the screen shows its rows ([publishHomeView]). */
-    private fun noteHomeBuilt(built: Home) {
-        val rows = homeTabRows(built, homeStyle())
-        val lines = homeLinesFor(built.strip)
-        // The view carries the frame and lines the rows were built for: HomeScreen places them on that board.
-        homeBuilds.addFirst(HomeBuild(rows, homeView(built, rows).copy(frame = homeFrame, lines = lines), homeFrameNow(), lines))
-        while (homeBuilds.size > HOME_BUILDS_KEPT) homeBuilds.removeLast()
-        publishHomeView()
-    }
-
-    /**
-     * Publishes the view of the Home rows on screen: the newest build's off the main menu, else the build of the rows
-     * the menu shows (older ones while a menu holds the swap back, or a restored snapshot: the switcher, Game Settings).
-     * HomeScreen splits the rows it draws with it, so the two always match. Call it after every assignment of a
-     * [Screen.Systems].
-     */
-    private fun publishHomeView() {
-        val newest = homeBuilds.firstOrNull() ?: return
-        val shown = (_screen.value as? Screen.Systems)?.tabs?.firstOrNull { it.category == MenuCategory.HOME }?.rows
-        val build = if (shown == null) newest else homeBuilds.firstOrNull { it.rows == shown } ?: return
-        _homeView.value = build.view
-    }
 
     /**
      * Home's body as laid out: a new frame rebuilds the Home tab (its slots, strip lines and moves follow it;
@@ -1563,55 +1486,11 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * ([swapMainRows] waits while one is open); closing the menu does that too ([ContextMenuHost.menuClosed]).
      */
     fun onHomeLayout(frame: HomeFrame) {
-        if (frame == homeFrame) { val s = _screen.value as? Screen.Systems ?: return; if (s.menu == null && s.tabs != menuTabs) swapMainRows(); return }
-        homeFrame = frame
+        if (frame == homeTab.homeFrame) { val s = _screen.value as? Screen.Systems ?: return; if (s.menu == null && s.tabs != menuTabs) swapMainRows(); return }
+        homeTab.homeFrame = frame
         rebuildHomeTab()
     }
 
-    /**
-     * Recomputes Home's stats on [AppDeps.compute]: over the calendar month so far (from local 00:00 on the 1st,
-     * [LocalCalendar.monthStart]), the play time and most played game, then the achievements unlocked in it over the
-     * games played in it. The previous values stay on Home's strip until the result replaces them. One computation at a
-     * time: asked for while one runs, it runs once more when that one ends.
-     */
-    private fun refreshHomeStats() {
-        homeStatsDay = deps.calendar.dayStart(clockNow())
-        if (homeStatsJob?.isActive == true) { homeStatsDirty = true; return }
-        homeStatsJob = scope.launch {
-            do {
-                homeStatsDirty = false
-                homeStats = computeHomeStats() ?: homeStats.takeIf { it.computed } ?: homeStats.copy(computed = true)
-                rebuildHomeTab()
-            } while (homeStatsDirty)
-        }
-    }
-
-    /**
-     * Home's stats now, or null when the play-time read failed (the caller keeps what it had). The most played game goes
-     * by its library name when its path is still in the library, else by Game Tracker's.
-     */
-    private suspend fun computeHomeStats(): HomeStats? {
-        val signedIn = raSignedIn()
-        val data = deps.gameTime ?: return HomeStats(null, null, signedIn, null, computed = true)
-        val now = clockNow()
-        val computed = try {
-            withContext(deps.compute) {
-                val since = deps.calendar.monthStart(now)   // local 00:00 on the 1st, DST-safe
-                val window = data.window(since, now)
-                // RA pointers and game time both key a game by its library path (GamePath.of), so the paths pass as they are.
-                val unlocks = if (signedIn && window.totalMs > 0L) deps.achievements?.unlocksSince(since, data.playedPaths(since, now)) else null
-                window to unlocks
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return null
-        }
-        val (window, unlocks) = computed
-        val named = { t: GameTotal -> resolveOne(t.romPath)?.let { t.copy(name = it.game.shownName) } ?: t }
-        val top = window.top?.let(named)
-        return HomeStats(window.totalMs, unlocks, signedIn, top, computed = true)
-    }
 
     /**
      * The collection counts are stale: [name]'s (it was just written), or every one (the library or the listing changed).
@@ -1771,89 +1650,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val c = s.category ?: return
         // Pushed, this writes the hidden tab's row too: harmless, as each push clears it ([openHiddenTab]) and opens on the first item.
         tabSelections[c] = _selection.value
-        if (c == MenuCategory.HOME) { homeSelShape = if (homeStyle() == MenuStyle.GRID) homeShapeOf(s.rows) else null; homeSelRow = s.rows.getOrNull(_selection.value.index) }
+        if (c == MenuCategory.HOME) homeTab.rememberHomeRow(s.rows, _selection.value.index)
         if (!s.pushed) menuCategory = c   // a pushed tab never becomes the tab underneath
-    }
-
-    /**
-     * The Home tab's [HomeShape] from its [rows] ([homeTabRows]): the board their own counts make on the frame and strip
-     * lines they were built for (the newest build of equal rows, so rows on screen get the frame now), else on the frame now.
-     */
-    private fun homeShapeOf(rows: List<MainRow>): HomeShape {
-        val build = homeBuilds.firstOrNull { it.rows == rows }
-        val tools = rows.count { it is MainRow.PinnedTool } + (rows.firstNotNullOfOrNull { it as? MainRow.MoreTools }?.count ?: 0)
-        val lines = build?.lines ?: homeLinesFor(homeBuilds.firstOrNull()?.view?.strip ?: _homeView.value.strip)
-        return homeShape(homeBoardFor(lines, tools, rows.count { it is MainRow.Pin }, build?.frame ?: homeFrameNow(), shelfBands(rows)))
-    }
-
-    /**
-     * [row], a Home row, in the new Home [rows]: itself; else "+N" for "+N" (its count follows the slots), "+N" for a
-     * pinned tool the slots now hide, the last tool square for a "+N" whose tools now all fit, a shelf game's pin when it
-     * was just pinned. Null: gone.
-     */
-    private fun homeFind(row: MainRow?, rows: List<MainRow>): Int? {
-        if (row == null) return null
-        rows.indexOf(row).takeIf { it >= 0 }?.let { return it }
-        val more = rows.indexOfFirst { it is MainRow.MoreTools }.takeIf { it >= 0 }
-        return when (row) {
-            is MainRow.MoreTools -> more ?: rows.indexOfLast { it is MainRow.PinnedTool }.takeIf { it >= 0 }
-            is MainRow.PinnedTool -> more?.takeIf { homeInputs?.tools?.contains(row.row) == true }   // still pinned: hidden
-            is MainRow.Shelf -> rows.indexOfFirst { it is MainRow.Pin && it.entry.game.path == row.entry.game.path }.takeIf { it >= 0 }
-            else -> null
-        }
-    }
-
-    /**
-     * Home's focus is on [index] in [rows], moved there from the focus last noted ([homeLastIndex], in the same rows; a
-     * new set of rows is no move): [homeRemember] keeps the top tile last on (UP from the rows), the one left before it
-     * (a tie's way back) and the pin last on.
-     */
-    private fun noteHomeFocus(index: Int, rows: List<MainRow>, moveFrom: Int = homeLastIndex) {
-        if (homeStyle() != MenuStyle.GRID) { noteCarouselFocus(index, rows); refreshStatsOnNewDay(); return }
-        val same = homeMemoryRows == rows
-        fitHomeMemory(rows)
-        val from = if (same && moveFrom >= 0) moveFrom else index
-        homeMemory = homeRemember(homeMemory, from = from, to = index, shape = homeShapeOf(rows))
-        homeLastIndex = index
-        refreshStatsOnNewDay()
-    }
-
-    /** The Carousel Home's focus is on [index] in [rows]: the row's item or the dock square last used (reset when the row count changed). */
-    private fun noteCarouselFocus(index: Int, rows: List<MainRow>) {
-        val rowCount = homeCarouselRowCount(rows)
-        if (rowCount != homeCarouselRows) { homeCarouselRows = rowCount; homeRowLast = 0; homeDockLast = null }
-        if (index < rowCount) homeRowLast = index else homeDockLast = index
-    }
-
-    /**
-     * Home is shown or its focus moved: once the stats were asked for, a new local day since (Home left open past
-     * midnight, maybe into a new month) recomputes them. Only a date compare otherwise.
-     */
-    private fun refreshStatsOnNewDay() {
-        if (homeStatsAsked && deps.calendar.dayStart(clockNow()) != homeStatsDay) refreshHomeStats()
-    }
-
-    /**
-     * [homeMemory], taken in [homeMemoryRows], moved into [rows] when they changed: each remembered tile onto the same
-     * row where it still shows in its section (a rotation changes the slots, so the rows' indices shift and a tool may go
-     * behind "+N"; a pin change shifts them too); otherwise [homeClamp] moves it by place (onto the pin after it), or it is forgotten.
-     */
-    private fun fitHomeMemory(rows: List<MainRow>) {
-        val old = homeMemoryRows
-        homeMemoryRows = rows
-        if (old == null || old == rows) return
-        val oldShape = homeShapeOf(old)
-        val shape = homeShapeOf(rows)
-        fun moved(i: Int, top: Boolean): Int {
-            if (i < 0) return -1
-            val same = homeFind(old.getOrNull(i), rows)?.takeIf { (it < shape.topCount) == top }
-            return same ?: homeClamp(i, oldShape, shape).takeIf { (it < shape.topCount) == top } ?: -1
-        }
-        homeMemory = HomeMemory(
-            lastTop = moved(homeMemory.lastTop, top = true).coerceAtLeast(0),
-            prevTop = moved(homeMemory.prevTop, top = true),
-            lastPin = moved(homeMemory.lastPin, top = false),
-        )
     }
 
     /**
@@ -1876,18 +1674,14 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (prev !is Screen.Systems) _tabFocus.value = false   // back from another screen: on the content
         if (screen.tabs.size < 2 || screen.pushed) _tabFocus.value = false   // no tab row to hold the d-pad (one tab: the title)
         _screen.value = screen
-        publishHomeView()   // the Home rows on screen may be the ones last built now
+        homeTab.publishHomeView()   // the Home rows on screen may be the ones last built now
         if (!screen.pushed) screen.category?.let { menuCategory = it }
         val rows = screen.rows
         _selection.value = if (at >= 0) ListSelection(at, rows.size).clampedTo(rows.size)
             else rememberedRow(screen.category ?: menuCategory, rows).clampedTo(rows.size)
-        if (screen.category == MenuCategory.HOME) noteHomeFocus(_selection.value.index, rows)
+        if (screen.category == MenuCategory.HOME) homeTab.noteHomeFocus(_selection.value.index, rows)
         refreshResume()   // Continue's A Resume or A Play
-        // The menu's first show computes Home's stats (then only a foreground does: a tab switch never does), and Home
-        // showing again after a sign-in or sign-out (in a tool) does too, so the strip's achievements follow it. The
-        // flag is not flipped here: signed in, the strip needs the count, not a "0".
-        if (!homeStatsAsked) { homeStatsAsked = true; refreshHomeStats() }
-        else if (screen.category == MenuCategory.HOME && raSignedIn() != homeStats.signedIn) refreshHomeStats()
+        homeTab.menuShown(screen.category)   // the menu's first show computes Home's stats, as does Home after a sign-in or out
         maybeAskAndroidGames()
         // The menu came up (not rebuilt in place, which a count landing does while the install-permission screen is up):
         // the daily check, or a held install's retry. A foreground over it does the same ([onForeground]).
@@ -1909,23 +1703,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private fun rememberedRow(category: MenuCategory, rows: List<MainRow>): ListSelection {
         val r = tabSelections[category] ?: return ListSelection(0, 0)
         if (category != MenuCategory.HOME) return r
-        homeFind(homeSelRow, rows)?.let { return ListSelection(it, rows.size) }
-        homeLaunchedPin(homeSelRow, rows)?.let { return ListSelection(it, rows.size) }
-        if (homeStyle() != MenuStyle.GRID) return r
-        val old = homeSelShape ?: return r
-        val new = homeShapeOf(rows)
-        return if (old == new) r else ListSelection(homeClamp(r.index, old, new), rows.size)
-    }
-
-    /**
-     * Continue's index (0) when [was], a pin or shelf game no longer in Home's [rows], is the game now on Continue: a
-     * launched one leaves the rows as the last game, and the focus follows it there. Null otherwise.
-     */
-    private fun homeLaunchedPin(was: MainRow?, rows: List<MainRow>): Int? {
-        val entry = (was as? MainRow.Pin)?.entry ?: (was as? MainRow.Shelf)?.entry ?: return null
-        if (was in rows) return null
-        val cont = rows.firstOrNull() as? MainRow.Continue ?: return null
-        return 0.takeIf { cont.entry.game.path == entry.game.path }
+        return homeTab.rememberedRow(r, rows)
     }
 
     /**
@@ -1937,19 +1715,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private fun keptIndex(from: Screen.Systems, to: Screen.Systems): Int {
         if (to.category != from.category) return -1
         if (to.category != MenuCategory.HOME) return _selection.value.index
-        (from.rows.getOrNull(_selection.value.index) as? MainRow.Shelf)?.let { homeFind(it, to.rows) }?.let { return it }
-        when (homeStyle()) {
-            MenuStyle.LIST, MenuStyle.MINIMAL -> return _selection.value.index
-            MenuStyle.CAROUSEL, MenuStyle.BACKDROP -> {
-                val i = _selection.value.index
-                val rowCount = homeCarouselRowCount(to.rows)
-                return if (i < homeCarouselRowCount(from.rows) && rowCount > 0) i.coerceAtMost(rowCount - 1) else i
-            }
-            MenuStyle.GRID -> Unit
-        }
-        val old = homeShapeOf(from.rows)
-        val new = homeShapeOf(to.rows)
-        return if (old == new) _selection.value.index else homeClamp(_selection.value.index, old, new)
+        return homeTab.keptIndex(from, to)
     }
 
     /**
@@ -1965,11 +1731,11 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         // removed), the fallback tab lands on its own remembered row, not the gone one's index.
         val launched = if (screen.category == MenuCategory.HOME) homeLaunchedPin(highlighted, screen.rows) else null
         val home = screen.category == MenuCategory.HOME
-        val at = (if (home) homeFind(highlighted, screen.rows) else screen.rows.indexOf(highlighted).takeIf { it >= 0 }) ?: launched ?: keptIndex(s, screen)
+        val at = (if (home) homeTab.homeFind(highlighted, screen.rows) else screen.rows.indexOf(highlighted).takeIf { it >= 0 }) ?: launched ?: keptIndex(s, screen)
         showMenu(screen, at)
         // The highlight may have moved with its row: the next show of this tab starts there.
         screen.category?.let { tabSelections[it] = _selection.value }
-        if (screen.category == MenuCategory.HOME) { homeSelShape = if (homeStyle() == MenuStyle.GRID) homeShapeOf(screen.rows) else null; homeSelRow = screen.rows.getOrNull(_selection.value.index) }
+        if (screen.category == MenuCategory.HOME) homeTab.rememberHomeRow(screen.rows, _selection.value.index)
     }
 
     /** Reads hidden.txt into [hiddenPaths] and returns it as the set the index filters with. */
@@ -2770,12 +2536,12 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 // read that works: with none, every game would be Not started.
                 val read = try { deps.gameTime?.byPath().orEmpty() } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
                 val raRead = try { deps.achievements?.progressByPath().orEmpty() } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
-                try { deps.achievements?.hashesByPath()?.let { raHashes = it } } catch (e: CancellationException) { throw e } catch (e: Exception) { }
-                followRaPanel(force = true)   // the panel's game may have data now (a download just ended)
-                followRaDetails(force = true)
+                try { deps.achievements?.hashesByPath()?.let { ra.raHashes = it } } catch (e: CancellationException) { throw e } catch (e: Exception) { }
+                ra.followRaPanel(force = true)   // the panel's game may have data now (a download just ended)
+                ra.followRaDetails(force = true)
                 val times = read?.also { lastTimes = it } ?: lastTimes
-                val ra = raRead?.also { lastRa = it } ?: lastRa
-                _gameInfo.value = (times.keys + ra.keys).associateWith { p -> GameInfo(times[p]?.lastPlayedAt, times[p]?.totalMs, ra[p]) }
+                val raByPath = raRead?.also { lastRa = it } ?: lastRa
+                _gameInfo.value = (times.keys + raByPath.keys).associateWith { p -> GameInfo(times[p]?.lastPlayedAt, times[p]?.totalMs, raByPath[p]) }
                 if (read != null) gameInfoRead = true
                 rebuildHomeTab()   // the shelves follow play time (Not started, Pick up again)
             } while (gameInfoDirty)
@@ -4715,145 +4481,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         _screen.value = s.copy(layoutMenu = null)   // a new screen: the page redraws in the new style, on the same game
     }
 
-    // --- The achievements panel over a game list ---
-
-    /** The platform has RetroAchievements and the user is signed in: a game list offers the panel (the trophy icon, X, the game's menu). */
-    val hasAchievements: Boolean get() = deps.achievements != null && raSignedIn()
-
-    /** The trophy icon: opens the panel on the highlighted game, or closes it. */
-    fun toggleRaPanel() { if (_raPanel.value != null) closeRaPanel() else openRaPanel() }
-
-    /**
-     * X (or the trophy icon) on a game list: the panel on its highlighted game. Not over its menu, search or Layout
-     * dropdown, nor while [dualMenu] (the second display's details pane shows the game's achievements).
-     */
-    fun openRaPanel() {
-        val s = _screen.value as? Screen.Games ?: return
-        if (!hasAchievements || _dualMenu.value || s.menu != null || s.search != null || s.layoutMenu != null) return
-        raFetches.values.removeAll { it is RaGameFetch.Failed }   // opened again: a failed download is tried once more
-        _raPanel.value = RaPanel(null, "", RaPanelContent.Loading)
-        followRaPanel(force = true)
-    }
-
-    fun closeRaPanel() {
-        raPanelJob?.cancel(); raPanelJob = null
-        _raPanel.value = null
-    }
-
-    /**
-     * The open panel on the game list's highlighted game: when that game changed (or [force]), its cached achievements are
-     * read again. Signed out or no game: a message instead. A game with no cached data downloads in the background
-     * ([RaController.fetchGame], not cancelled by the panel moving on); the panel shows it once it is cached.
-     */
-    private fun followRaPanel(force: Boolean = false) = followRa(false, force)
-
-    /** [followRaPanel] for the details pane ([gameDetailRa]): off unless [dualMenu] on a game list, signed in, with a highlighted game. */
-    private fun followRaDetails(force: Boolean = false) = followRa(true, force)
-
-    /** One feed for both: the panel's ([details] false) or the details pane's. The pane waits [DETAIL_RA_REST_MS] before starting a download. */
-    private fun followRa(details: Boolean, force: Boolean, rested: Boolean = false) {
-        val target = if (details) _gameDetailRa else _raPanel
-        val s = _screen.value as? Screen.Games
-        val entry = s?.entries?.getOrNull(_selection.value.index)
-        if (details && (!_dualMenu.value || entry == null || deps.achievements == null || deps.settings.raUsername.isBlank())) {
-            raDetailJob?.cancel(); raDetailJob = null
-            target.value = null
-            return
-        }
-        val p = target.value ?: (if (details) RaPanel(null, "", RaPanelContent.Loading) else return)
-        if (s == null) return
-        val c = deps.achievements ?: return
-        val path = entry?.game?.path
-        if (!force && p.path == path) return
-        if (details && !rested && path != null) {
-            if (force && raDetailJob?.isActive == true && p.path == path && path !in raFetches) return   // still resting on it: keep the window
-            if (!force && raFetches[path] is RaGameFetch.Failed) raFetches.remove(path)   // the highlight came back: a failed download is tried once more
-        }
-        (if (details) raDetailJob else raPanelJob)?.cancel()
-        val title = entry?.shown.orEmpty()
-        val keep = { content: RaPanelContent -> RaPanel(path, title, content) }
-        if (entry == null) { target.value = keep(RaPanelContent.NoData); return }
-        if (deps.settings.raUsername.isBlank()) { target.value = keep(RaPanelContent.SignedOut); return }
-        val hash = raHashes[path] ?: (raFetches[path] as? RaGameFetch.Cached)?.hash ?: run {
-            if (details && !rested && entry.game.path !in raFetches) {
-                // Not asked for yet: the highlight must rest on this game before it is downloaded.
-                target.value = keep(RaPanelContent.Loading)
-                raDetailJob = scope.launch { delay(DETAIL_RA_REST_MS); followRa(true, force = true, rested = true) }
-                return
-            }
-            val content = raFetchContent(c, entry.game.path) ?: return followRa(details, force = true, rested = true)   // cached at once: read it
-            target.value = keep(content)
-            return
-        }
-        // A re-read of the game shown keeps its rows (no Loading flash); a new game starts on its first achievement.
-        val same = p.path == path && p.content is RaPanelContent.Game
-        if (!same) target.value = keep(RaPanelContent.Loading)
-        val job = scope.launch {
-            val list = try { c.achievements(hash).sortedBy(deps.settings.raSortOrder) } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
-            val badges = try { c.badgeListing(hash) } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyMap() }
-            val now = target.value ?: return@launch
-            if (now.path != path) return@launch   // the selection moved on meanwhile
-            val content = RaPanelContent.Game(hash, list, badges)
-            target.value = if (same) now.copy(content = content).let { it.copy(row = it.row.coerceAtMost((it.visible.size - 1).coerceAtLeast(0))) }
-                else now.copy(content = content, row = 0, detail = false)
-        }
-        if (details) raDetailJob = job else raPanelJob = job
-    }
-
-    /**
-     * The panel's content for [path], a game with no cached data: its download's state, the download started when there
-     * is none. Null once it is cached (a download that ended at once): the panel reads the game.
-     */
-    private fun raFetchContent(c: RaController, path: String): RaPanelContent? {
-        if (path !in raFetches) {
-            raFetches[path] = null
-            var started = false   // set once this returns: a download ending before that is shown by the return instead
-            scope.launch {
-                val o = try { c.fetchGame(path) } catch (e: CancellationException) { throw e } catch (e: Exception) { RaGameFetch.Failed(RaPrefetch.NO_REPLY) }
-                raFetches[path] = o
-                if (o is RaGameFetch.Cached) { raHashes = raHashes + (path to o.hash); refreshGameInfo() }   // its progress in the menus too
-                if (started && _raPanel.value?.path == path) followRaPanel(force = true)
-                if (started && _gameDetailRa.value?.path == path) followRaDetails(force = true)
-            }
-            started = true
-        }
-        return when (val o = raFetches[path]) {
-            null -> RaPanelContent.Downloading
-            is RaGameFetch.Cached -> null
-            is RaGameFetch.Failed -> RaPanelContent.Failed(o.reason)
-            is RaGameFetch.Unrecognised -> RaPanelContent.Unrecognised(o.hash)
-            RaGameFetch.Unreadable -> RaPanelContent.Unreadable
-            RaGameFetch.NotSupported -> RaPanelContent.NoData   // a console RetroAchievements lacks
-        }
-    }
-
-    /** A tap on the panel's achievement [index] (of the shown rows): its details. */
-    fun openRaPanelRow(index: Int) {
-        val p = _raPanel.value ?: return
-        if (index in p.visible.indices) _raPanel.value = p.copy(row = index, detail = true)
-    }
-
-    /**
-     * The open panel has the pad: UP / DOWN move over the achievements, LEFT / RIGHT to the previous / next game (the
-     * panel follows), A opens one's details (signed out: the RetroAchievements page), B back from the details or
-     * closes, X closes.
-     */
-    private fun onRaPanelButton(p: RaPanel, button: NxButton) {
-        val last = (p.visible.size - 1).coerceAtLeast(0)
-        when (button) {
-            NxButton.UP -> if (!p.detail) _raPanel.value = p.copy(row = (p.row - 1).coerceAtLeast(0))
-            NxButton.DOWN -> if (!p.detail) _raPanel.value = p.copy(row = (p.row + 1).coerceAtMost(last))
-            NxButton.LEFT -> { _selection.value = _selection.value.up(wrap = false); refreshResume() }
-            NxButton.RIGHT -> { _selection.value = _selection.value.down(wrap = false); refreshResume() }
-            NxButton.A -> when {
-                p.content is RaPanelContent.SignedOut -> { closeRaPanel(); showRetroAchievements() }
-                !p.detail && p.visible.isNotEmpty() -> _raPanel.value = p.copy(detail = true)
-            }
-            NxButton.B -> if (p.detail) _raPanel.value = p.copy(detail = false) else closeRaPanel()
-            NxButton.X -> closeRaPanel()
-            else -> Unit
-        }
-    }
 
     /** B from the Unassigned list: Settings -> Library on its row, else where the page was left (its last game assigned away). */
     private fun backToUnassignedRow() {
@@ -4931,7 +4558,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         // After a game the menu is its own tab again (the pushed one is not restored): dropped only for a launch that
         // happens (an app's start, or the runner's call), so a coreless, in-flight, vanished or unreadable game leaves the
         // push for B to return to.
-        if (listed.android) { dropPushedTab(); launchApp(entry); return }
+        if (listed.android) { dropPushedTab(); androidApps.launchApp(entry); return }
         if (coreOverride == null && listed.core == null) return
         if (launchJob?.isActive == true) return   // a launch is already in flight
         switcherJob?.cancel()   // a switcher still loading must not open over the launched game
@@ -5007,16 +4634,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     }
 
     /**
-     * An Android game: the platform starts its app; nothing is recorded (no recent, no game time). A failed start (the
-     * app gone meanwhile) says so and re-lists the apps, so the console drops it.
-     */
-    private fun launchApp(entry: Listed) {
-        if (deps.launcher?.launch(entry.game.fileName) == true) return
-        showNotice("Could not open ${entry.shown}")
-        refreshInstalled()
-    }
-
-    /**
      * A Classic NES Series cart ([ClassicNes]) that would run gpSP only as the console's default runs mGBA:
      * mGBA is recorded as its Emulator pick, as the Emulator menu would ([Sidecars.set], then [moveInIndex]), so its
      * states, Game Settings, resume and menus all follow MGBA from this launch on; the user can still pick GBA there,
@@ -5082,7 +4699,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         onLauncherChanged()   // back from Android's home settings or the role dialog: the Launcher page re-reads its state
         refreshInstalled()    // apps may have been installed or removed meanwhile
         refreshGameInfo()   // back from a game (or another app): its time and unlocks may have moved
-        if (homeStatsAsked) refreshHomeStats()   // Home's stats too (before the menu's first show, that show computes them)
+        homeTab.refreshStatsIfAsked()   // Home's stats too (before the menu's first show, that show computes them)
         val s = _screen.value as? Screen.Systems ?: return
         if (s.menu != null) return
         if (!firstSetup) updaterOnMainMenu()   // back over the menu (from a game, or the install-permission screen)
@@ -5187,6 +4804,25 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** Signed in to RetroAchievements, for Home's stats strip: a token and a user name. */
     private fun raSignedIn(): Boolean = deps.settings.raToken != null && deps.settings.raUsername.isNotBlank()
 
+    // --- RetroAchievements: the panel, the details pane and the Tools pages live in RaScreenController ---
+
+    /** The platform has RetroAchievements and the user is signed in: a game list offers the panel (the trophy icon, X, the game's menu). */
+    val hasAchievements: Boolean get() = ra.hasAchievements
+    /** The trophy icon: opens the panel on the highlighted game, or closes it. */
+    fun toggleRaPanel() = ra.toggleRaPanel()
+    /** X (or the trophy icon) on a game list: the panel on its highlighted game. */
+    fun openRaPanel() = ra.openRaPanel()
+    fun closeRaPanel() = ra.closeRaPanel()
+    /** A tap on the panel's achievement [index] (of the shown rows): its details. */
+    fun openRaPanelRow(index: Int) = ra.openRaPanelRow(index)
+    /** The RetroAchievements sign-in modal's live username / password (the composable reports every change). */
+    fun raDraftUser(text: String) = ra.raDraftUser(text)
+    fun raDraftPassword(text: String) = ra.raDraftPassword(text)
+    /** The level the left pane shows beside [screen] in the RetroAchievements column browser ([RaScreenController.raParent]). */
+    fun raParent(screen: Screen): RaParent? = ra.raParent(screen)
+    /** A tap on row [index] of the dimmed RetroAchievements left pane showing [parent] ([RaScreenController.raParentTap]). */
+    fun raParentTap(parent: Screen, index: Int) = ra.raParentTap(parent, index)
+
     /** The wall clock for Home's stats: [AppDeps.now], else the system's. */
     private fun clockNow(): Long = deps.now?.invoke() ?: nowMs()
 
@@ -5245,7 +4881,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
 
     private fun openToolNow(row: ToolRow) {
         when (row.kind) {
-            ToolKind.RETRO_ACHIEVEMENTS -> if (deps.achievements != null) showRetroAchievements()
+            ToolKind.RETRO_ACHIEVEMENTS -> if (deps.achievements != null) ra.showRetroAchievements()
             ToolKind.GAME_TIME -> gameTimeScreen?.open(onCancel = ::showTools)
             ToolKind.ARTWORK -> { artworkScreens?.open(); checkArt(reuse = false) }
             ToolKind.CHEAT_DB -> {
@@ -5262,11 +4898,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             }
             ToolKind.SETTINGS -> openSettingsMenu()
             ToolKind.APPS -> openToolApps(AppPick.TOOLS)
-            ToolKind.APP -> row.appId?.let { id ->
-                if (deps.launcher?.launch(id) == true) return
-                showNotice("Could not open ${row.label}")
-                scope.launch { rebuildMainRows(); swapMainRows() }   // likely gone since the menu was built
-            }
+            ToolKind.APP -> androidApps.openApp(row)
         }
     }
 
@@ -5347,375 +4979,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         }
     }
 
-    // --- RetroAchievements: main page, games browser, a game's achievements, one achievement ---
-
-    private var raSelection = ListSelection(0, 0)        // the main page's row, remembered while in the browser or settings
-    private var raGamesSelection = ListSelection(0, 0)   // the games list's row, remembered while in a game
-    private var raGamesScreen: Screen.RaGames? = null    // the games list a game was opened from (the left pane beside it)
-    private var raGameScreen: Screen.RaGame? = null      // the game page (list and filter) an achievement was opened from
-    private var raGameSelection = ListSelection(0, 0)    // its row, remembered while on that achievement
-
-    /** The RetroAchievements page on the row last used there. */
-    private fun showRetroAchievements() {
-        val c = deps.achievements ?: run { showTools(); return }
-        _screen.value = Screen.RetroAchievements()
-        _selection.value = raSelection.clampedTo(raRows(c.state.value, c.download.value).size)
-    }
-
-    /** The game data download's progress page, on its first row. */
-    private fun openRaDownload() {
-        val c = deps.achievements ?: return
-        _screen.value = Screen.RaDownload()
-        _selection.value = ListSelection(0, c.download.value?.items?.size ?: 0)
-    }
-
-    /**
-     * The download page: UP / DOWN move through its games, Y pauses or resumes, X cancels (after "Cancel download?"), A
-     * (Done, once it has ended) clears it, B goes back to the RetroAchievements page on its Progress row, the download
-     * running on.
-     */
-    private fun onRaDownloadButton(s: Screen.RaDownload, button: NxButton) {
-        val c = deps.achievements ?: run { showTools(); return }
-        if (s.confirmCancel) {
-            when (button) {
-                NxButton.A -> { c.cancel(); _screen.value = s.copy(confirmCancel = false) }
-                NxButton.B -> _screen.value = s.copy(confirmCancel = false)
-                else -> Unit
-            }
-            return
-        }
-        val phase = c.download.value?.phase
-        val ongoing = phase == RaDownloadPhase.RUNNING || phase == RaDownloadPhase.PAUSED
-        when (button) {
-            NxButton.UP -> _selection.value = _selection.value.clampedTo(c.download.value?.items?.size ?: 0).up()
-            NxButton.DOWN -> _selection.value = _selection.value.clampedTo(c.download.value?.items?.size ?: 0).down()
-            NxButton.Y -> if (phase == RaDownloadPhase.RUNNING) c.pause() else if (phase == RaDownloadPhase.PAUSED) c.resume()
-            // Done: an ended download is cleared, the page's Progress row with it.
-            NxButton.A -> if (!ongoing) { c.clearDownload(); raSelection = ListSelection(0, 0); showRetroAchievements() }
-            NxButton.X -> if (ongoing) _screen.value = s.copy(confirmCancel = true)
-            NxButton.B -> {
-                raSelection = ListSelection(raRows(c.state.value, c.download.value).indexOf(RaAction.DOWNLOAD).coerceAtLeast(0), 0)
-                showRetroAchievements()
-            }
-            else -> Unit
-        }
-    }
-
-    // --- RetroAchievements settings page ---
-
-    private var raSettingsSelection = ListSelection(0, 0)
-    private val RA_BUSY = "Busy, try again"
-    private val RA_READ_FAILED = "Couldn't read achievements"
-
-    /** The settings page's rows, from the settings and the controller's last status. */
-    private fun raSettingsRows(): List<RaSettingsRow> {
-        val st = (deps.achievements?.state?.value as? RaState.Idle)?.status
-        val s = deps.settings
-        val signedIn = s.raToken != null   // enabling achievements and downloading game data need an account
-        return listOf(
-            if (signedIn) RaSettingsRow(RaSettingKind.SIGN_OUT, "Sign out") else RaSettingsRow(RaSettingKind.SIGN_IN, "Sign in"),
-            RaSettingsRow(RaSettingKind.STATUS, "Status", st?.lastError ?: if (signedIn) "Signed in as ${s.raUsername}" else "Not signed in"),
-            RaSettingsRow(RaSettingKind.ENABLED, "Enable achievements", if (signedIn && s.raEnabled) "On" else "Off", enabled = signedIn),
-            RaSettingsRow(RaSettingKind.DOWNLOAD_ALL, "Download all game data", st?.let { "${it.cachedGames} games cached" }, enabled = signedIn),
-            RaSettingsRow(RaSettingKind.NOTIFICATIONS, "Show notifications", if (s.raShowNotifications) "On" else "Off"),
-            RaSettingsRow(RaSettingKind.NOTIFICATION_SECONDS, "Notification duration", "${s.raNotificationSeconds} s"),
-            RaSettingsRow(RaSettingKind.PROGRESS_SECONDS, "Progress duration", if (s.raProgressSeconds == 0) "Off" else "${s.raProgressSeconds} s"),
-            RaSettingsRow(RaSettingKind.SORT_ORDER, "Achievement sort order", s.raSortOrder.label),
-            RaSettingsRow(RaSettingKind.RESET_ACCOUNT, "Reset account data"),
-            RaSettingsRow(RaSettingKind.ERASE_ALL, "Erase all achievement data"),
-            RaSettingsRow(RaSettingKind.RESET_SETTINGS, "Reset settings to defaults"),
-        )
-    }
-
-    /**
-     * The settings page's value row [kind] as a [SettingValue] ([settingValue]'s table for this page): the two durations
-     * (LEFT / RIGHT stop at their ends, A wraps), the sort order, and the On / Off rows. Each re-renders the page after a
-     * change. Null for a row that is not a value row.
-     */
-    private fun raSettingValue(kind: RaSettingKind?): SettingValue<*>? {
-        val s = deps.settings
-        fun <T> cycle(values: List<T>, current: T, label: ((T) -> String)? = null, clamps: Boolean = false, set: (T) -> Unit) =
-            SettingValue(values, current, set, label, clamps) { refreshRaSettings() }
-        return when (kind) {
-            RaSettingKind.NOTIFICATION_SECONDS -> cycle((1..5).toList(), s.raNotificationSeconds, { "$it s" }, clamps = true) { s.raNotificationSeconds = it }
-            RaSettingKind.PROGRESS_SECONDS -> cycle((0..5).toList(), s.raProgressSeconds, { if (it == 0) "Off" else "$it s" }, clamps = true) { s.raProgressSeconds = it }
-            RaSettingKind.SORT_ORDER -> cycle(RaSortOrder.entries, s.raSortOrder, { it.label }) { s.raSortOrder = it }
-            RaSettingKind.ENABLED -> cycle(listOf(false, true), s.raEnabled) { s.raEnabled = it }
-            RaSettingKind.NOTIFICATIONS -> cycle(listOf(false, true), s.raShowNotifications) { s.raShowNotifications = it }
-            else -> null
-        }
-    }
-
-    /** Opens on the remembered row, but never on Sign out: the page lands on Status instead, so a stray A reads only. */
-    private fun openRaSettings() {
-        val rows = raSettingsRows()
-        _screen.value = Screen.RaSettings(rows)
-        val sel = raSettingsSelection.clampedTo(rows.size)
-        _selection.value = if (rows.getOrNull(sel.index)?.kind != RaSettingKind.SIGN_OUT) sel
-            else sel.copy(index = rows.indexOfFirst { it.kind == RaSettingKind.STATUS })
-    }
-
-    /** Re-renders the rows, keeping an open sign-in modal or confirm. */
-    private fun refreshRaSettings() {
-        (_screen.value as? Screen.RaSettings)?.let { _screen.value = it.copy(rows = raSettingsRows()) }
-    }
-
-    /** The controller went idle on the settings page: the rows follow, and a sign-in modal left open over a finished sign-in closes. */
-    private fun onRaSettingsIdle() {
-        val s = _screen.value as? Screen.RaSettings ?: return
-        if (s.signingIn && deps.settings.raToken != null) closeRaSignIn(s) else refreshRaSettings()
-    }
-
-    /** The sign-in modal's live username (the composable reports every change), so A can sign in with it. */
-    fun raDraftUser(text: String) {
-        val s = _screen.value as? Screen.RaSettings ?: return
-        if (s.signingIn) _screen.value = s.copy(draftUser = text)
-    }
-
-    /** The sign-in modal's live password; never saved, only sent with the sign-in. */
-    fun raDraftPassword(text: String) {
-        val s = _screen.value as? Screen.RaSettings ?: return
-        if (s.signingIn) _screen.value = s.copy(draftPassword = text)
-    }
-
-    /** Closes the sign-in modal and forgets what was typed. */
-    private fun closeRaSignIn(s: Screen.RaSettings) {
-        _screen.value = s.copy(rows = raSettingsRows(), signingIn = false, draftUser = "", draftPassword = "")
-    }
-
-    /** The sign-in modal's A: signs in with the typed entries; a blank one keeps the modal open. */
-    private fun submitRaSignIn(s: Screen.RaSettings, c: RaController) {
-        if (s.draftUser.isBlank() || s.draftPassword.isBlank()) { _error.value = "Enter a username and password"; return }
-        if (c.busy) { _error.value = RA_BUSY; return }
-        closeRaSignIn(s)
-        c.login(s.draftUser.trim(), s.draftPassword)
-        if (!c.busy) refreshRaSettings()   // finished without suspending
-    }
-
-    /** Back to the RetroAchievements page; anything typed is dropped. */
-    private fun leaveRaSettings() {
-        raSettingsSelection = _selection.value
-        showRetroAchievements()
-    }
-
-    /**
-     * The level the left pane shows beside [screen] in the RetroAchievements column browser ([raSplitView]): the screen it
-     * was opened from and the row that opened it. The page beside its Settings and the games list; the games list beside a
-     * game; the game's achievements (its filter kept) beside one achievement. Null for any other screen.
-     */
-    fun raParent(screen: Screen): RaParent? = when (screen) {
-        is Screen.RaSettings, is Screen.RaGames -> RaParent(Screen.RetroAchievements(), raPageRow(screen) ?: 0)
-        is Screen.RaGame -> raGamesScreen?.let { RaParent(it, raGamesSelection.index) }
-        is Screen.RaAchievement -> RaParent(raGameScreen ?: Screen.RaGame(screen.game, listOf(screen.achievement), badges = screen.badges), raGameSelection.index)
-        else -> null
-    }
-
-    /**
-     * A tap on row [index] of the dimmed left pane showing [parent] ([raParent]): that level's row opens in place of the
-     * current one, as B then A there would (another game's achievements, RetroAchievements Settings beside its page, Sync
-     * on the page). The row already open, an open sign-in or confirm, a loading screen, or a pane no longer beside the
-     * current level do nothing: a one-tap list ([com.nxredux.mobile.ui.nx.nxTap]) calls this twice, and the second call
-     * finds the row open (or the screen moved on).
-     */
-    fun raParentTap(parent: Screen, index: Int) {
-        val here = _screen.value
-        val p = raParent(here) ?: return
-        if (p.screen::class != parent::class || index == p.row || loader.active) return
-        if (here is Screen.RaSettings) {
-            if (here.signingIn || here.confirm != null) return
-            raSettingsSelection = _selection.value
-        }
-        when (val ps = p.screen) {
-            is Screen.RetroAchievements -> {
-                raSelection = ListSelection(index, RaAction.entries.size); showRetroAchievements()
-                if (_selection.value.index == index) openSelected()
-            }
-            // Straight to the tapped game or achievement: the right pane changes, the list never shows on it in between.
-            is Screen.RaGames -> ps.games.getOrNull(index)?.let { openRaGame(it, ps, ListSelection(index, ps.games.size)) }
-            is Screen.RaGame -> openRaAchievement(ps, ListSelection(index, visibleAchievements(ps).size))
-            else -> return
-        }
-    }
-
-    /** UP/DOWN move, LEFT/RIGHT change a value row, A acts, B closes a dialog or leaves; an open sign-in modal takes A (sign in) and B or MENU (cancel). */
-    private fun onRaSettingsButton(s: Screen.RaSettings, button: NxButton) {
-        val c = deps.achievements ?: run { showTools(); return }
-        if (s.signingIn) {
-            when (button) {
-                NxButton.A -> submitRaSignIn(s, c)
-                NxButton.B, NxButton.MENU -> closeRaSignIn(s)
-                else -> Unit
-            }
-            return
-        }
-        if (s.confirm != null) {
-            when (button) {
-                NxButton.A -> {
-                    _screen.value = s.copy(confirm = null)
-                    if (c.busy) { _error.value = RA_BUSY; return }   // a sign-in or other job is still running: nothing would happen
-                    when (s.confirm) { RaConfirm.SIGN_OUT -> c.signOut(); RaConfirm.RESET_ACCOUNT -> c.resetAccount(); RaConfirm.ERASE_ALL -> c.eraseAll() }
-                    refreshRaSettings()
-                }
-                NxButton.B -> _screen.value = s.copy(confirm = null)
-                else -> Unit
-            }
-            return
-        }
-        val row = s.rows.getOrNull(_selection.value.index)
-        val settings = deps.settings
-        when (button) {
-            NxButton.UP -> _selection.value = _selection.value.up()
-            NxButton.DOWN -> _selection.value = _selection.value.down()
-            // The value rows step either way (NX Redux ITEM_CYCLE): the durations stop at their ends, the sort order and the
-            // On/Off rows wrap. Enable needs an account, as on A.
-            NxButton.LEFT, NxButton.RIGHT -> if (row?.enabled != false) raSettingValue(row?.kind)?.let { v ->
-                v.change(if (button == NxButton.RIGHT) 1 else -1, wrap = !v.clamps)
-            }
-            NxButton.A -> if (row?.enabled == false) Unit else when (row?.kind) {
-                // A (and a row tap) steps a value row forward with wrap-around, so touch alone reaches every value.
-                // Touch only, a row of three or more values picks from a chooser instead.
-                RaSettingKind.ENABLED, RaSettingKind.NOTIFICATIONS, RaSettingKind.NOTIFICATION_SECONDS, RaSettingKind.PROGRESS_SECONDS,
-                RaSettingKind.SORT_ORDER -> raSettingValue(row?.kind)?.let { v ->
-                    if (!(touchMode && openValueChooser(row?.label.orEmpty(), v) { raSettingValue(row?.kind) })) v.change(1)
-                }
-                RaSettingKind.SIGN_IN ->
-                    if (c.busy) _error.value = RA_BUSY   // a sign-in (or other job) is still running
-                    else _screen.value = s.copy(signingIn = true, draftUser = settings.raUsername, draftPassword = "")
-                RaSettingKind.SIGN_OUT -> _screen.value = s.copy(confirm = RaConfirm.SIGN_OUT)
-                RaSettingKind.DOWNLOAD_ALL -> {
-                    val before = c.download.value
-                    c.prefetchAll()
-                    // Its progress page (B from there: the RetroAchievements page), even when it ended at once (every game
-                    // cached already); a download that could not start goes back to that page.
-                    if (c.download.value.let { it != null && it !== before }) { raSettingsSelection = _selection.value; openRaDownload() } else leaveRaSettings()
-                }
-                RaSettingKind.RESET_ACCOUNT -> _screen.value = s.copy(confirm = RaConfirm.RESET_ACCOUNT)
-                RaSettingKind.ERASE_ALL -> _screen.value = s.copy(confirm = RaConfirm.ERASE_ALL)
-                RaSettingKind.RESET_SETTINGS -> {
-                    // The non-credential defaults; the username and token stay.
-                    settings.raEnabled = false; settings.raShowNotifications = true
-                    settings.raNotificationSeconds = 3; settings.raProgressSeconds = 1; settings.raSortOrder = RaSortOrder.DEFAULT
-                    refreshRaSettings()
-                }
-                RaSettingKind.STATUS, null -> Unit
-            }
-            NxButton.B -> leaveRaSettings()
-            else -> Unit
-        }
-    }
-
-    /** Reads the cached games under the loading overlay; [keep] = land on the row last used in the list (returning from a game). */
-    private fun openRaGames(keep: Boolean) {
-        val c = deps.achievements ?: return
-        val here = _screen.value
-        loader.start {
-            val games = try { c.games() } catch (e: RaStoreException) { _error.value = RA_READ_FAILED; return@start }
-            if (_screen.value !== here) return@start   // the user moved on meanwhile
-            _screen.value = Screen.RaGames(games)
-            _selection.value = (if (keep) raGamesSelection else ListSelection(0, 0)).clampedTo(games.size)
-        }
-    }
-
-    /**
-     * Opens [game]'s achievements from [games] on row [row] (the list, or a game page beside it in the column browser:
-     * that page stays until the new one has loaded, so the list never shows in between).
-     */
-    private fun openRaGame(game: RaGameView, games: Screen.RaGames, row: ListSelection) {
-        val c = deps.achievements ?: return
-        val here = _screen.value
-        loader.start {
-            val list = try { c.achievements(game.hash) } catch (e: RaStoreException) { _error.value = RA_READ_FAILED; return@start }
-            val badges = try { c.badgeListing(game.hash) } catch (e: RaStoreException) { emptyMap() }
-            if (_screen.value !== here) return@start   // the user moved on meanwhile
-            raGamesScreen = games; raGamesSelection = row
-            _screen.value = Screen.RaGame(game, list.sortedBy(deps.settings.raSortOrder), badges = badges)
-            _selection.value = ListSelection(0, list.size)
-        }
-    }
-
-    /** UP/DOWN move over the action rows; A runs the highlighted one; B cancels a running job, closes the confirm, or goes back. */
-    private fun onRaButton(s: Screen.RetroAchievements, button: NxButton) {
-        val c = deps.achievements ?: run { showTools(); return }
-        if (s.confirm != null) {
-            when (button) {
-                NxButton.A -> {
-                    _screen.value = Screen.RetroAchievements()
-                    when (s.confirm) { RaConfirm.SIGN_OUT -> c.signOut(); RaConfirm.RESET_ACCOUNT -> c.resetAccount(); RaConfirm.ERASE_ALL -> c.eraseAll() }
-                }
-                NxButton.B -> _screen.value = Screen.RetroAchievements()
-                else -> Unit
-            }
-            return
-        }
-        when (button) {
-            NxButton.UP -> _selection.value = _selection.value.up()
-            NxButton.DOWN -> _selection.value = _selection.value.down()
-            NxButton.A -> {
-                val action = raRows(c.state.value, c.download.value).getOrNull(_selection.value.index) ?: return
-                raSelection = _selection.value
-                when (action) {
-                    RaAction.ACHIEVEMENTS -> openRaGames(keep = false)
-                    RaAction.SYNC -> c.syncNow()
-                    RaAction.SETTINGS -> openRaSettings()
-                    RaAction.DOWNLOAD -> openRaDownload()
-                }
-            }
-            // B cancels a sync (its progress fills the page); beside a download, or idle, it leaves (the download runs on).
-            // A sign-in or reset runs to its end.
-            NxButton.B -> when (c.state.value) {
-                is RaState.Syncing -> c.cancel()
-                is RaState.Idle, is RaState.Prefetching -> { raSelection = _selection.value; showTools() }
-                else -> Unit
-            }
-            else -> Unit
-        }
-    }
-
-    /** [game]'s achievement on row [row], from that page (or from the achievement beside it in the column browser). */
-    private fun openRaAchievement(game: Screen.RaGame, row: ListSelection) {
-        val a = visibleAchievements(game).getOrNull(row.index) ?: return
-        raGameScreen = game; raGameSelection = row
-        _screen.value = Screen.RaAchievement(game.game, a, game.badges)
-    }
-
-    /** The browser screens: UP/DOWN move, A opens, Y (a game) toggles locked-only, B goes up one level. */
-    private fun onRaBrowserButton(s: Screen, button: NxButton) {
-        when (button) {
-            NxButton.UP -> _selection.value = _selection.value.up()
-            NxButton.DOWN -> _selection.value = _selection.value.down()
-            NxButton.A -> when (s) {
-                is Screen.RaGames -> s.games.getOrNull(_selection.value.index)?.let { openRaGame(it, s, _selection.value) }
-                is Screen.RaGame -> openRaAchievement(s, _selection.value)
-                else -> Unit
-            }
-            NxButton.Y -> (s as? Screen.RaGame)?.let {
-                val toggled = it.copy(lockedOnly = !it.lockedOnly)
-                _screen.value = toggled
-                _selection.value = _selection.value.clampedTo(visibleAchievements(toggled).size)
-                // On touch the filter is an icon only, so it says what it did.
-                showNotice(if (toggled.lockedOnly) "Showing locked achievements only" else "Showing all achievements")
-            }
-            NxButton.B -> raBack(s)
-            else -> Unit
-        }
-    }
-
-    /** One level up the RetroAchievements screens; the games list reloads so a sync or play since shows. */
-    private fun raBack(s: Screen) {
-        when (s) {
-            is Screen.RaAchievement -> {
-                // Back to the game page it came from, with the same filter and row.
-                val g = raGameScreen ?: Screen.RaGame(s.game, listOf(s.achievement), badges = s.badges)
-                _screen.value = g
-                _selection.value = raGameSelection.clampedTo(visibleAchievements(g).size)
-            }
-            is Screen.RaGame -> openRaGames(keep = true)   // a B cancel stays on the game
-            is Screen.RaGames -> showRetroAchievements()
-            is Screen.RaSettings -> onRaSettingsButton(s, NxButton.B)
-            is Screen.RetroAchievements -> onRaButton(s, NxButton.B)
-            else -> Unit
-        }
-    }
 
     /** Each recent resolved against the index by [matches], with no SAF call. A recent not in the index is hidden, not dropped from recent.txt. */
     private suspend fun switcherEntries(): List<SwitcherEntry> =
@@ -5731,7 +4994,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         beforeSwitcher = null
         navStep(NavMotion.SWITCHER_CLOSE)
         _screen.value = screen
-        publishHomeView()   // the restored Home rows' own view, not one built while the switcher was up
+        homeTab.publishHomeView()   // the restored Home rows' own view, not one built while the switcher was up
         _selection.value = selection
         refreshResume()
         // A Y Remove changed recent.txt: once written, rebuild the tabs, so Home's Continue moves past the game (the
@@ -5791,7 +5054,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         when (val row = s.rows.getOrNull(index)) {
             is MainRow.System -> { intendNav(forward); openSystem(row.system) }
             // Home's pinned game, as Continue: its save read now resumes, none plays. An Android game opens its app.
-            is MainRow.Pin -> { rememberMenuSelection(); if (row.entry.system.android) launchApp(row.entry) else resumeFromSave(row.entry, orPlay = true) }
+            is MainRow.Pin -> { rememberMenuSelection(); if (row.entry.system.android) androidApps.launchApp(row.entry) else resumeFromSave(row.entry, orPlay = true) }
             // A shelf game, as a pin (never an Android game).
             is MainRow.Shelf -> { rememberMenuSelection(); resumeFromSave(row.entry, orPlay = true) }
             is MainRow.Collection -> { intendNav(forward); openList(ListSource.Collection(row.name)) }
@@ -5861,7 +5124,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (minimalPending) return   // a Minimal open's band is growing: the selection stays on the row opening
         _tabFocus.value = false   // a touch on the content takes the focus there
         _selection.value = _selection.value.copy(index = index).clampedTo(_selection.value.count)
-        (_screen.value as? Screen.Systems)?.takeIf { it.category == MenuCategory.HOME }?.let { noteHomeFocus(_selection.value.index, it.rows) }
+        (_screen.value as? Screen.Systems)?.takeIf { it.category == MenuCategory.HOME }?.let { homeTab.noteHomeFocus(_selection.value.index, it.rows) }
         refreshResume()
     }
 
@@ -5873,14 +5136,14 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             is Screen.Onboarding -> onboardingRow(_selection.value.index)
             is Screen.Systems -> if (styleOf(s) == MenuStyle.MINIMAL) openMinimal(s) else openMainRow(s, _selection.value.index)
             is Screen.SettingsMenu -> s.sections.getOrNull(_selection.value.index)?.let(::openSettings)
-            is Screen.ToolApps -> if (s.pick == AppPick.GAMES) toggleAndroidGame(s) else launchDrawerApp(s)
+            is Screen.ToolApps -> if (s.pick == AppPick.GAMES) androidApps.toggleAndroidGame(s) else androidApps.launchDrawerApp(s)
             is Screen.CheatDb -> onCheatDbButton(s, NxButton.A)
             Screen.DeviceSync -> onDeviceSyncButton(NxButton.A)
-            is Screen.RetroAchievements -> onRaButton(s, NxButton.A)
+            is Screen.RetroAchievements -> ra.onRaButton(s, NxButton.A)
             is Screen.RaDownload -> Unit   // its rows only read (A, Done, comes through onButton)
-            is Screen.RaGames, is Screen.RaGame -> onRaBrowserButton(s, NxButton.A)
+            is Screen.RaGames, is Screen.RaGame -> ra.onRaBrowserButton(s, NxButton.A)
             is Screen.RaAchievement -> Unit   // a detail page: nothing to open
-            is Screen.RaSettings -> onRaSettingsButton(s, NxButton.A)
+            is Screen.RaSettings -> ra.onRaSettingsButton(s, NxButton.A)
             // Hidden unhides at once, Minimal or not: nothing opens.
             is Screen.Games -> if (s.source == ListSource.Hidden) unhideSelected()
                 else if (styleOf(s) == MenuStyle.MINIMAL) openMinimal(s) else openGameRow(s, _selection.value.index)
@@ -5972,7 +5235,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             override fun showEmulatorsSettings() = showSettingsOn(SettingsSection.EMULATORS, SettingsKind.EMULATORS)
             override fun restore(screen: Screen, selection: ListSelection) {
                 _screen.value = screen
-                publishHomeView()   // a restored main menu: its Home rows' own view
+                homeTab.publishHomeView()   // a restored main menu: its Home rows' own view
                 _selection.value = selection
                 refreshResume()
                 // The library may have changed while the page was open: rebuild the list from its source, on the same game.
@@ -6159,7 +5422,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             override fun selectCollection(name: String) = this@AppState.selectCollection(name)
             override fun menuClosed() { if ((_screen.value as? Screen.Systems)?.tabs != menuTabs) swapMainRows() }
             override suspend fun refreshOpenList(select: String?) = this@AppState.refreshOpenList(select)
-            override suspend fun setInTools(id: String, on: Boolean) = this@AppState.setInTools(id, on)
+            override suspend fun setInTools(id: String, on: Boolean) = androidApps.setInTools(id, on)
             override fun rescan() = this@AppState.rescan()
             override suspend fun applyHidden(entry: Listed, hidden: Boolean, closeMenu: Boolean) = this@AppState.applyHidden(entry, hidden, closeMenu)
             override suspend fun renameInIndex(game: GameEntry, name: String): Boolean = this@AppState.renameInIndex(game, name)
@@ -6171,7 +5434,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             override fun openNetplay(entry: Listed) = this@AppState.openNetplay(entry)
             override val netplayInMenu: Boolean get() = !launcherChrome().netplayHint
             override val achievementsInMenu: Boolean get() = hasAchievements && !deps.settings.gameListAchievementsPanel && !_dualMenu.value
-            override fun openAchievements() = this@AppState.openRaPanel()
+            override fun openAchievements() = ra.openRaPanel()
             override suspend fun canResume(entry: Listed): Boolean = deps.userData.resumeInfo(entry.system.tag, entry.game.fileName).canResume
             override fun playFromStart(entry: Listed) = this@AppState.playFromStart(entry)
             override fun hiddenTabs(): List<MenuCategory> = this@AppState.hiddenTabs()
@@ -6406,66 +5669,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     }
 
     /**
-     * The d-pad on the Home tab ([homeStep]): the top split and the Pinned rows, with [homeMemory]. UP with nothing above
-     * ([homeAtTop]) reaches the tab row. Past a LEFT / RIGHT edge it switches tab on a fresh press only (never a key
-     * [repeat]: a held key stops at the edge). False off Home (or with a menu open).
-     */
-    private fun homeMove(button: NxButton, repeat: Boolean): Boolean {
-        val s = _screen.value as? Screen.Systems ?: return false
-        if (s.category != MenuCategory.HOME || s.menu != null) return false
-        when (homeStyle()) {
-            // The generic List step: UP / DOWN wrap, LEFT / RIGHT switch tab. A press on Home is used: a new day recomputes the stats.
-            MenuStyle.LIST -> { refreshStatsOnNewDay(); return false }
-            MenuStyle.CAROUSEL, MenuStyle.BACKDROP -> return homeCarouselMove(s, button, repeat)
-            MenuStyle.MINIMAL -> return homeMinimalMove(s, button, repeat)
-            MenuStyle.GRID -> Unit
-        }
-        val shape = homeShapeOf(s.rows)
-        fitHomeMemory(s.rows)   // the pins may have changed since the memory was taken
-        val sel = _selection.value
-        if (button == NxButton.UP && homeAtTop(sel.index, shape, homeMemory)) { toTabRow(repeat); return true }
-        val next = homeStep(sel.index, shape, homeMemory, button)
-        if (next == null) { if (!repeat) switchTab(if (button == NxButton.RIGHT) 1 else -1); return true }
-        if (next != sel.index) {
-            _selection.value = sel.copy(index = next)
-            noteHomeFocus(next, s.rows, moveFrom = sel.index)
-            refreshResume()
-        }
-        return true
-    }
-
-    /**
-     * The d-pad on Minimal Home: UP / DOWN step one name, as every Minimal page's (the List step): past an end a fresh
-     * press wraps (UP on the first to the last, DOWN on the last to the first), a held key's [repeat] stops there.
-     * LEFT / RIGHT switch tab on a fresh press only. False for any other button.
-     */
-    private fun homeMinimalMove(s: Screen.Systems, button: NxButton, repeat: Boolean): Boolean {
-        refreshStatsOnNewDay()
-        val sel = _selection.value
-        when (button) {
-            NxButton.LEFT, NxButton.RIGHT -> if (!repeat) switchTab(if (button == NxButton.RIGHT) 1 else -1)
-            NxButton.UP, NxButton.DOWN -> {
-                val next = if (button == NxButton.UP) sel.up(wrap = !repeat) else sel.down(wrap = !repeat)
-                if (next.index != sel.index) { _selection.value = next; noteHomeFocus(next.index, s.rows); refreshResume() }
-            }
-            else -> return false
-        }
-        return true
-    }
-
-    private fun homeCarouselMove(s: Screen.Systems, button: NxButton, repeat: Boolean): Boolean {
-        val sel = _selection.value
-        val rowCount = homeCarouselRowCount(s.rows)
-        when (val m = homeCarouselStep(sel.index, rowCount, s.rows.size, button, homeRowLast, homeDockLast)) {
-            is HomeCarouselMove.To -> if (m.index != sel.index) { _selection.value = sel.copy(index = m.index); noteHomeFocus(m.index, s.rows); refreshResume() }
-            HomeCarouselMove.TabRow -> toTabRow(repeat)
-            is HomeCarouselMove.SwitchTab -> if (!repeat) switchTab(m.step)
-            HomeCarouselMove.Stay -> Unit
-        }
-        return true
-    }
-
-    /**
      * UP from the top of a main menu tab's content: the tab row takes the d-pad, on a fresh press only (a held UP stops at
      * the top). Hidden (Layouts → Page title, in effect: [launcherChrome]) it never does: the press stays put.
      */
@@ -6506,11 +5709,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val sel = _selection.value
         if (sel.count <= 0) return
         val at = when {
-            s.category == MenuCategory.HOME -> when (homeStyle()) {
-                MenuStyle.GRID -> { fitHomeMemory(s.rows); homeBottom(homeShapeOf(s.rows)) }
-                MenuStyle.LIST, MenuStyle.MINIMAL -> sel.count - 1
-                else -> homeCarouselBottom(sel.index, homeCarouselRowCount(s.rows), s.rows.size, homeRowLast, homeDockLast)
-            }
+            s.category == MenuCategory.HOME -> homeTab.bottom(sel, s.rows)
             else -> when (currentStyle()) {
                 MenuStyle.GRID -> if (gridColumns > 0) { _gridPresses.value += 1; gridBottom(sel.index, sel.count, gridColumns, gridRows) } else sel.count - 1
                 MenuStyle.CAROUSEL, MenuStyle.BACKDROP -> if (currentOrientation() == MenuOrientation.VERTICAL) sel.count - 1 else sel.index
@@ -6519,7 +5718,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         }.coerceIn(0, sel.count - 1)
         if (at == sel.index) return
         _selection.value = sel.copy(index = at)
-        if (s.category == MenuCategory.HOME) noteHomeFocus(at, s.rows)
+        if (s.category == MenuCategory.HOME) homeTab.noteHomeFocus(at, s.rows)
         refreshResume()
     }
 
@@ -6568,13 +5767,13 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         (_screen.value as? Screen.Onboarding)?.let { onOnboardingButton(it, button); return }
         netplay?.takeIf { it.page.value != null }?.let { it.onButton(button); return }   // the Netplay sheet over a game list
         _screen.value.takeIf { it is Screen.Settings || it is Screen.SettingsMenu }?.let { onSettingsButton(it, button); return }
-        (_screen.value as? Screen.ToolApps)?.takeIf { it.menu == null }?.let { onToolAppsButton(it, button); return }
+        (_screen.value as? Screen.ToolApps)?.takeIf { it.menu == null }?.let { androidApps.onToolAppsButton(it, button); return }
         _screen.value.contextMenu?.let { contextMenus.onMenuButton(it, button); return }
         (_screen.value as? Screen.Systems)?.let { s -> s.search?.let { onSearchButton(s, it, button); return } }
         (_screen.value as? Screen.Games)?.let { s ->
             s.search?.let { onListSearchButton(s, it, button); return }
             s.layoutMenu?.let { onLayoutMenuButton(s, it, button); return }
-            _raPanel.value?.let { onRaPanelButton(it, button); return }
+            ra.raPanel.value?.let { ra.onRaPanelButton(it, button); return }
         }
         if (filePicker?.onButton(_screen.value, button) == true) return
         if (emulatorSettings.onButton(_screen.value, button)) return
@@ -6590,13 +5789,13 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         }
         (_screen.value as? Screen.CheatDb)?.let { onCheatDbButton(it, button); return }   // before the generic when: UP/DOWN use the action-row count
         if (_screen.value == Screen.DeviceSync) { onDeviceSyncButton(button); return }   // every button is the controller's
-        (_screen.value as? Screen.RetroAchievements)?.let { onRaButton(it, button); return }   // same: UP/DOWN use the action-row count
-        (_screen.value as? Screen.RaDownload)?.let { onRaDownloadButton(it, button); return }
-        (_screen.value as? Screen.RaSettings)?.let { onRaSettingsButton(it, button); return }   // LEFT/RIGHT change values; dialogs take the buttons
-        _screen.value.takeIf { it is Screen.RaGames || it is Screen.RaGame || it is Screen.RaAchievement }?.let { onRaBrowserButton(it, button); return }
+        (_screen.value as? Screen.RetroAchievements)?.let { ra.onRaButton(it, button); return }   // same: UP/DOWN use the action-row count
+        (_screen.value as? Screen.RaDownload)?.let { ra.onRaDownloadButton(it, button); return }
+        (_screen.value as? Screen.RaSettings)?.let { ra.onRaSettingsButton(it, button); return }   // LEFT/RIGHT change values; dialogs take the buttons
+        _screen.value.takeIf { it is Screen.RaGames || it is Screen.RaGame || it is Screen.RaAchievement }?.let { ra.onRaBrowserButton(it, button); return }
         dropHiddenTabFocus()   // a tab row hidden while it had the d-pad (a setting or footer change it missed) gives it back
         if (_tabFocus.value && onTabRowButton(button, repeat)) return
-        if (button.isDirection && homeMove(button, repeat)) return   // Home first: its own two-dimensional moves
+        if (button.isDirection && homeTab.homeMove(button, repeat)) return   // Home first: its own two-dimensional moves
         when (button) {
             // A List: UP on the first row wraps to the last, DOWN on the last to the first, on the main menu too (only an
             // empty tab's UP reaches the tab row). On the launcher's lists (the main menu's and the game lists) a held
@@ -6618,7 +5817,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             }
             NxButton.SELECT -> openSwitcher()
             NxButton.START -> if (_screen.value is Screen.Games) openListSearch() else openSearch()   // a game list searches its own games
-            NxButton.X -> if (_screen.value is Screen.Games && !_dualMenu.value) openRaPanel()   // the highlighted game's achievements (the second display's list has its own details)
+            NxButton.X -> if (_screen.value is Screen.Games && !_dualMenu.value) ra.openRaPanel()   // the highlighted game's achievements (the second display's list has its own details)
             NxButton.MENU -> openContextMenu()
             NxButton.L1 -> switchTab(-1)
             NxButton.R1 -> switchTab(1)
@@ -6672,7 +5871,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 if (s.menu != null) { closeContextMenu(); return true }
                 if (s.search != null) { _screen.value = s.copy(search = null); return true }
                 if (s.layoutMenu != null) { _screen.value = s.copy(layoutMenu = null); return true }
-                _raPanel.value?.let { p -> if (p.detail) _raPanel.value = p.copy(detail = false) else closeRaPanel(); return true }
+                if (ra.backRaPanel()) return true
                 // Lands only on the main menu (Hidden and Unassigned go to Settings); a Minimal list's title drops back into a Minimal tab's row.
                 intendNav(if (styleOf(s) == MenuStyle.MINIMAL) NavMotion.MINIMAL_BACK else NavMotion.BACK)
                 leaveList(s.source)
@@ -6735,8 +5934,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             }
             is Screen.CheatDb -> { onCheatDbButton(s, NxButton.B); true }
             Screen.DeviceSync -> { onDeviceSyncButton(NxButton.B); true }
-            is Screen.RetroAchievements, is Screen.RaGames, is Screen.RaGame, is Screen.RaAchievement, is Screen.RaSettings -> { raBack(s); true }
-            is Screen.RaDownload -> { onRaDownloadButton(s, NxButton.B); true }
+            is Screen.RetroAchievements, is Screen.RaGames, is Screen.RaGame, is Screen.RaAchievement, is Screen.RaSettings -> { ra.raBack(s); true }
+            is Screen.RaDownload -> { ra.onRaDownloadButton(s, NxButton.B); true }
             is Screen.EmulatorList, is Screen.EmulatorConsoles, is Screen.EmulatorOptions -> emulatorSettings.back(s)
             is Screen.GameTime -> { if (s.modal != null) gameTimeScreen?.back(s) else showTools(); true }
             is Screen.GameTimeSessions -> { gameTimeScreen?.leaveSessions() ?: showTools(); true }
@@ -6819,12 +6018,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val s = _screen.value as? Screen.Games ?: return
         val shown = (s.source.base as? ListSource.Console)?.system?.takeIf { it.android } ?: return
         if (s.menu == null && shown != next) refreshOpenList()
-    }
-
-    /** Puts app [id] in the Android games console ([on], appended to the list) or takes it out, as the games picker's A does. */
-    private fun setInAndroidConsole(id: String, on: Boolean) {
-        val ids = deps.settings.androidConsoleApps
-        if (on) { if (id !in ids) deps.settings.androidConsoleApps = ids + id } else deps.settings.androidConsoleApps = ids - id
     }
 
     /**
@@ -6962,89 +6155,13 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         writeToolPins(keys - moved.toSet())   // a failed write keeps the Tools pin, hidden while the app is in the console
     }
 
-    /**
-     * The apps grid for [pick]. TOOLS: the app drawer, every installed app but the Android games console's, marked when
-     * it is in Tools. GAMES: the detected games, then every other app ([androidGamesPickOrder]), checked when it is in
-     * the console. [selectId]: the app highlighted first (the second display's preview tapped), else the first.
-     */
-    private fun openToolApps(pick: AppPick, selectId: String? = null) {
-        val l = deps.launcher ?: return
-        (_screen.value as? Screen.Settings)?.let { sectionSelections[it.section] = _selection.value }
-        loader.start {
-            val apps = l.installedApps()
-            installedCache = apps
-            // Icons stay cached between visits, so the drawer opens drawn; only uninstalled apps' go.
-            appIcons?.retain(apps.map { it.id })
-            val console = deps.settings.androidConsoleApps.toSet()
-            val rows = when (pick) {
-                AppPick.TOOLS -> drawerRows(apps)
-                AppPick.GAMES -> androidGamesPickOrder(apps).map { ToolAppRow(it.id, it.label, it.id in console) }
-            }
-            toolAppsColumns = 0   // a new picker: it reports its own columns on its first layout
-            if (pick == AppPick.TOOLS) _toolOnTop.value = true   // the drawer, a tool: it lands after a read, so [openTool] could not tell
-            _screen.value = Screen.ToolApps(rows, pick)
-            _selection.value = ListSelection(rows.indexOfFirst { it.id == selectId }.coerceAtLeast(0), rows.size)
-        }
-    }
+    // --- Android apps: the picker and app launches live in AppsController ---
+
+    /** The apps grid for [pick] ([AppsController.openToolApps]): the Apps tool, the drawer preview's tap, Settings -> Launcher. */
+    private fun openToolApps(pick: AppPick, selectId: String? = null) = androidApps.openToolApps(pick, selectId)
 
     /** The apps grid laid out [columns] tiles wide: the d-pad then steps by tiles. */
-    fun onToolAppsLayout(columns: Int) { toolAppsColumns = columns.coerceAtLeast(0) }
-
-    /**
-     * The grid ([gridStep], every row still): the d-pad moves by tiles, UP/DOWN wrapping in the column and LEFT/RIGHT
-     * stopping at the first and last tile. The drawer: A opens the selected app, MENU its menu, B back to Tools. The
-     * games picker: A puts the app in the console or takes it out, B back to the Launcher page.
-     */
-    private fun onToolAppsButton(s: Screen.ToolApps, button: NxButton) {
-        when (button) {
-            NxButton.UP, NxButton.DOWN, NxButton.LEFT, NxButton.RIGHT -> {
-                val sel = _selection.value
-                gridStep(sel.index, sel.count, toolAppsColumns.coerceAtLeast(1), button, rows = sel.count)?.let { _selection.value = sel.copy(index = it) }
-            }
-            NxButton.A -> openSelected()
-            NxButton.B -> back()
-            NxButton.MENU -> openContextMenu()
-            else -> Unit
-        }
-    }
-
-    /** The drawer's A: opens the selected app; one gone since the drawer opened says so and leaves the grid. */
-    private fun launchDrawerApp(s: Screen.ToolApps) {
-        val row = s.apps.getOrNull(_selection.value.index) ?: return
-        if (deps.launcher?.launch(row.id) == true) return
-        showNotice("Could not open ${row.label}")
-        val apps = s.apps - row
-        _screen.value = s.copy(apps = apps)
-        _selection.value = ListSelection(_selection.value.index, apps.size).clampedTo(apps.size)
-        scope.launch { rebuildMainRows() }   // gone from Tools and Home too, when it was there
-    }
-
-    /**
-     * The app [id] into Tools (added last) or out of it ([on] false), from the drawer's menu or an app tile's: its mark
-     * in an open drawer and the Tools tab follow. A Home pin is its own: it stays either way.
-     */
-    private suspend fun setInTools(id: String, on: Boolean) {
-        val ids = deps.settings.toolApps
-        deps.settings.toolApps = if (on) (ids - id) + id else ids - id
-        (_screen.value as? Screen.ToolApps)?.let { s -> _screen.value = s.copy(apps = s.apps.map { if (it.id == id) it.copy(shown = on) else it }) }
-        rebuildMainRows()
-    }
-
-    /**
-     * The games picker's A: the selected app in or out of the console ([setInAndroidConsole]). The checks are then read
-     * back from the list, and the Consoles rows follow, with the Tools rows (an app in the console leaves them).
-     */
-    private fun toggleAndroidGame(s: Screen.ToolApps) {
-        val row = s.apps.getOrNull(_selection.value.index) ?: return
-        val joining = !row.shown
-        setInAndroidConsole(row.id, on = joining)
-        val shown = deps.settings.androidConsoleApps.toSet()
-        _screen.value = s.copy(apps = s.apps.map { it.copy(shown = it.id in shown) })
-        scope.launch {
-            if (joining) moveToolPinsToAndroid(listOf(row.id))
-            applyAndroidConsole()   // a new console rebuilds the rows, the Tools tab's too
-        }
-    }
+    fun onToolAppsLayout(columns: Int) = androidApps.onToolAppsLayout(columns)
 }
 
 /** A summary page row: the Move choice or Continue. */
