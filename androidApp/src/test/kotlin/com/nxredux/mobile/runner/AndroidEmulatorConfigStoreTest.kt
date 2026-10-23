@@ -15,7 +15,7 @@ import org.junit.Test
 
 class AndroidEmulatorConfigStoreTest {
     private val root: File = Files.createTempDirectory("emucfg").toFile()
-    private val store = AndroidEmulatorConfigStore(root)
+    private val store = AndroidEmulatorConfigStore { root }
     private val paths = NxPaths("GBA", "mgba", "Game.gba")
     private fun file(rel: String) = File(root, rel)
 

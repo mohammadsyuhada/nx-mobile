@@ -272,6 +272,15 @@ class DataRootTest {
         assertEquals(DataRoot.Decision(private), resolve(marker = false, hasData = false, picker, picker))      // the upgrade screen adopts it
     }
 
+    @Test fun providerFollowsAccessChange() {
+        // What DataRoot.of answers after the move as All files access comes and goes (AndroidHomeLocator's choice).
+        fun root(granted: Boolean) =
+            resolve(marker = true, hasData = true, fileHome, HomeChoice.effective(fileHome, granted, { File(FileRefs.path(it)).isDirectory }, mediaRef)).root
+        assertEquals(home, root(granted = true))
+        assertEquals(media, root(granted = false))
+        assertEquals(home, root(granted = true))
+    }
+
     @Test fun findsDataOnlyInWhatMoves() {
         write(private, ".userdata/android/ra/cache/login.json", "login")
         write(private, "Shaders/x", "shader")

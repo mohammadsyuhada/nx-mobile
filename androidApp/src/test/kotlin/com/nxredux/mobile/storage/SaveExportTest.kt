@@ -134,4 +134,18 @@ class SaveExportTest {
         assertEquals(mapOf("Saves/MGBA/Game.srm" to "leftover", "Saves/MGBA/Tie.srm" to "console"), entries)
         assertEquals(2, summary.saves)
     }
+    @Test fun exportSkipsMoveBackups() {
+        val root = tmp.newFolder("sd")
+        file(root, "Saves/GBA/Game.srm", "sram")
+        file(root, "Saves/GBA/Game.srm.bak-20261023-101500", "older")
+        file(root, ".userdata/shared/GBA-gpsp/Game.st0.bak-20261023-101500-2", "older state")
+        val out = ByteArrayOutputStream()
+        val summary = SaveExport.write(root, out)
+        val names = mutableListOf<String>()
+        ZipInputStream(ByteArrayInputStream(out.toByteArray())).use { z ->
+            while (true) { val e = z.nextEntry ?: break; names += e.name; z.readBytes() }
+        }
+        assertEquals(listOf("Saves/GBA/Game.srm"), names)
+        assertEquals(ExportSummary(saves = 1, states = 0, bytes = 4), summary)
+    }
 }

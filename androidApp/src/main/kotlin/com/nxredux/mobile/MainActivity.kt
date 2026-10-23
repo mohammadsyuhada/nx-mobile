@@ -78,6 +78,7 @@ import com.nxredux.mobile.storage.AndroidAllFilesAccess
 import com.nxredux.mobile.storage.AndroidLibraryIndexStore
 import com.nxredux.mobile.storage.AndroidPrivateFiles
 import com.nxredux.mobile.storage.AndroidSaveTransfer
+import com.nxredux.mobile.storage.DataRoot
 import com.nxredux.mobile.storage.AndroidSidecarStore
 import com.nxredux.mobile.storage.RecentsRecorder
 import com.nxredux.mobile.storage.AndroidRomsSources
@@ -356,7 +357,7 @@ class MainActivity : ComponentActivity(), FolderPicker {
                 arcadeSets = { ArcadeSetsAsset.get(applicationContext) },
                 naomiSets = { NaomiSetsAsset.get(applicationContext) },
                 coreOptions = AssetCoreOptionSource(assets),
-                emulatorConfigs = AndroidEmulatorConfigStore(NxStorage.root(this)),
+                emulatorConfigs = AndroidEmulatorConfigStore { DataRoot.of(this) },
                 coreDefaults = { id -> if (id == NdsRenderer.CORE_ID_MELONDSDS) NdsRenderer.defaults(glesVersion) else emptyMap() },
                 gameTime = LazyGameTimeData { withContext(Dispatchers.IO) { GameTimeService.data(this@MainActivity) } },
                 now = System::currentTimeMillis,
@@ -366,7 +367,7 @@ class MainActivity : ComponentActivity(), FolderPicker {
                 launcher = launcher,
                 androidArtStore = AndroidArtFiles(this),
                 rumblePreview = { playRumblePreview(applicationContext, it) },
-                netplay = AndroidNetplay(this, NxStorage.root(this)).also { np ->
+                netplay = AndroidNetplay(this) { DataRoot.of(this) }.also { np ->
                     np.screenOn = { on -> runOnUiThread { keepScreenOn(on) } }
                 },
                 padEditor = { request -> padLayoutEditor.launch(PadLayoutActivity.intent(this, request)) },

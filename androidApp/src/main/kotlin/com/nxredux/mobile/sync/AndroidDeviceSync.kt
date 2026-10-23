@@ -10,12 +10,12 @@ import com.nxredux.mobile.netplay.Rsync
 import com.nxredux.mobile.netplay.WifiNetworks
 import com.nxredux.mobile.netplay.usb.UsbCable
 import com.nxredux.mobile.netplay.usb.UsbCables
-import com.nxredux.mobile.runner.NxStorage
 import com.nxredux.mobile.settings.AndroidAppSettings
-import com.nxredux.mobile.storage.AndroidAllFilesAccess
+import com.nxredux.mobile.storage.AndroidHomeLocator
 import com.nxredux.mobile.storage.AndroidLibraryIndexStore
 import com.nxredux.mobile.storage.AndroidRomsSources
 import com.nxredux.mobile.storage.AndroidSidecarStore
+import com.nxredux.mobile.storage.DataRoot
 import com.nxredux.mobile.storage.FileRefs
 import com.nxredux.mobile.storage.Recents
 import com.nxredux.mobile.storage.SaveFormat
@@ -54,7 +54,8 @@ class AndroidDeviceSync(
     private val cm: ConnectivityManager? = app.getSystemService(ConnectivityManager::class.java)
     private val settings = AndroidAppSettings(app)
     private val indexStore = AndroidLibraryIndexStore(app)
-    private val root: File = NxStorage.root(app)
+    /** The data root ([DataRoot.settled]: after a move still running), asked on the IO dispatcher at each use. */
+    private val root: File get() = DataRoot.settled(app)
     private val work: File = File(app.filesDir, WORK_DIR)
     // A throwing log callback must not take the process down.
     private val errors = CoroutineExceptionHandler { _, e -> NxLog.e(TAG, "device sync log tail failed", e) }
@@ -105,19 +106,28 @@ class AndroidDeviceSync(
 
     override suspend fun rsyncAvailable(): Boolean = withContext(Dispatchers.IO) { Rsync.find(app) != null }
 
-    override fun romsAvailable(): Boolean = AndroidAllFilesAccess.isGranted() && settings.treeRef?.let(FileRefs::isFile) == true
+    private val homes = AndroidHomeLocator(app)
+
+    /**
+     * True when the effective home ([AndroidHomeLocator.current]: the full-access folder, else Android/media) is a path
+     * this phone reads natively; a picker (SAF) home from before the upgrade is not.
+     */
+    override fun romsAvailable(): Boolean = homes.current()?.let(FileRefs::isFile) == true
+
+    /** The effective home folder (callers checked [romsAvailable]). */
+    private fun home(): File = File(FileRefs.path(homes.current()?.takeIf(FileRefs::isFile) ?: error("no home folder")))
 
     /** The home folder's `Roms/` (callers checked [romsAvailable]). */
-    private fun homeRoms(): File = File(FileRefs.path(settings.treeRef ?: error("no home folder")), "Roms")
+    private fun homeRoms(): File = File(home(), "Roms")
 
     /** The app's collections, read and written as the Collections tab does (its app-private copy kept right). */
-    private val collections = Collections(AndroidRomsSources.of(app), AndroidSidecarStore(app)) { settings.treeRef }
+    private val collections = Collections(AndroidRomsSources.of(app), AndroidSidecarStore(app)) { homes.current() }
 
     /** The home folder's `Collections/`, created when missing (callers checked [romsAvailable]). */
-    private fun homeCollections(): File = File(FileRefs.path(settings.treeRef ?: error("no home folder")), Collections.DIR).apply { mkdirs() }
+    private fun homeCollections(): File = File(home(), Collections.DIR).apply { mkdirs() }
 
     /** The home folder's `Bios/`, created when missing (callers checked [romsAvailable]). */
-    private fun homeBios(): File = File(FileRefs.path(settings.treeRef ?: error("no home folder")), "Bios").apply { mkdirs() }
+    private fun homeBios(): File = File(home(), "Bios").apply { mkdirs() }
 
     override suspend fun checkFileTimes(): Boolean = withContext(Dispatchers.IO) {
         // A home with no Roms/ yet is not a file-time failure.
@@ -286,16 +296,20 @@ class AndroidDeviceSync(
             step == SyncStep.RECEIVE_SAVES -> File(work, SAVES_RECV_DIR)
             else -> null
         }
-        val rsync = withContext(Dispatchers.IO) {
+        val (rsync, root) = withContext(Dispatchers.IO) {
+            val root = this@AndroidDeviceSync.root
             File(root, "Saves").mkdirs(); File(root, ".userdata/shared").mkdirs(); stagedDir?.mkdirs()
-            Rsync.find(app)
+            (Rsync.find(app) ?: return@withContext null) to root
         } ?: return NO_RSYNC
         val only = staged.takeIf { step == SyncStep.RECEIVE_SAVES }
         return rsync.runStreaming(SyncCommands.clientArgs(rsync.binary.absolutePath, step, peerIp, root.absolutePath, stagedDir?.absolutePath, only), onLine)
     }
 
-    /** This phone's private `Saves/` and the save staging trees beside the daemon's work files. */
-    private val saveFiles = SyncSaveFiles(File(root, "Saves"), File(work, SAVES_SEND_DIR), File(work, SAVES_RECV_DIR))
+    /**
+     * This phone's `Saves/` (at the data root now: use it on the IO dispatcher) and the save staging trees beside
+     * the daemon's work files.
+     */
+    private val saveFiles: SyncSaveFiles get() = SyncSaveFiles(File(root, "Saves"), File(work, SAVES_SEND_DIR), File(work, SAVES_RECV_DIR))
 
     override suspend fun listHomeSaves(): List<SaveFile> = withContext(Dispatchers.IO) { saveFiles.listSaves() }
     override fun defaultTags(): Map<String, String> = settings.defaultTags
@@ -331,6 +345,7 @@ class AndroidDeviceSync(
     override suspend fun startServer(peerIp: String, roms: Boolean, onLogLine: (String) -> Unit): Boolean = withContext(Dispatchers.IO) {
         try {
             val rsync = Rsync.find(app) ?: return@withContext false.also { NxLog.w(TAG, "device sync server: no rsync") }
+            val root = this@AndroidDeviceSync.root
             work.mkdirs(); File(root, "Saves").mkdirs()
             val shared = File(root, ".userdata/shared").apply { mkdirs() }
             // Not rsyncd.log: Rsync.startDaemonWith redirects the daemon's stdout/stderr there (truncating it), which

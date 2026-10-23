@@ -52,10 +52,10 @@ import kotlin.coroutines.resumeWithException
 
 /**
  * The Android [NetplayPlatform]: Wi-Fi state from ConnectivityManager, discovery over UDP broadcast (MulticastLock
- * held while browsing), the control channel over TCP, and the save files under [sdRoot] (`filesDir/sd`).
+ * held while browsing), the control channel over TCP, and the save files under [sdRoot] (the data root, asked per use).
  * Every socket call runs off the main thread.
  */
-class AndroidNetplay(context: Context, private val sdRoot: File) : NetplayPlatform {
+class AndroidNetplay(context: Context, private val sdRoot: () -> File) : NetplayPlatform {
     private val context = context.applicationContext
     private val connectivity = this.context.getSystemService(ConnectivityManager::class.java)
     private val prefs = this.context.getSharedPreferences("netplay", Context.MODE_PRIVATE)
@@ -270,7 +270,7 @@ class AndroidNetplay(context: Context, private val sdRoot: File) : NetplayPlatfo
                 try {
                     if (!stage.mkdirs()) throw IOException("cannot create ${stage.name}")
                     // The save under any handheld name, RZIP decoded; nothing staged when none exists or it is malformed.
-                    val found = paths.findSave(sdRoot)
+                    val found = paths.findSave(sdRoot())
                     val bytes = found?.readSaveDecoded()
                     val names = if (found == null || bytes == null) emptyList() else {
                         val wire = if (found.name.endsWith(".srm")) "nxsave.srm" else "nxsave.sav"
