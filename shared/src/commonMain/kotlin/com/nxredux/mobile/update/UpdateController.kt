@@ -171,19 +171,25 @@ class UpdateController(
     private fun check(automatic: Boolean) {
         _state.value = UpdateState.Checking
         job = scope.launch {
-            val release = try {
-                parseLatestRelease(platform.fetchLatest(), platform.dev)
+            val latest = try {
+                readLatestRelease(platform.fetchLatest(), platform.dev)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                null   // offline, rate-limited or a portal page: all the same to the user
+                LatestRelease.Unusable   // offline, rate-limited or a portal page: all the same to the user
             }
-            if (release == null) {
+            if (latest == LatestRelease.Unusable) {
                 platform.lastFailure = now()
                 _state.value = UpdateState.Failed("Couldn't reach GitHub", null)
                 return@launch
             }
             platform.lastSuccess = now()
+            // GitHub answered; a release without this build's APK has nothing newer to offer.
+            val release = (latest as? LatestRelease.Found)?.release
+            if (release == null) {
+                _state.value = UpdateState.UpToDate(platform.installedVersion)
+                return@launch
+            }
             if (release.versionCode > platform.installedCode) {
                 _state.value = UpdateState.Available(release)
                 if (automatic && UpdatePolicy.shouldPopup(release, platform.installedCode, platform.silenced)) _popup.value = release

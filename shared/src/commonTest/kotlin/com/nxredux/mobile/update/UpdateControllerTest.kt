@@ -14,8 +14,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 
 /** Scriptable platform: set the fields, then read the recorded calls. */
-private class FakeUpdatePlatform : UpdatePlatform {
-    override val dev = false
+private class FakeUpdatePlatform(override val dev: Boolean = false) : UpdatePlatform {
     override val installedCode = 3_000L
     override val installedVersion = "0.3.0"
     /** The feed's body; [feedError] makes `fetchLatest` throw instead (offline, 403). */
@@ -118,6 +117,17 @@ class UpdateControllerTest {
         assertEquals(UpdateState.Failed("Couldn't reach GitHub", null), c.state.value)
         assertNull(c.popup.value)
         assertEquals(NOW, fake.lastFailure)
+    }
+
+    @Test fun a_release_without_this_builds_apk_is_up_to_date() = runTest {
+        // The dev build against the real feed: only the release APK is attached.
+        val fake = FakeUpdatePlatform(dev = true).apply { feed = """{"tag_name":"v0.4.0","assets":[{"name":"NXReduxMobile-v0.4.0.apk","size":1000,"browser_download_url":"https://example.com/v0.4.0.apk"}]}"""; lastFailure = 7L }
+        val c = controller(fake)
+        c.onMainMenu()
+        assertEquals(UpdateState.UpToDate("0.3.0"), c.state.value)
+        assertNull(c.popup.value)
+        assertEquals(NOW, fake.lastSuccess)
+        assertEquals(7L, fake.lastFailure)
     }
 
     @Test fun check_now_ignores_the_interval_and_silence_but_never_pops_up() = runTest {

@@ -3,6 +3,7 @@ package com.nxredux.mobile.update
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -74,6 +75,21 @@ class AppReleaseTest {
         assertNull(parseLatestRelease(releaseJson(tag = "v0.4.0-rc1"), dev = false))
         assertNull(parseLatestRelease("not json", dev = false))
         assertNull(parseLatestRelease("{}", dev = false))
+    }
+
+    @Test fun a_published_release_without_this_builds_apk_has_no_asset() {
+        assertEquals(LatestRelease.NoAsset, readLatestRelease(releaseJson(), dev = true))
+        assertEquals(LatestRelease.NoAsset, readLatestRelease(releaseJson(asset = null), dev = false))
+        val found = assertIs<LatestRelease.Found>(readLatestRelease(releaseJson(), dev = false))
+        assertEquals("0.3.0", found.release.version)
+    }
+
+    @Test fun unusable_feeds_stay_unusable() {
+        assertEquals(LatestRelease.Unusable, readLatestRelease(releaseJson(prerelease = true), dev = false))
+        assertEquals(LatestRelease.Unusable, readLatestRelease(releaseJson(draft = true), dev = false))
+        assertEquals(LatestRelease.Unusable, readLatestRelease(releaseJson(tag = "v0.4.0-rc1"), dev = false))
+        assertEquals(LatestRelease.Unusable, readLatestRelease("<html>", dev = false))
+        assertEquals(LatestRelease.Unusable, readLatestRelease("{}", dev = false))
     }
 
     @Test fun a_missing_digest_leaves_the_hash_null() {

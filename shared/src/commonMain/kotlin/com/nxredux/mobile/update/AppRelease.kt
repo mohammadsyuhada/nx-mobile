@@ -61,25 +61,36 @@ fun firstParagraph(body: String): String {
     return paragraph.lines().joinToString(" ") { it.trim() }.replace(BOLD, "$1").replace(LINK, "$1").replace(CODE, "$1")
 }
 
-/**
- * Parses GitHub's `releases/latest` answer. [dev]: the dev flavor, which installs the `-dev` APK instead of the release one.
- * Null when the JSON is bad, the release is a draft or prerelease, the tag is not `vX.Y.Z`, or no APK for the flavor is attached.
- */
-fun parseLatestRelease(json: String, dev: Boolean): AppRelease? {
-    val dto = runCatching { lenientJson.decodeFromString<ReleaseDto>(json) }.getOrNull() ?: return null
-    if (dto.draft || dto.prerelease) return null
-    val code = tagVersionCode(dto.tag_name) ?: return null
+/** What GitHub's `releases/latest` answer holds for this build. */
+sealed interface LatestRelease {
+    data class Found(val release: AppRelease) : LatestRelease
+    /** A published `vX.Y.Z` release with no APK for this flavor (the dev build against the real feed): nothing to install. */
+    data object NoAsset : LatestRelease
+    /** Bad JSON (a portal page), a draft or prerelease, or a tag that is not `vX.Y.Z`: the check failed. */
+    data object Unusable : LatestRelease
+}
+
+/** Reads GitHub's `releases/latest` answer. [dev]: the dev flavor, which installs the `-dev` APK instead of the release one. */
+fun readLatestRelease(json: String, dev: Boolean): LatestRelease {
+    val dto = runCatching { lenientJson.decodeFromString<ReleaseDto>(json) }.getOrNull() ?: return LatestRelease.Unusable
+    if (dto.draft || dto.prerelease) return LatestRelease.Unusable
+    val code = tagVersionCode(dto.tag_name) ?: return LatestRelease.Unusable
     val pattern = if (dev) DEV_ASSET else RELEASE_ASSET
-    val asset = dto.assets.firstOrNull { pattern.matches(it.name) && it.browser_download_url.isNotEmpty() } ?: return null
-    return AppRelease(
-        version = dto.tag_name.removePrefix("v"),
-        versionCode = code,
-        notes = firstParagraph(dto.body.orEmpty()),
-        apkUrl = asset.browser_download_url,
-        apkSize = asset.size,
-        sha256 = asset.digest?.removePrefix("sha256:")?.lowercase()?.takeIf { it.isNotEmpty() },
+    val asset = dto.assets.firstOrNull { pattern.matches(it.name) && it.browser_download_url.isNotEmpty() } ?: return LatestRelease.NoAsset
+    return LatestRelease.Found(
+        AppRelease(
+            version = dto.tag_name.removePrefix("v"),
+            versionCode = code,
+            notes = firstParagraph(dto.body.orEmpty()),
+            apkUrl = asset.browser_download_url,
+            apkSize = asset.size,
+            sha256 = asset.digest?.removePrefix("sha256:")?.lowercase()?.takeIf { it.isNotEmpty() },
+        ),
     )
 }
+
+/** The release [readLatestRelease] found, or null when there is none to install. */
+fun parseLatestRelease(json: String, dev: Boolean): AppRelease? = (readLatestRelease(json, dev) as? LatestRelease.Found)?.release
 
 /** When the updater checks and when it interrupts. */
 object UpdatePolicy {
