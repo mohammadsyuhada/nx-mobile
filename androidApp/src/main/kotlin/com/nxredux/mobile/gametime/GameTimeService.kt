@@ -79,6 +79,16 @@ object GameTimeService {
     fun data(context: Context): GameTimeData? = store(context)?.let { StoreGameTimeData(it, Dispatchers.IO) }
 
     /**
+     * Gives every game [rename] answers for its new path ([GameTimeStore.renamePaths]), at the data root now (the storage
+     * upgrade runs it on the private one, before the move). False when the database can't be opened. Blocks.
+     */
+    fun renamePaths(context: Context, rename: (String) -> String?): Boolean {
+        val s = store(context) ?: return false
+        s.renamePaths(s.romPaths().mapNotNull { from -> rename(from)?.let { from to it } }.toMap())
+        return true
+    }
+
+    /**
      * Closes the database before [com.nxredux.mobile.storage.DataRoot] moves it (a live WAL database is never copied half
      * way) and forgets the store and recorder, so the next call opens it again at the root it is under then.
      */

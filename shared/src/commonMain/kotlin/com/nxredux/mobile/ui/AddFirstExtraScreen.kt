@@ -73,6 +73,24 @@ fun PickFolderScreen(
         listOf("Pick folder"), canGoBack, selected, onSelect, onRow, onHint,
     )
 
+/**
+ * The one-time storage upgrade ([Screen.StorageUpgrade], installs from v0.3.0 and earlier; remove after v1.0), in the
+ * setup steps' shape. Required: B never leaves it for the library, so no Back hint.
+ */
+@Composable
+fun StorageUpgradeScreen(screen: Screen.StorageUpgrade, selected: Int, onSelect: (Int) -> Unit, onRow: (Int) -> Unit, onHint: (NxButton) -> Unit) {
+    val (headline, line) = when {
+        screen.error != null -> "Saves not moved" to screen.error
+        screen.stage == Screen.StorageUpgrade.Stage.EXPLAIN ->
+            "Keep your saves" to "Your saves can now live in your own folder, so uninstalling keeps them. This needs All files access."
+        screen.stage == Screen.StorageUpgrade.Stage.PICK ->
+            "Pick your home folder" to "Pick the folder that holds your Roms again. Your saves, states and settings move into it."
+        else -> "Saves moved" to
+            "Your saves, states and settings are now in ${screen.folder}. Uninstalling the app removes them. Your games stay where they are."
+    }
+    SetupStepScreen("Storage", headline, listOf(line), storageUpgradeRows(screen), canGoBack = false, selected, onSelect, onRow, onHint)
+}
+
 /** First setup, after the home pick: offer an existing ROMs folder as an extra source (scanned in place). [note]: a line above it ([AppState.setupNote]). */
 @Composable
 fun AddFirstExtraScreen(title: String, canGoBack: Boolean, selected: Int, onSelect: (Int) -> Unit, onRow: (Int) -> Unit, onHint: (NxButton) -> Unit, note: String? = null) =

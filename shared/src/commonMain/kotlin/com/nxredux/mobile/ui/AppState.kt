@@ -117,6 +117,9 @@ import com.nxredux.mobile.settings.SourceConversion
 import com.nxredux.mobile.storage.FileRefs
 import com.nxredux.mobile.storage.AllFilesAccess
 import com.nxredux.mobile.storage.HomeLocator
+import com.nxredux.mobile.storage.StorageUpgradeGate
+import com.nxredux.mobile.storage.StorageUpgradePlatform
+import com.nxredux.mobile.storage.UpgradeCase
 import com.nxredux.mobile.storage.LocalFiles
 import com.nxredux.mobile.storage.GamePath
 import com.nxredux.mobile.storage.GameRef
@@ -259,6 +262,8 @@ class AppDeps(
     val builtInSecondScreen: () -> Boolean = { false },
     /** Where the home is now (the full-access folder, else the app's Android/media one); null: the saved [AppSettings.treeRef] (tests). */
     val homes: HomeLocator? = null,
+    /** The one-time storage upgrade for installs from v0.3.0 and earlier (remove after v1.0); null: none (tests, other platforms). */
+    val storageUpgrade: StorageUpgradePlatform? = null,
 )
 
 /**
@@ -300,6 +305,14 @@ sealed interface Screen {
     ) : Screen
     /** First setup only: offer an existing ROMs folder as an extra source. */
     data object AddFirstExtra : Screen
+    /**
+     * The one-time storage upgrade (installs from v0.3.0 and earlier, without a full-access home; remove after v1.0): its
+     * [stage]. [folder]: the media home's path (`Android/media/<package>/`), which DECLINED names. [error]: the move did
+     * not finish; the page says so and OK goes on to the library (the screen shows again on the next start).
+     */
+    data class StorageUpgrade(val stage: Stage, val folder: String = "", val error: String? = null) : Screen {
+        enum class Stage { EXPLAIN, PICK, DECLINED }
+    }
     /** First setup's last step, after the ROM folders: "Add N Android games to Consoles?" (A Yes, B Not now). */
     data class AndroidGamesStep(val ask: AndroidGamesAsk) : Screen
 
@@ -1793,7 +1806,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      */
     /** First setup's steps and onboarding (a folder change in Settings may resume them): never a tool on the top screen. */
     private fun setupScreen(s: Screen): Boolean = when (s) {
-        is Screen.PermissionsStep, Screen.PickFolder, Screen.AddFirstExtra, is Screen.FolderSummary, is Screen.AndroidGamesStep, is Screen.Onboarding -> true
+        is Screen.PermissionsStep, Screen.PickFolder, Screen.AddFirstExtra, is Screen.FolderSummary, is Screen.AndroidGamesStep, is Screen.Onboarding, is Screen.StorageUpgrade -> true
         else -> false
     }
 
@@ -1973,7 +1986,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      */
     fun menuPadShown(): Boolean {
         when (_screen.value) {
-            is Screen.PermissionsStep, Screen.PickFolder, Screen.AddFirstExtra, is Screen.AndroidGamesStep, is Screen.FolderSummary -> return false
+            is Screen.PermissionsStep, Screen.PickFolder, Screen.AddFirstExtra, is Screen.AndroidGamesStep, is Screen.FolderSummary, is Screen.StorageUpgrade -> return false
             else -> Unit
         }
         // First setup between the welcome and HANDHELD (the folder steps and their pickers): not asked yet.
@@ -2641,6 +2654,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         resetOnboardingRun()
         deps.settings.onboardingDone = true
         deps.settings.onboardingStep = null
+        deps.storageUpgrade?.markDone()   // a new install has nothing to upgrade
         scope.launch {
             rebuildMainRows()
             showSystemsNow(MenuCategory.HOME)
@@ -2772,6 +2786,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     fun load(then: ((List<SystemFolder>) -> Unit)? = null) {
         // An install from before onboarding has its home already: it counts as done. A fresh one has onboarding to do.
         if (deps.settings.onboardingDone == null) deps.settings.onboardingDone = deps.settings.treeRef != null
+        // The one-time storage upgrade (v0.3.0 and earlier) comes before anything else; a load while it is up leaves it.
+        if (upgradeOn || upgradeDue()) { if (!upgradeOn) startStorageUpgrade(); return }
         // First setup's folder steps come first even with a media home to fall back to; a saved step means they were reached.
         val setupFirst = deps.settings.treeRef == null && deps.settings.onboardingDone == false && deps.settings.onboardingStep == null && !mediaHomeTaken
         if (home() == null || setupFirst) {
@@ -3180,6 +3196,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      */
     fun onAllFilesAccessChanged() {
         deps.allFilesAccess ?: return
+        if (upgradeOn) { upgradeAccessChanged(); return }   // the upgrade screen answers it, never a library reload
         if (_screen.value is Screen.PermissionsStep) { showPermissions(keep = true); return }   // back from a prompt: the rows show its answer
         if ((_screen.value as? Screen.Settings)?.section == SettingsSection.ROM_FOLDERS) refreshSettings()
         // Granted meanwhile: SAF folders on external storage become paths. The main menu reloads at once (rescanning, as the
@@ -3225,6 +3242,178 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             },
             kept = { fromLibrary?.let(::openSettings) },   // the same home again, not listing now
         )
+    }
+
+    // The one-time storage upgrade (installs from v0.3.0 and earlier without a full-access home; remove after v1.0).
+
+    /** The upgrade screen is up (from its first page until the library loads after it): access changes drive it, not the library. */
+    private var upgradeOn = false
+    /** Its adoption or move is running: presses and access changes wait for it. */
+    private var upgradeBusy = false
+    /** The move failed this run: the library goes on with the private data; the screen comes back on the next start. */
+    private var upgradeDeferred = false
+    /** The saved home when the screen first showed (a picker home the pick may replace). */
+    private var upgradeOld: ContentRef? = null
+
+    /** The upgrade screen is due ([StorageUpgradeGate] asks). QUIET needs nothing here: the platform moves in the background. */
+    private fun upgradeDue(): Boolean {
+        val up = deps.storageUpgrade ?: return false
+        if (upgradeDeferred) return false
+        return StorageUpgradeGate.due(deps.settings.onboardingDone, up.isDone(), deps.allFilesAccess?.granted() == true, deps.settings.treeRef) == UpgradeCase.ASK
+    }
+
+    /** The upgrade's first page; where All files access cannot be had (not declared), the declined path at once. */
+    private fun startStorageUpgrade() {
+        upgradeOn = true
+        upgradeOld = deps.settings.treeRef
+        if (deps.allFilesAccess?.declared != true) return upgradeDecline()
+        showStorageUpgrade(Screen.StorageUpgrade(Screen.StorageUpgrade.Stage.EXPLAIN))
+    }
+
+    private fun showStorageUpgrade(s: Screen.StorageUpgrade) {
+        _screen.value = s
+        _selection.value = ListSelection(0, storageUpgradeRows(s).size)
+    }
+
+    /** A or a tap on the upgrade page's row [index]. */
+    fun storageUpgradeRow(index: Int) {
+        val s = _screen.value as? Screen.StorageUpgrade ?: return
+        if (upgradeBusy) return
+        if (s.error != null) return upgradeLater()
+        when (s.stage) {
+            Screen.StorageUpgrade.Stage.EXPLAIN -> if (index == 0) upgradeAllow() else upgradeDecline()
+            Screen.StorageUpgrade.Stage.PICK -> upgradePick()
+            Screen.StorageUpgrade.Stage.DECLINED -> upgradeFinished()
+        }
+    }
+
+    /** B on the upgrade page: the page is required, so EXPLAIN stays and PICK goes back to it; DECLINED and an error go on as OK. */
+    private fun storageUpgradeBack(s: Screen.StorageUpgrade) {
+        if (upgradeBusy) return
+        when {
+            s.error != null -> upgradeLater()
+            s.stage == Screen.StorageUpgrade.Stage.PICK -> showStorageUpgrade(Screen.StorageUpgrade(Screen.StorageUpgrade.Stage.EXPLAIN))
+            s.stage == Screen.StorageUpgrade.Stage.DECLINED -> upgradeFinished()
+            else -> Unit
+        }
+    }
+
+    /** Allow: granted already, on at once; else Android's page, and the answer comes back through [onAllFilesAccessChanged]. */
+    private fun upgradeAllow() {
+        if (deps.allFilesAccess?.granted() == true) upgradeGranted() else deps.allFilesAccess?.openSettings()
+    }
+
+    /** All files access changed while the upgrade is up: granted on its first page goes on; revoked on the pick goes back to it. */
+    private fun upgradeAccessChanged() {
+        val s = _screen.value as? Screen.StorageUpgrade ?: return
+        if (upgradeBusy || s.error != null) return
+        val granted = deps.allFilesAccess?.granted() == true
+        when {
+            s.stage == Screen.StorageUpgrade.Stage.EXPLAIN && granted -> upgradeGranted()
+            s.stage == Screen.StorageUpgrade.Stage.PICK && !granted -> showStorageUpgrade(Screen.StorageUpgrade(Screen.StorageUpgrade.Stage.EXPLAIN))
+            else -> Unit
+        }
+    }
+
+    /** Granted: the picker home becomes its path where it can ([convertToFiles]) and the data moves into it; else the pick. */
+    private fun upgradeGranted() {
+        upgradeBusy = true
+        _screen.value = Screen.Loading
+        scope.launch {
+            convertToFiles()
+            val home = deps.settings.treeRef
+            if (home != null && FileRefs.isFile(home)) return@launch upgradeMove(home) { upgradeFinished() }
+            upgradeBusy = false
+            showStorageUpgrade(Screen.StorageUpgrade(Screen.StorageUpgrade.Stage.PICK))
+        }
+    }
+
+    /** The pick's page: the list-style picker on the home (with access on it is always there). */
+    private fun upgradePick() {
+        val p = filePicker ?: return
+        if (filePickerOn()) p.open(FilePickMode.Home, null) { it?.let(::storageUpgradePicked) }
+    }
+
+    /**
+     * The folder picked on the upgrade's pick page becomes the home and the data moves into it. A folder other than the
+     * old picker home makes that one an extra first (its Bios and Collections copied into [ref], its keys rewritten). A
+     * folder over an extra, or over the old home without being it, is refused (its files would list twice).
+     */
+    fun storageUpgradePicked(ref: ContentRef) {
+        val up = deps.storageUpgrade ?: return
+        if (!upgradeOn || upgradeBusy) return
+        val old = upgradeOld?.takeIf { !FileRefs.isFile(it) }
+        val adopt = old != null && Sources.mappedPath(old) != FileRefs.path(ref).trimEnd('/')
+        val clash = deps.settings.extraFolders.map { it.ref }.firstOrNull { Sources.overlaps(it, ref) } ?: old?.takeIf { adopt && Sources.overlaps(it, ref) }
+        if (clash != null) {
+            _error.value = "That folder overlaps ${deps.source.displayName(clash)}; files would list twice."
+            return
+        }
+        upgradeBusy = true
+        _screen.value = Screen.Loading
+        scope.launch {
+            if (adopt) {
+                val extra = upgradeAdopt(old!!, ref).getOrElse { return@launch upgradeFailed() }
+                extra?.let { deps.settings.extraFolders = deps.settings.extraFolders + it }
+            }
+            deps.settings.treeRef = ref
+            upgradeMove(ref) { upgradeFinished() }
+        }
+    }
+
+    /** Not now (or no All files access here): the picker home becomes an extra, and the data moves into the media home. */
+    private fun upgradeDecline() {
+        val up = deps.storageUpgrade ?: return
+        upgradeBusy = true
+        _screen.value = Screen.Loading
+        scope.launch {
+            val old = deps.settings.treeRef
+            if (old != null && !FileRefs.isFile(old)) {
+                val extra = upgradeAdopt(old, null).getOrElse { return@launch upgradeFailed() }
+                extra?.let { deps.settings.extraFolders = deps.settings.extraFolders + it }
+                deps.settings.treeRef = null
+            }
+            deps.settings.allFilesAsked = true
+            val media = deps.homes?.media ?: return@launch upgradeFailed()
+            upgradeMove(media) {
+                upgradeBusy = false
+                showStorageUpgrade(Screen.StorageUpgrade(Screen.StorageUpgrade.Stage.DECLINED, folder = mediaPath(media)))
+            }
+        }
+    }
+
+    /** [StorageUpgradePlatform.adoptPickerHome]: the extra (null: the old home is gone, nothing to adopt), or its failure. */
+    private suspend fun upgradeAdopt(old: ContentRef, into: ContentRef?): Result<ExtraFolder?> {
+        val up = deps.storageUpgrade ?: return Result.success(null)
+        return try { Result.success(up.adoptPickerHome(old, into)) } catch (e: CancellationException) { throw e } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /** Moves the private data into [home]; marks the upgrade done and runs [then] only when the move finished. */
+    private suspend fun upgradeMove(home: ContentRef, then: () -> Unit) {
+        val up = deps.storageUpgrade ?: return
+        if (!up.moveInto(home)) return upgradeFailed()
+        up.markDone()
+        then()
+    }
+
+    /** The adoption or move did not finish: nothing is marked, the private data stays, and the page says so. */
+    private fun upgradeFailed() {
+        upgradeBusy = false
+        showStorageUpgrade(Screen.StorageUpgrade(Screen.StorageUpgrade.Stage.EXPLAIN, error = UPGRADE_FAILED))
+    }
+
+    /** OK after a failure: on to the library for this run; the next start asks again. */
+    private fun upgradeLater() {
+        upgradeDeferred = true
+        upgradeFinished()
+    }
+
+    /** The upgrade is over (or put off): the library loads on the home now. */
+    private fun upgradeFinished() {
+        upgradeOn = false
+        upgradeBusy = false
+        upgradeOld = null
+        load()
     }
 
     /** From the platform picker: refuses a folder that is, contains or lies inside the home or another extra. */
@@ -4803,7 +4992,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         _tabFocus.value = false   // Home lands on its content (a stale-library reload too)
         // Onboarding (and its embedded Device Sync) stays put, as first setup does.
         if (_screen.value is Screen.Onboarding || (_screen.value == Screen.DeviceSync && onboardingSync)) return
-        when (_screen.value) { Screen.Loading, is Screen.PermissionsStep, Screen.PickFolder, Screen.AddFirstExtra, is Screen.AndroidGamesStep, is Screen.FilePicker -> return; else -> Unit }
+        when (_screen.value) { Screen.Loading, is Screen.PermissionsStep, Screen.PickFolder, Screen.AddFirstExtra, is Screen.AndroidGamesStep, is Screen.FilePicker, is Screen.StorageUpgrade -> return; else -> Unit }
         switcherJob?.cancel()
         loader.cancel()
         if (loader.active) return   // a non-cancellable load (the library rescan) runs on and lands by itself
@@ -5571,6 +5760,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 }
             }
             Screen.PickFolder, is Screen.PermissionsStep -> setupStepRow(_selection.value.index)
+            is Screen.StorageUpgrade -> storageUpgradeRow(_selection.value.index)
             is Screen.FilePicker -> filePicker?.onButton(s, NxButton.A)
             Screen.AddFirstExtra, is Screen.AndroidGamesStep, is Screen.FolderSummary -> setupStepRow(_selection.value.index)
             Screen.Loading -> Unit
@@ -6338,6 +6528,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             Screen.PickFolder -> if (inFirstSetup()) { backFromHomePick(); true } else false
             is Screen.FilePicker -> { filePicker?.onButton(s, NxButton.B); true }
             is Screen.PermissionsStep -> { if (deps.settings.onboardingDone == false) backToWelcome() else skipAllFiles(); true }
+            is Screen.StorageUpgrade -> { storageUpgradeBack(s); true }   // required: B never leaves it for the library
             is Screen.AndroidGamesStep -> { if (inFirstSetup()) showAddFirstExtra() else answerAndroidGames(false); true }
             // The summary: B stops a running move (after the current game); otherwise back to the ROMs folder step (the folder stays added).
             // The home page: back to the pick (a new pick shows its page again).
@@ -6656,6 +6847,17 @@ private const val FOLDER_STEPS = "FOLDERS"
 
 /** How often a home move rewrites the lines of the games it moved so far. */
 private const val LINES_FLUSH_MS = 3_000L
+
+/** The storage upgrade's error when its move did not finish. */
+private const val UPGRADE_FAILED = "Couldn't move your saves. They're safe; the app will try again next time."
+
+/** [s]'s rows: Allow and Not now on the first page, Pick folder on the pick, OK after (or after an error). */
+internal fun storageUpgradeRows(s: Screen.StorageUpgrade): List<String> = when {
+    s.error != null -> listOf("OK")
+    s.stage == Screen.StorageUpgrade.Stage.EXPLAIN -> listOf("Allow", "Not now")
+    s.stage == Screen.StorageUpgrade.Stage.PICK -> listOf("Pick folder")
+    else -> listOf("OK")
+}
 
 /** A Permissions page row. */
 internal enum class PermissionRow { ALL_FILES, NOTIFICATIONS, CONTINUE }

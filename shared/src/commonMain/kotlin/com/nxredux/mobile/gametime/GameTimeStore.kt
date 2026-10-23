@@ -53,6 +53,9 @@ class GameTimeStore(
         db.transaction { map.forEach { (from, to) -> q.renamePath(to = to, from = from) } }
     }
 
+    /** Every game's rom path, played or not (merged members too). */
+    fun romPaths(): List<String> = q.gameGroups().executeAsList().map { it.rom_path }
+
     fun touch(uuid: String) {
         q.touchSession(now(), uuid)
     }

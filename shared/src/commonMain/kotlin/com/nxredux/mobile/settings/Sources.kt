@@ -20,13 +20,15 @@ object Sources {
 
     /**
      * The file-system path of an external-storage tree ref: `primary:<p>` is `/storage/emulated/0/<p>`, a card's
-     * `<UUID>:<p>` is `/storage/<UUID>/<p>`. A document URI maps by its tree. Null for any other ref (another provider,
-     * Downloads, the Documents root, a file ref).
+     * `<UUID>:<p>` is `/storage/<UUID>/<p>`. A document URI maps by its own document id (a folder inside a tree: the
+     * storage upgrade's extra on an old picker home's `Roms/`). Null for any other ref (another provider, Downloads, the
+     * Documents root, a file ref).
      */
     fun mappedPath(ref: ContentRef): String? {
         val v = ref.value
         if (!v.startsWith(EXTERNAL_TREE)) return null
-        val id = percentDecode(v.substringAfter("/tree/").substringBefore("/document/").trimEnd('/'))
+        val tail = v.substringAfter("/tree/")
+        val id = percentDecode((if ("/document/" in tail) tail.substringAfter("/document/") else tail).trimEnd('/'))
         if (':' !in id) return null
         val volume = id.substringBefore(':')
         val base = when {
