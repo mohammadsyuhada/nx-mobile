@@ -47,6 +47,24 @@ class DataRootTest {
         assertEquals(1_000_000L, File(home, "Saves/GBA/a.srm").lastModified())
     }
 
+    @Test fun aFileWrittenDuringTheMoveStaysPrivate() {
+        write(private, "Saves/GBA/a.srm", "save", mtime = 1000L)
+        write(private, ".userdata/android/hidden.txt", "a", mtime = 1000L)
+        write(private, NxPaths.GAME_TIME_DB, "db", mtime = 1000L)
+        write(private, NxPaths.GAME_TIME_DB + "-wal", "wal", mtime = 1000L)
+
+        DataRoot.moveAll(private, home) {
+            write(private, ".userdata/android/hidden.txt", "a\nb", mtime = 3000L)   // a store still on the private root
+            write(private, NxPaths.GAME_TIME_DB + "-wal", "wal2", mtime = 3000L)
+        }
+
+        assertEquals("a\nb", File(private, ".userdata/android/hidden.txt").readText())
+        assertEquals("db", File(private, NxPaths.GAME_TIME_DB).readText())   // its set stays whole
+        assertEquals("wal2", File(private, NxPaths.GAME_TIME_DB + "-wal").readText())
+        assertFalse(File(private, "Saves/GBA/a.srm").exists())                // the rest moved
+        assertEquals("a", File(home, ".userdata/android/hidden.txt").readText())
+    }
+
     @Test fun leavesCachesAndCredentials() {
         write(private, ".userdata/android/ra/cache/login.json", "login")
         write(private, ".userdata/android/library.json", "lib")

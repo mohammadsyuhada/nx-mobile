@@ -79,11 +79,17 @@ object DataRoot {
 
     fun isDone(context: Context): Boolean = done || File(context.noBackupFilesDir, MARKER).exists().also { if (it) done = true }
 
+    /**
+     * Sets the marker, so [of] answers the home from now on. The game-time database is closed again (a store opened
+     * while the move ran points at the private file, now gone) and the Cheat Database rereads its manifest at the new root.
+     */
     fun markDone(context: Context) {
         val marker = File(context.noBackupFilesDir, MARKER)
         runCatching { marker.parentFile?.mkdirs(); marker.createNewFile() }
             .onSuccess { done = true }
             .onFailure { NxLog.w(TAG, "cannot mark the move done", it) }
+        GameTimeService.closeForMove()
+        CheatDbService.refreshIfStarted()
     }
 
     /**
@@ -94,11 +100,7 @@ object DataRoot {
         move?.await()
         synchronized(moving) {
             GameTimeService.closeForMove()
-            try {
-                return moveAll(private(context), target)
-            } finally {
-                CheatDbService.refreshIfStarted()
-            }
+            return moveAll(private(context), target).also { privateHasData = false }
         }
     }
 
@@ -137,6 +139,7 @@ object DataRoot {
                         again.move != null -> {
                             GameTimeService.closeForMove()
                             val moved = moveAll(private, again.move)
+                            privateHasData = false
                             NxLog.i(TAG, "moved $moved files into ${again.move.path}")
                             markDone(app)
                         }
@@ -150,7 +153,6 @@ object DataRoot {
                 synchronized(lock) { move = null }
                 latch.countDown()
             }
-            CheatDbService.refreshIfStarted()
         }, "data-move").start()
     }
 
@@ -160,30 +162,43 @@ object DataRoot {
      * keeps the newer file (by modified time) under the name and the older one beside it as `<name>.bak-<yyyyMMdd-HHmmss>`
      * (its own time; `-2`, `-3`… when taken; [now] when it has none). A database moves with its `-wal`, `-shm` and
      * `-journal` files as one set. Everything is copied before anything private is deleted, and a failed copy throws
-     * with nothing deleted. Emptied private folders are removed. Returns the files copied into [home].
+     * with nothing deleted. A private file that changed after its copy (a store still writing the private root) is kept
+     * and logged, with the rest of its set. Emptied private folders are removed. Returns the files copied into [home].
+     * [beforeDelete] runs between the copies and the deletes (tests).
      */
-    internal fun moveAll(private: File, home: File, now: Long = System.currentTimeMillis()): Int {
+    internal fun moveAll(private: File, home: File, now: Long = System.currentTimeMillis(), beforeDelete: () -> Unit = {}): Int {
         if (private.canonicalFile == home.canonicalFile) return 0
         val moving = private.walkTopDown().filter { it.isFile }.map { it.relativeTo(private).invariantSeparatorsPath }
             .filter { StorageLayout.kind(it) == StorageLayout.Kind.MOVE }.toSet()
         // A sidecar whose database moves too goes with it.
         val sets = moving.filterNot { rel -> DB_SIDECARS.any { rel.endsWith(it) && rel.removeSuffix(it) in moving } }
         var moved = 0
-        val gone = ArrayList<File>()
+        val copied = ArrayList<Pair<List<File>, List<Snapshot>>>()
         for (rel in sets) {
             val names = listOf(rel) + DB_SIDECARS.map { rel + it }
             val from = names.map { File(private, it) }.filter { it.isFile }
             val to = names.map { File(home, it) }.filter { it.exists() }
+            val before = from.map(::Snapshot)   // taken before the copy: a later write shows as a change
             moved += moveSet(from, to, private, home, now)
-            gone += from
+            copied += from to before
         }
         moved += CheatsRoot.moveFromPrivate(private, home)
+        beforeDelete()
+        val gone = copied.flatMap { (from, before) ->
+            if (from.map(::Snapshot) == before) from
+            else emptyList<File>().also { NxLog.w(TAG, "kept ${from.first().path}: it changed while it moved") }
+        }
         gone.forEach { it.delete() }
         gone.mapNotNull { it.parentFile }.distinct().forEach { dir ->
             var d: File? = dir
             while (d != null && d != private && d.delete()) d = d.parentFile   // only empty ones go
         }
         return moved
+    }
+
+    /** What says a file was written since: its length and modified time. */
+    private data class Snapshot(val length: Long, val modified: Long) {
+        constructor(file: File) : this(file.length(), file.lastModified())
     }
 
     /** One file (or a database and its sidecars), [from] private into [home], over what [to] already holds there. */
