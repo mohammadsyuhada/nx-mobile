@@ -31,6 +31,8 @@ object GameTimeService {
     private const val RETRY_MS = 10_000L
     @Volatile private var opener: RetryingOpen<GameTimeStore>? = null
     @Volatile private var recorder: GameTimeRecorder? = null
+    /** The open store's driver, for [closeForMove]. */
+    @Volatile private var driver: AndroidSqliteDriver? = null
 
     private fun store(context: Context): GameTimeStore? {
         val app = context.applicationContext
@@ -48,7 +50,7 @@ object GameTimeService {
             val name = Settings.Global.getString(app.contentResolver, Settings.Global.DEVICE_NAME) ?: Build.MODEL
             GameTimeStore(GameTimeDb(driver), AndroidAppSettings(app).gameTimeDeviceId, name, System::currentTimeMillis) {
                 UUID.randomUUID().toString()
-            }.also { it.prepare() }
+            }.also { it.prepare(); this.driver = driver }
         } catch (e: Throwable) {
             runCatching { driver.close() }   // the next try opens its own
             throw e
@@ -64,6 +66,17 @@ object GameTimeService {
         }
 
     fun data(context: Context): GameTimeData? = store(context)?.let { StoreGameTimeData(it, Dispatchers.IO) }
+
+    /**
+     * Closes the database before [com.nxredux.mobile.storage.DataRoot] moves it (a live WAL database is never copied half
+     * way) and forgets the store and recorder, so the next call opens it again at the root it is under then.
+     */
+    fun closeForMove() = synchronized(this) {
+        opener = null
+        recorder = null
+        driver?.let { d -> runCatching { d.close() }.onFailure { NxLog.e(TAG, "game time database close failed", it) } }
+        driver = null
+    }
 }
 
 /**

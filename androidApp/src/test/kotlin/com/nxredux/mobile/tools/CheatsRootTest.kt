@@ -1,8 +1,6 @@
 package com.nxredux.mobile.tools
 
 import com.nxredux.mobile.cheats.db.CheatDbManifest
-import com.nxredux.mobile.runner.ContentRef
-import com.nxredux.mobile.storage.FileRefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -16,17 +14,6 @@ class CheatsRootTest {
     private val home = File(base, "home").apply { mkdirs() }
 
     private fun write(root: File, rel: String, text: String) = File(root, rel).apply { parentFile!!.mkdirs(); writeText(text) }
-
-    @Test fun aFileHomeWithAccessHoldsTheCheats() {
-        assertEquals(home, CheatsRoot.pick(FileRefs.of(home.path), granted = true, private))
-    }
-
-    @Test fun otherwiseThePrivateRoot() {
-        assertEquals(private, CheatsRoot.pick(null, granted = true, private))
-        assertEquals(private, CheatsRoot.pick(FileRefs.of(home.path), granted = false, private))                   // access off
-        assertEquals(private, CheatsRoot.pick(ContentRef("content://tree/primary%3AGames"), granted = true, private))  // a picker home
-        assertEquals(private, CheatsRoot.pick(FileRefs.of(File(base, "gone").path), granted = true, private))      // unmounted card
-    }
 
     @Test fun movesPrivateCheatsAndTheManifestIntoTheHome() {
         write(private, "Cheats/GB/Tetris (World).cht", "a")
