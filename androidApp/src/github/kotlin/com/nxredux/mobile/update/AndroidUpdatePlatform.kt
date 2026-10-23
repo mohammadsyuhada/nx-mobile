@@ -278,11 +278,13 @@ class AndroidUpdatePlatform(private val app: Context, private val scope: Corouti
             })
         }
         val open = Intent(app, LaunchActivity::class.java).setAction(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val cancel = Intent(app, UpdateWaitCancelReceiver::class.java).setAction(UpdateWaitCancelReceiver.ACTION).setPackage(app.packageName)
         val notice = NotificationCompat.Builder(app, WAIT_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("NX Redux update")
             .setContentText(reason)
             .setContentIntent(PendingIntent.getActivity(app, 0, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+            .addAction(0, "Cancel", PendingIntent.getBroadcast(app, 0, cancel, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
             .setOnlyAlertOnce(true)
             .build()
         try {

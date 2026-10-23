@@ -448,6 +448,7 @@ class UpdateControllerTest {
         c.cancel()
         assertEquals(listOf("/cache/update.apk"), fake.discarded)
         assertEquals(UpdateState.Available(RELEASE), c.state.value)
+        assertNull(fake.waits.last())   // the wait notice goes with it
         fake.busy = null
         advanceTimeBy(10_000L)
         assertTrue(fake.installs.isEmpty())

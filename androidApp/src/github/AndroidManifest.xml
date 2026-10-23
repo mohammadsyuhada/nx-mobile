@@ -16,6 +16,10 @@
         <receiver
             android:name="com.nxredux.mobile.update.UpdateInstallReceiver"
             android:exported="false" />
+        <!-- The install wait notice's Cancel (an explicit PendingIntent). -->
+        <receiver
+            android:name="com.nxredux.mobile.update.UpdateWaitCancelReceiver"
+            android:exported="false" />
         <!-- After a self-update Android kills the app without reopening it. MY_PACKAGE_REPLACED is a protected broadcast
              sent only to the replaced package, so exporting the receiver lets the system reach it and nothing else. -->
         <receiver
