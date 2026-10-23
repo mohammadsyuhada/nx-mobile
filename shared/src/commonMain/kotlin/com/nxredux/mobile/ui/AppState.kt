@@ -814,12 +814,27 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     val secondList: StateFlow<SecondList?> = _secondList.asStateFlow()
     private var secondListJob: Job? = null
 
+    private val _drawerPreview = MutableStateFlow<List<ToolAppRow>?>(null)
+    /** While [dualMenu] with the Apps tile highlighted: the drawer's apps (what A would open), for the second display; else null. */
+    val drawerPreview: StateFlow<List<ToolAppRow>?> = _drawerPreview.asStateFlow()
+    private var drawerPreviewJob: Job? = null
+
+    private val _toolOnTop = MutableStateFlow(false)
+    /**
+     * A tool opened from the main menu ([openTool]: Tools or a Home pin) has the focus, through all its pages, until the
+     * menu shows again ([showMenu]). While [dualMenu] it is drawn on the top screen, the menu staying below ([toolUnder]).
+     */
+    val toolOnTop: StateFlow<Boolean> = _toolOnTop.asStateFlow()
+    private var toolUnderRow: MainRow? = null   // the menu row the tool was opened from, kept highlighted below it
+    private var toolUnderIndex = 0
+
     /** The platform tells the menu is on the second display ([active]) or back on the main one. */
     fun onDualMenu(active: Boolean) {
         if (_dualMenu.value == active) return
         _dualMenu.value = active
         if (active) closeRaPanel()   // the panel is a single-screen overlay: dual mode shows the details pane instead
         followSecondList()
+        followDrawerPreview()
         followRaDetails()
     }
 
@@ -859,6 +874,64 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             if (highlightedSecondSource() == source) { secondListBuilds++; _secondList.value = SecondList(source, entries, 0); secondKey = key }
         }
     }
+
+    /**
+     * Recomputes [drawerPreview]: the installed apps, read once when the Apps tile is highlighted on the second display,
+     * kept while it stays so; dropped (a read under way cancelled) when it is not.
+     */
+    private fun followDrawerPreview() {
+        val s = _screen.value as? Screen.Systems
+        val l = deps.launcher
+        val on = l != null && _dualMenu.value && s != null && s.menu == null && isAppsTile(s.rows.getOrNull(_selection.value.index))
+        if (!on) { drawerPreviewJob?.cancel(); drawerPreviewJob = null; _drawerPreview.value = null; return }
+        if (_drawerPreview.value != null || drawerPreviewJob?.isActive == true) return
+        drawerPreviewJob = scope.launch {
+            val apps = l!!.installedApps()
+            installedCache = apps
+            _drawerPreview.value = drawerRows(apps)
+        }
+    }
+
+    /** A tap on app [index] of the second display's drawer preview: opens the drawer there on it, as A would (B returns). */
+    fun openDrawerPreviewApp(index: Int) {
+        val s = _screen.value as? Screen.Systems ?: return
+        if (loader.active || _drawerPreview.value == null || !isAppsTile(s.rows.getOrNull(_selection.value.index))) return
+        intendNav(NavMotion.FORWARD)
+        rememberMenuSelection()
+        noteToolOrigin()
+        openToolApps(AppPick.TOOLS, select = index)
+    }
+
+    /**
+     * While a tool is on the second display ([toolOnTop]): the main menu it was opened from, on the row it was opened
+     * from (found again when the rows moved), drawn on the bottom screen as it stays; null otherwise. A game list
+     * reached from a tool takes both screens as any game list does.
+     */
+    fun toolUnder(): Pair<Screen.Systems, ListSelection>? {
+        val s = _screen.value
+        if (!_dualMenu.value || !_toolOnTop.value || s is Screen.Systems || s is Screen.Games) return null
+        val menu = menuScreen()
+        val at = toolUnderRow?.let { menu.rows.indexOf(it) }?.takeIf { it >= 0 } ?: toolUnderIndex
+        return menu to ListSelection(at, menu.rows.size).clampedTo(menu.rows.size)
+    }
+
+    /** The highlighted menu row is the one a tool opens from: kept for [toolUnder]. */
+    private fun noteToolOrigin() {
+        val s = _screen.value as? Screen.Systems ?: return
+        toolUnderIndex = _selection.value.index
+        toolUnderRow = s.rows.getOrNull(toolUnderIndex)
+    }
+
+    /** The drawer's apps: every installed app but the Android games console's, marked when it is in Tools. */
+    private fun drawerRows(apps: List<InstalledApp>): List<ToolAppRow> {
+        val console = deps.settings.androidConsoleApps.toSet()
+        val inTools = deps.settings.toolApps.toSet()
+        return apps.filter { it.id !in console }.map { ToolAppRow(it.id, it.label, it.id in inTools) }
+    }
+
+    /** The Apps tile, in Tools or pinned on Home. */
+    private fun isAppsTile(row: MainRow?): Boolean =
+        (row is MainRow.Tool && row.row.kind == ToolKind.APPS) || (row is MainRow.PinnedTool && row.row.kind == ToolKind.APPS)
 
     /** The list the highlighted row previews while [dualMenu] on Consoles / Collections; null for any other row, tab or screen. */
     private fun highlightedSecondSource(): ListSource? {
@@ -1018,8 +1091,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             }
         }
         // The achievements panel follows the game list's selection, and closes off the game list.
-        scope.launch { _selection.collect { followRaPanel(); followRaDetails(); followSecondList() } }
-        scope.launch { _screen.collect { if (it !is Screen.Games) { closeRaPanel() } else { followRaPanel() }; followRaDetails(); followSecondList() } }
+        scope.launch { _selection.collect { followRaPanel(); followRaDetails(); followSecondList(); followDrawerPreview() } }
+        scope.launch { _screen.collect { if (it !is Screen.Games) { closeRaPanel() } else { followRaPanel() }; followRaDetails(); followSecondList(); followDrawerPreview() } }
         deps.achievements?.let { c ->
             scope.launch {
                 var wasBusy = false
@@ -1672,6 +1745,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      */
     private fun showMenu(menu: Screen.Systems, at: Int = -1) {
         val prev = _screen.value
+        _toolOnTop.value = false   // back on the menu: it has the focus again
         val screen = (prev as? Screen.Systems)?.search?.let { menu.copy(search = it) } ?: menu
         // Another tab (or the menu from another screen): its grid reports its own columns on its first layout. The same
         // tab rebuilt in place keeps them, as its grid stays laid out.
@@ -4681,18 +4755,19 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (at >= 0) selectTab(at) else openHiddenTab(category)
     }
 
-    /** RetroAchievements leads when this platform has it; the other tools always show; the user's Android apps sit before Settings. */
-    private fun toolRows(): List<ToolRow> = listOfNotNull(
+    /** The tools this platform has and the user's Android apps, all by name; Settings last. */
+    private fun toolRows(): List<ToolRow> = (listOfNotNull(
         deps.achievements?.let { ToolRow(ToolKind.RETRO_ACHIEVEMENTS, "RetroAchievements", null) },
         deps.gameTime?.let { ToolRow(ToolKind.GAME_TIME, "Game Tracker", null) },
         artworkScreens?.let { ToolRow(ToolKind.ARTWORK, "Artwork", null) },
         ToolRow(ToolKind.CHEAT_DB, "Cheat Database", null),
         deps.deviceSync?.let { ToolRow(ToolKind.DEVICE_SYNC, "Device Sync", null) },
-    ) + listOfNotNull(deps.launcher?.let { ToolRow(ToolKind.APPS, "Apps", null) }) + appToolRows() + ToolRow(ToolKind.SETTINGS, "Settings", null)
+        deps.launcher?.let { ToolRow(ToolKind.APPS, "Apps", null) },
+    ) + appToolRows()).sortedBy { it.label.lowercase() } + ToolRow(ToolKind.SETTINGS, "Settings", null)
 
     /**
-     * The Android apps the user added, in that order; one not installed is skipped (and kept, for a reinstall), and
-     * so is one in the Android games console (kept too: it comes back when it leaves the console).
+     * The Android apps the user added; one not installed is skipped (and kept, for a reinstall), and so is
+     * one in the Android games console (kept too: it comes back when it leaves the console).
      */
     private fun appToolRows(): List<ToolRow> {
         val l = deps.launcher ?: return emptyList()
@@ -4719,7 +4794,14 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         return deps.settings.toolApps.filter { it !in inConsole }
     }
 
+    /** [row]'s tool opened; any but an app ([ToolKind.APP], which launches) then has the focus ([toolOnTop]). */
     private fun openTool(row: ToolRow) {
+        noteToolOrigin()
+        openToolNow(row)
+        if (row.kind != ToolKind.APP && _screen.value !is Screen.Systems) _toolOnTop.value = true
+    }
+
+    private fun openToolNow(row: ToolRow) {
         when (row.kind) {
             ToolKind.RETRO_ACHIEVEMENTS -> if (deps.achievements != null) showRetroAchievements()
             ToolKind.GAME_TIME -> gameTimeScreen?.open(onCancel = ::showTools)
@@ -6147,7 +6229,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             is Screen.ToolApps -> {
                 if (s.menu != null) { if (!s.menu.busy) closeContextMenu() }
                 else if (s.pick == AppPick.GAMES) showSettingsOn(SettingsSection.LAUNCHER, SettingsKind.ANDROID_GAMES)
-                else showTools()   // the drawer: back on its tile
+                // The drawer: back on its tile, found by kind (an app added meanwhile may sort before it).
+                else if (menuCategory == MenuCategory.HOME) showTools()
+                else showSystemsNow(MenuCategory.TOOLS) { it is MainRow.Tool && it.row.kind == ToolKind.APPS }
                 true
             }
             Screen.AddFirstExtra -> {
@@ -6351,9 +6435,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /**
      * The apps grid for [pick]. TOOLS: the app drawer, every installed app but the Android games console's, marked when
      * it is in Tools. GAMES: the detected games, then every other app ([androidGamesPickOrder]), checked when it is in
-     * the console.
+     * the console. [select]: the app highlighted first (the second display's preview tapped).
      */
-    private fun openToolApps(pick: AppPick) {
+    private fun openToolApps(pick: AppPick, select: Int = 0) {
         val l = deps.launcher ?: return
         (_screen.value as? Screen.Settings)?.let { sectionSelections[it.section] = _selection.value }
         loader.start {
@@ -6362,14 +6446,14 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             // Icons stay cached between visits, so the drawer opens drawn; only uninstalled apps' go.
             appIcons?.retain(apps.map { it.id })
             val console = deps.settings.androidConsoleApps.toSet()
-            val (listed, shown) = when (pick) {
-                AppPick.TOOLS -> apps.filter { it.id !in console } to deps.settings.toolApps.toSet()
-                AppPick.GAMES -> androidGamesPickOrder(apps) to console
+            val rows = when (pick) {
+                AppPick.TOOLS -> drawerRows(apps)
+                AppPick.GAMES -> androidGamesPickOrder(apps).map { ToolAppRow(it.id, it.label, it.id in console) }
             }
-            val rows = listed.map { ToolAppRow(it.id, it.label, it.id in shown) }
             toolAppsColumns = 0   // a new picker: it reports its own columns on its first layout
+            if (pick == AppPick.TOOLS) _toolOnTop.value = true   // the drawer, a tool: it lands after a read, so [openTool] could not tell
             _screen.value = Screen.ToolApps(rows, pick)
-            _selection.value = ListSelection(0, rows.size)
+            _selection.value = ListSelection(select, rows.size).clampedTo(rows.size)
         }
     }
 

@@ -112,6 +112,7 @@ fun ToolAppsScreen(
     onHint: ((NxButton) -> Unit)? = null,
     onLongPress: ((Int) -> Unit)? = null,
     titled: Boolean = false,
+    hints: Boolean = true,   // false: the second display's unfocused preview, with no hint bar
 ) {
     val drawer = screen.pick == AppPick.TOOLS
     // No other launchable app: a short note in place of the grid, B still going back.
@@ -121,7 +122,7 @@ fun ToolAppsScreen(
     }
     NxScreenScaffold(
         rows = emptyList(), selectedIndex = selectedIndex, showArt = false,
-        hints = if (drawer) listOf(Hint(NxButton.MENU, "Options"), Hint(NxButton.B, "Back"), Hint(NxButton.A, "Open"))
+        hints = if (!hints) emptyList() else if (drawer) listOf(Hint(NxButton.MENU, "Options"), Hint(NxButton.B, "Back"), Hint(NxButton.A, "Open"))
             else listOf(Hint(NxButton.B, "Back"), Hint(NxButton.A, "Select")),
         onSelect = onSelect, onOpen = onOpen, onHint = onHint, modifier = modifier,
         grid = { m ->

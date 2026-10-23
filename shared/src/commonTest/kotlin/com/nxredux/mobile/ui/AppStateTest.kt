@@ -220,6 +220,13 @@ class AppStateTest {
         override suspend fun icon(id: String): ImageBitmap? { iconAsks += id; return null }   // no icon: tiles draw the generic app glyph
     }
 
+    /** Tools -> RetroAchievements, wherever it sorts among the tools. */
+    private fun openRa(state: AppState) {
+        state.openTools()
+        state.select(state.screen.value.toolRows().indexOfFirst { it.kind == ToolKind.RETRO_ACHIEVEMENTS })
+        state.openSelected()
+    }
+
     private fun menuKinds(state: AppState) = state.screen.value.contextMenu?.items?.map { it.kind } ?: emptyList()
 
     /** Opens the context menu on the highlighted row and presses A on [kind]. */
@@ -5832,7 +5839,7 @@ class AppStateTest {
 
     @Test fun one_tap_opens_a_retroachievements_row() = runTest {
         val (state, _) = stateWithAchievements()
-        state.openTools(); state.openSelected()
+        openRa(state)
         assertIs<Screen.RetroAchievements>(state.screen.value)
         tap(state, raPageRow(Screen.RaSettings(emptyList()))!!)          // Settings, in one tap
         assertIs<Screen.RaSettings>(state.screen.value)
@@ -6025,7 +6032,7 @@ class AppStateTest {
 
     @Test fun one_tap_beside_ra_settings_opens_that_row() = runTest {
         val (state, _) = stateWithAchievements()
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         assertIs<Screen.RaSettings>(state.screen.value)
         val tap = { i: Int -> state.raParentTap(Screen.RetroAchievements(), i) }
         nxTap(0, selected = false, opens = true, tap, tap)               // Achievements on the dimmed left
@@ -6443,7 +6450,7 @@ class AppStateTest {
         f.http.responders["gameid"] = { held.await(); RaResponse(200, """{"Success":true,"GameID":0}""") }
         f.store.put(RaPaths.login(), """{"Success":true,"User":"me","Token":"tok","SoftcoreScore":1}""")
         state.settings.raToken = "tok"; state.settings.raUsername = "me"
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         state.select(state.raSettings().rows.indexOfFirst { it.kind == RaSettingKind.DOWNLOAD_ALL }); state.onButton(NxButton.A)
         assertIs<Screen.RaDownload>(state.screen.value)
         assertEquals(listOf("Zelda", "Metroid"), f.controller.download.value!!.items.map { it.name })
@@ -6473,7 +6480,7 @@ class AppStateTest {
         val f = raFixture(index = index, hasher = FakeRaHasher()); val state = f.state   // unreadable: skipped at once
         f.store.put(RaPaths.login(), """{"Success":true,"User":"me","Token":"tok","SoftcoreScore":1}""")
         state.settings.raToken = "tok"; state.settings.raUsername = "me"
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         state.select(state.raSettings().rows.indexOfFirst { it.kind == RaSettingKind.DOWNLOAD_ALL }); state.onButton(NxButton.A)
         advanceUntilIdle()
         assertIs<Screen.RaDownload>(state.screen.value)                  // its page, though it ended at once
@@ -6567,19 +6574,19 @@ class AppStateTest {
     }
     private fun TestScope.stateWithAchievementsHttp(): Pair<AppState, FakeRaHttp> = raFixture().let { it.state to it.http }
 
-    @Test fun tools_lists_retroachievements_first_and_opens_its_page() = runTest {
+    @Test fun tools_lists_retroachievements_by_name_and_opens_its_page() = runTest {
         val (state, _) = stateWithAchievements()
         state.openTools()
-        assertEquals(listOf("RetroAchievements", "Cheat Database", "Settings"), state.screen.value.toolRows().map { it.label })
+        assertEquals(listOf("Cheat Database", "RetroAchievements", "Settings"), state.screen.value.toolRows().map { it.label })
         assertTrue(state.screen.value.toolRows().all { it.secondary == null })   // titles only
-        state.openSelected()
+        state.select(1); state.openSelected()
         assertIs<Screen.RetroAchievements>(state.screen.value)
         state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()   // Settings
         assertIs<Screen.RaSettings>(state.screen.value)
         assertTrue(state.back()); assertIs<Screen.RetroAchievements>(state.screen.value)
         assertEquals(2, state.selection.value.index)   // Settings stays highlighted
         assertTrue(state.back()); state.screen.value.toolRows()
-        assertEquals(0, state.selection.value.index)   // RetroAchievements stays highlighted
+        assertEquals(1, state.selection.value.index)   // RetroAchievements stays highlighted
     }
 
     /** Two cached games (Alpha, Beta), two achievements each; on the RetroAchievements page. */
@@ -6588,7 +6595,7 @@ class AppStateTest {
         for ((c, t) in listOf('a' to "Alpha", 'b' to "Beta")) {
             store.put(RaPaths.sets(c.toString().repeat(32)), setsJson(c.code, title = t, achievements = """{"ID":1,"Title":"First","Points":5,"BadgeName":"1"},{"ID":2,"Title":"Second","Points":5,"BadgeName":"2"}"""))
         }
-        state.openTools(); state.openSelected()
+        openRa(state)
         assertIs<Screen.RetroAchievements>(state.screen.value)
         return state
     }
@@ -6668,7 +6675,7 @@ class AppStateTest {
         val h = "a".repeat(32)
         store.put(RaPaths.sets(h), setsJson(42, title = "Game", achievements = """{"ID":1,"Title":"First","Points":5,"BadgeName":"1"}"""))
         store.put(RaPaths.game(h), """{"tag":"GBA","source":"home","dir":"Roms/$gba","file":"g.gba","title":"Game"}""")
-        state.openTools(); state.openSelected(); state.openSelected()   // Achievements
+        openRa(state); state.openSelected()   // Achievements
         val games = assertIs<Screen.RaGames>(state.screen.value); assertEquals("Game", games.games.single().title)
         state.openSelected()
         val game = assertIs<Screen.RaGame>(state.screen.value); assertEquals("First", game.achievements.single().title)
@@ -6688,7 +6695,7 @@ class AppStateTest {
         for (c in listOf('a', 'b')) {
             store.put(RaPaths.sets(c.toString().repeat(32)), setsJson(c.code, title = "Game $c", achievements = """{"ID":1,"Title":"First","Points":5,"BadgeName":"1"}"""))
         }
-        state.openTools(); state.openSelected(); state.openSelected()
+        openRa(state); state.openSelected()
         state.onButton(NxButton.DOWN); state.openSelected()
         assertEquals("Game b", assertIs<Screen.RaGame>(state.screen.value).game.title)
         store.put(RaPaths.sets("c".repeat(32)), setsJson(99, title = "Game c", achievements = """{"ID":1,"Title":"First","Points":5,"BadgeName":"1"}"""))
@@ -6966,7 +6973,7 @@ class AppStateTest {
         store.putGame('a')
         val gate = CompletableDeferred<Unit>()
         store.beforeList = { gate.await() }
-        state.openTools(); state.openSelected(); state.openSelected()   // Achievements: the read waits on the gate
+        openRa(state); state.openSelected()   // Achievements: the read waits on the gate
         assertIs<Screen.RetroAchievements>(state.screen.value)
         advanceTimeBy(100); assertFalse(state.loading.value)   // a fast load never flickers the overlay
         advanceTimeBy(100); assertTrue(state.loading.value)
@@ -6980,7 +6987,7 @@ class AppStateTest {
     @Test fun a_failed_load_hides_the_overlay_and_shows_the_error() = runTest {
         val (state, store) = stateWithAchievements()
         val gate = CompletableDeferred<Unit>()
-        state.openTools(); state.openSelected()
+        openRa(state)
         store.beforeList = { gate.await() }; store.failList = true   // after the Tools status read
         state.openSelected()
         advanceTimeBy(200); assertTrue(state.loading.value)
@@ -6995,7 +7002,7 @@ class AppStateTest {
         store.putGame('a')
         val gate = CompletableDeferred<Unit>()
         store.beforeList = { gate.await() }
-        state.openTools(); state.openSelected(); state.openSelected()
+        openRa(state); state.openSelected()
         advanceTimeBy(200); assertTrue(state.loading.value)
         state.onButton(NxButton.B)
         assertFalse(state.loading.value)
@@ -7008,7 +7015,7 @@ class AppStateTest {
     @Test fun a_games_achievements_load_under_the_overlay_and_back_cancels_it() = runTest {
         val (state, store) = stateWithAchievements()
         store.putGame('a')
-        state.openTools(); state.openSelected(); state.openSelected()
+        openRa(state); state.openSelected()
         assertIs<Screen.RaGames>(state.screen.value)
         val gate = CompletableDeferred<Unit>()
         store.beforeRead = { gate.await() }
@@ -7025,14 +7032,14 @@ class AppStateTest {
 
     @Test fun sync_row_needs_sign_in() = runTest {
         val (state, _) = stateWithAchievements()
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.openSelected()   // Sync now, not signed in
+        openRa(state); state.onButton(NxButton.DOWN); state.openSelected()   // Sync now, not signed in
         assertEquals("Sign in first", state.error.value)
     }
 
     @Test fun ra_settings_rows_reflect_the_settings_and_cycle_values() = runTest {
         val (state, _) = stateWithAchievements()
         state.settings.raToken = "tok"; state.settings.raUsername = "me"
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         val s = assertIs<Screen.RaSettings>(state.screen.value)
         assertEquals(listOf("Sign out", "Status", "Enable achievements", "Download all game data", "Show notifications", "Notification duration", "Progress duration", "Achievement sort order", "Reset account data", "Erase all achievement data", "Reset settings to defaults"), s.rows.map { it.label })
         assertEquals("Signed in as me", s.rows[1].secondary); assertEquals("Off", s.rows[2].secondary); assertTrue(s.rows[2].enabled); assertTrue(s.rows[3].enabled)
@@ -7050,7 +7057,7 @@ class AppStateTest {
         val (state, store) = stateWithAchievements()
         store.put(RaPaths.sets("a".repeat(32)), setsJson(1))
         state.settings.raEnabled = true   // a stale flag from before a sign-out still reads Off
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         val s = state.raSettings()
         assertEquals(listOf("Sign in", "Status", "Enable achievements", "Download all game data"), s.rows.take(4).map { it.label })
         assertEquals("Off", s.rows[2].secondary); assertFalse(s.rows[2].enabled); assertFalse(s.rows[3].enabled); assertEquals("1 games cached", s.rows[3].secondary)
@@ -7066,7 +7073,7 @@ class AppStateTest {
     @Test fun sign_in_opens_one_modal_and_signs_in_with_both_entries() = runTest {
         val (state, http) = stateWithAchievementsHttp()
         http.on("login2", body = """{"Success":true,"User":"Me","Token":"tok"}""")
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         state.openSelected()   // Sign in
         assertTrue(state.raSettings().signingIn)
         state.raDraftUser(" me "); state.onButton(NxButton.A)   // no password yet
@@ -7083,7 +7090,7 @@ class AppStateTest {
         val (state, http) = stateWithAchievementsHttp()
         val gate = CompletableDeferred<Unit>()
         http.responders["login2"] = { gate.await(); com.nxredux.mobile.achievements.RaResponse(200, """{"Success":true,"User":"Me","Token":"tok"}""") }
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         state.onButton(NxButton.A)   // open
         state.raDraftUser("me"); state.raDraftPassword("secret"); state.onButton(NxButton.A)   // login starts and waits
         assertFalse(state.raSettings().signingIn); assertEquals("Sign in", state.raSettings().rows[0].label)
@@ -7100,7 +7107,7 @@ class AppStateTest {
     @Test fun a_modal_open_when_a_sign_in_lands_closes() = runTest {
         val (state, _) = stateWithAchievements()
         state.settings.raUsername = "me"
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         state.onButton(NxButton.A); state.raDraftPassword("secret")
         assertTrue(state.raSettings().signingIn)
         state.settings.raToken = "tok"; state.achievements!!.refresh()   // a sign-in finished while the modal was up
@@ -7110,7 +7117,7 @@ class AppStateTest {
     @Test fun a_failed_server_login_shows_the_error_and_keeps_sign_in() = runTest {
         val (state, http) = stateWithAchievementsHttp()
         http.on("login2", body = """{"Success":false,"Error":"Invalid user/password combination. Please try again."}""")
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         state.onButton(NxButton.A)
         state.raDraftUser("me"); state.raDraftPassword("wrong"); state.onButton(NxButton.A)
         val s = state.raSettings()
@@ -7121,21 +7128,21 @@ class AppStateTest {
     @Test fun sign_in_seeds_the_saved_username_and_an_empty_password() = runTest {
         val (state, _) = stateWithAchievements()
         state.settings.raUsername = "saved"
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         state.openSelected()
         val s = state.raSettings()
         assertTrue(s.signingIn); assertEquals("saved", s.draftUser); assertEquals("", s.draftPassword)
     }
     @Test fun text_entry_is_open_while_the_sign_in_modal_shows() = runTest {
         val (state, _) = stateWithAchievements()
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         assertFalse(state.textEntryOpen)
         state.openSelected(); assertTrue(state.textEntryOpen)
         state.onButton(NxButton.B); assertFalse(state.textEntryOpen)
     }
     @Test fun sign_in_b_and_menu_close_and_clear_the_drafts() = runTest {
         val (state, _) = stateWithAchievements()
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         for (button in listOf(NxButton.B, NxButton.MENU)) {
             state.openSelected()
             state.raDraftUser("me"); state.raDraftPassword("secret"); state.onButton(button)
@@ -7145,14 +7152,14 @@ class AppStateTest {
     }
     @Test fun ra_drafts_without_the_modal_change_nothing() = runTest {
         val (state, _) = stateWithAchievements()
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         val before = state.screen.value
         state.raDraftUser("x"); state.raDraftPassword("y")
         assertEquals(before, state.screen.value)
     }
     @Test fun sign_in_modal_ignores_dpad() = runTest {
         val (state, _) = stateWithAchievements()
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         state.openSelected()
         val sel = state.selection.value
         state.onButton(NxButton.DOWN); state.onButton(NxButton.LEFT)
@@ -7167,7 +7174,7 @@ class AppStateTest {
         val (state, store) = stateWithAchievements()
         state.settings.raToken = "tok"; state.settings.raUsername = "me"
         store.put(RaPaths.login(), "{}"); store.put(RaPaths.JOURNAL, "x\n")
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         assertEquals("Sign out", state.raSettings().rows[0].label)
         state.onButton(NxButton.UP); state.openSelected()   // Sign out: asks first
         assertEquals(RaConfirm.SIGN_OUT, state.raSettings().confirm); assertEquals("tok", state.settings.raToken)
@@ -7180,7 +7187,7 @@ class AppStateTest {
         val (state, store) = stateWithAchievements()
         state.settings.raToken = "tok"; state.settings.raUsername = "me"; state.settings.raEnabled = true
         store.put(RaPaths.login(), "{}")
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         state.onButton(NxButton.UP); state.onButton(NxButton.A)   // one stray A on Sign out
         assertEquals(RaConfirm.SIGN_OUT, state.raSettings().confirm)
         assertEquals("tok", state.settings.raToken); assertTrue(state.settings.raEnabled); assertEquals("{}", store.text(RaPaths.login()))
@@ -7192,7 +7199,7 @@ class AppStateTest {
     @Test fun ra_settings_never_opens_on_sign_out() = runTest {
         val (state, _) = stateWithAchievements()
         state.settings.raToken = "tok"
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         assertEquals(RaSettingKind.STATUS, state.raSettings().rows[state.selection.value.index].kind)
         state.onButton(NxButton.UP); assertTrue(state.back())   // left with Sign out highlighted
         state.openSelected()
@@ -7203,14 +7210,14 @@ class AppStateTest {
     }
     @Test fun signed_out_ra_settings_opens_on_sign_in() = runTest {
         val (state, _) = stateWithAchievements()
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         assertEquals(RaSettingKind.SIGN_IN, state.raSettings().rows[state.selection.value.index].kind)
     }
     @Test fun confirming_while_the_controller_is_busy_says_so_and_changes_nothing() = runTest {
         val (state, http) = stateWithAchievementsHttp()
         val gate = CompletableDeferred<Unit>()
         http.responders["login2"] = { gate.await(); com.nxredux.mobile.achievements.RaResponse(200, """{"Success":true,"User":"Me","Token":"tok"}""") }
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         state.onButton(NxButton.A); state.raDraftUser("me"); state.raDraftPassword("secret"); state.onButton(NxButton.A)   // login waits
         repeat(8) { state.onButton(NxButton.DOWN) }; state.openSelected()   // Reset account data
         assertEquals(RaConfirm.RESET_ACCOUNT, state.raSettings().confirm)
@@ -7223,7 +7230,7 @@ class AppStateTest {
     @Test fun destructive_rows_confirm_first() = runTest {
         val (state, _) = stateWithAchievements()
         state.settings.raToken = "tok"
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         repeat(7) { state.onButton(NxButton.DOWN) }; state.openSelected()
         assertEquals(RaConfirm.RESET_ACCOUNT, (state.screen.value as Screen.RaSettings).confirm)
         state.onButton(NxButton.B); assertNull((state.screen.value as Screen.RaSettings).confirm)
@@ -7233,7 +7240,7 @@ class AppStateTest {
 
     @Test fun the_on_off_rows_toggle_on_left_and_right() = runTest {
         val (state, _) = stateWithAchievements()
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN)   // Enable achievements: dimmed while signed out
         state.onButton(NxButton.RIGHT); assertEquals(false, state.settings.raEnabled)
         state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN)   // Show notifications, On
@@ -7248,7 +7255,7 @@ class AppStateTest {
 
     @Test fun a_tap_on_the_left_pane_beside_ra_settings_opens_that_row() = runTest {
         val (state, _) = stateWithAchievements()
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         val tap = { i: Int -> state.raParentTap(Screen.RetroAchievements(), i) }
         tap(raPageRow(Screen.RaSettings(emptyList()))!!); assertIs<Screen.RaSettings>(state.screen.value)   // Settings is already open
         state.openSelected(); assertTrue(state.raSettings().signingIn)                           // Sign in: the prompt answers first
@@ -7261,7 +7268,7 @@ class AppStateTest {
 
     @Test fun a_on_the_duration_rows_steps_forward_and_wraps() = runTest {
         val (state, _) = stateWithAchievements()
-        state.openTools(); state.openSelected(); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
+        openRa(state); state.onButton(NxButton.DOWN); state.onButton(NxButton.DOWN); state.openSelected()
         repeat(5) { state.onButton(NxButton.DOWN) }                  // Notification duration, 3 s
         state.openSelected(); assertEquals("4 s", (state.screen.value as Screen.RaSettings).rows[5].secondary)
         state.onButton(NxButton.RIGHT); assertEquals("5 s", (state.screen.value as Screen.RaSettings).rows[5].secondary)
@@ -11332,11 +11339,11 @@ class AppStateTest {
         val state = state(settings, launcher = launcher)
         state.load()
         state.openTools()
-        state.select(2)                                                   // Beta, after Apps
+        state.select(1)                                                   // Beta, after Apps
         launcher.missing = setOf("b/B")                                   // uninstalled since the menu was built
         state.onButton(NxButton.A)
         assertEquals("Could not open Beta", state.notice.value)
-        assertEquals(listOf("Cheat Database", "Apps", "Settings"), state.screen.value.toolRows().map { it.label })
+        assertEquals(listOf("Apps", "Cheat Database", "Settings"), state.screen.value.toolRows().map { it.label })
     }
 
     @Test fun go_home_waits_out_first_setup() = runTest {
@@ -11357,13 +11364,62 @@ class AppStateTest {
         testScheduler.advanceUntilIdle()
     }
 
+    // Dual screen: a tool opened from Tools has the focus on the top screen, the menu staying below on its row; B on the
+    // tool gives the focus back. An app tool only launches.
+    @Test fun a_tool_takes_the_focus_on_the_top_screen_until_b() = runTest {
+        val settings = MemorySettings(ContentRef("Home")).apply { toolApps = listOf("a/A") }
+        val launcher = FakeLauncher(listOf(alpha, beta))
+        val state = state(settings, launcher = launcher)
+        state.load()
+        state.onDualMenu(true)
+        state.openTools()
+        val settingsAt = state.screen.value.toolRows().indexOfFirst { it.kind == ToolKind.SETTINGS }
+        state.select(settingsAt); state.onButton(NxButton.A)
+        assertIs<Screen.SettingsMenu>(state.screen.value)
+        assertTrue(state.toolOnTop.value)
+        val (menu, at) = assertNotNull(state.toolUnder())
+        assertEquals(MenuCategory.TOOLS, menu.category)
+        assertEquals(settingsAt, at.index)                                    // the menu below stays on Settings
+        state.onButton(NxButton.B)
+        assertIs<Screen.Systems>(state.screen.value)
+        assertFalse(state.toolOnTop.value); assertNull(state.toolUnder())
+        state.select(0); state.onButton(NxButton.A)                           // Alpha, an app: launched, no focus moves
+        assertEquals(listOf("a/A"), launcher.launched)
+        assertFalse(state.toolOnTop.value)
+    }
+
+    // Dual screen: the highlighted Apps tile previews the drawer on the top screen; a tap there opens it on that app.
+    // An app added meanwhile sorts before Apps: the menu below still shows Apps highlighted, and B lands on it.
+    @Test fun the_drawer_previews_on_the_top_screen_and_opens_there() = runTest {
+        val settings = MemorySettings(ContentRef("Home"))
+        val state = state(settings, launcher = FakeLauncher(listOf(alpha, beta)))
+        state.load()
+        state.onDualMenu(true)
+        state.openTools()
+        state.select(state.screen.value.toolRows().indexOfFirst { it.kind == ToolKind.SETTINGS }); advanceUntilIdle()
+        assertNull(state.drawerPreview.value)                                 // Apps is not highlighted
+        state.select(state.screen.value.toolRows().indexOfFirst { it.kind == ToolKind.APPS }); advanceUntilIdle()
+        assertEquals(listOf("a/A", "b/B"), state.drawerPreview.value?.map { it.id })
+        state.openDrawerPreviewApp(1); advanceUntilIdle()
+        assertIs<Screen.ToolApps>(state.screen.value)
+        assertEquals(1, state.selection.value.index)                          // on Beta, as tapped
+        assertTrue(state.toolOnTop.value)
+        assertNull(state.drawerPreview.value)
+        state.select(0); choose(state, ContextKind.ADD_TO_TOOLS); advanceUntilIdle()   // Alpha into Tools, before Apps
+        val (menu, at) = assertNotNull(state.toolUnder())
+        assertEquals(ToolKind.APPS, (menu.rows[at.index] as MainRow.Tool).row.kind)
+        state.onButton(NxButton.B)
+        assertFalse(state.toolOnTop.value)
+        assertEquals(ToolKind.APPS, state.screen.value.toolRows()[state.selection.value.index].kind)
+    }
+
     @Test fun the_app_drawer_opens_apps_and_adds_them_to_tools() = runTest {
         val settings = MemorySettings(ContentRef("Home"))
         val launcher = FakeLauncher(listOf(alpha, beta))
         val state = state(settings, launcher = launcher)
         state.load()
         state.openTools()
-        assertEquals(listOf("Cheat Database", "Apps", "Settings"), state.screen.value.toolRows().map { it.label })
+        assertEquals(listOf("Apps", "Cheat Database", "Settings"), state.screen.value.toolRows().map { it.label })
         openToolApps(state)
         val drawer = assertIs<Screen.ToolApps>(state.screen.value)
         assertEquals(AppPick.TOOLS, drawer.pick)
@@ -11385,7 +11441,7 @@ class AppStateTest {
         state.onButton(NxButton.B)                                        // back on the Apps tile
         assertEquals(MenuCategory.TOOLS, assertIs<Screen.Systems>(state.screen.value).category)
         assertEquals(ToolKind.APPS, state.screen.value.toolRows()[state.selection.value.index].kind)
-        assertEquals(listOf("Cheat Database", "Apps", "Alpha", "Settings"), state.screen.value.toolRows().map { it.label })
+        assertEquals(listOf("Alpha", "Apps", "Cheat Database", "Settings"), state.screen.value.toolRows().map { it.label })
     }
 
     // Pin to Home from the drawer pins an app that is not in Tools; it opens from Home and unpins from the drawer again.
@@ -11421,12 +11477,12 @@ class AppStateTest {
         val state = state(settings, launcher = FakeLauncher(listOf(alpha, beta)))
         state.load()
         state.openTools()
-        state.select(0); state.onButton(NxButton.MENU)
-        assertEquals(listOf(ContextKind.PIN_TOOL), menuKinds(state))     // Cheat Database
+        state.select(2); state.onButton(NxButton.MENU)
+        assertEquals(listOf(ContextKind.PIN_TOOL), menuKinds(state))     // Cheat Database: Alpha, Apps, Cheat Database
         state.onButton(NxButton.B)
-        state.select(2); choose(state, ContextKind.REMOVE_FROM_TOOLS); advanceUntilIdle()   // Alpha
+        state.select(0); choose(state, ContextKind.REMOVE_FROM_TOOLS); advanceUntilIdle()   // Alpha
         assertEquals(emptyList(), settings.toolApps)
-        assertEquals(listOf("Cheat Database", "Apps", "Settings"), state.screen.value.toolRows().map { it.label })
+        assertEquals(listOf("Apps", "Cheat Database", "Settings"), state.screen.value.toolRows().map { it.label })
     }
 
     @Test fun no_launcher_no_apps_tool() = runTest {
@@ -11570,14 +11626,15 @@ class AppStateTest {
         assertEquals(listOf(false, false), assertIs<Screen.ToolApps>(state.screen.value).apps.map { it.shown })   // detected games are not Tools apps
     }
 
-    @Test fun tool_apps_show_before_settings_and_launch() = runTest {
+    // Added Beta first, then Alpha: they sort by name among the tools, Settings last.
+    @Test fun tool_apps_sort_among_the_tools_by_name_and_launch() = runTest {
         val settings = MemorySettings(ContentRef("Home")).apply { toolApps = listOf("b/B", "a/A") }
         val launcher = FakeLauncher(listOf(alpha, beta))
         val state = state(settings, launcher = launcher)
         state.load()
         state.openTools()
         val tools = state.screen.value.toolRows()
-        assertEquals(listOf("Cheat Database", "Apps", "Beta", "Alpha", "Settings"), tools.map { it.label })
+        assertEquals(listOf("Alpha", "Apps", "Beta", "Cheat Database", "Settings"), tools.map { it.label })
         assertEquals(ToolRow(ToolKind.APP, "Beta", null, appId = "b/B"), tools[2])
         state.select(2); state.onButton(NxButton.A)
         assertEquals(listOf("b/B"), launcher.launched)
@@ -11588,7 +11645,7 @@ class AppStateTest {
         val state = state(settings, launcher = FakeLauncher(listOf(alpha, beta)).apply { missing = setOf("a/A") })
         state.load()
         state.openTools()
-        assertEquals(listOf("Cheat Database", "Apps", "Beta", "Settings"), state.screen.value.toolRows().map { it.label })
+        assertEquals(listOf("Apps", "Beta", "Cheat Database", "Settings"), state.screen.value.toolRows().map { it.label })
         assertEquals(listOf("a/A", "b/B"), settings.toolApps)
     }
 
@@ -11601,7 +11658,7 @@ class AppStateTest {
             privateFiles = files, compute = UnconfinedTestDispatcher(testScheduler)), scope)
         state.load(); advanceUntilIdle()
         state.openTools()
-        state.select(3)                                                    // Beta: Cheat Database, Apps, Alpha, Beta, Settings
+        state.select(2)                                                    // Beta: Alpha, Apps, Beta, Cheat Database, Settings
         choose(state, ContextKind.PIN_TOOL); advanceUntilIdle()
         assertEquals(listOf("APP:b/B"), state.toolPins)
         assertEquals("APP:b/B", files.files[ToolPins.FILE])
@@ -12150,7 +12207,7 @@ class AppStateTest {
         state.load(); advanceUntilIdle()
         assertEquals(listOf("b/B"), state.screen.value.homeRows.filterIsInstance<MainRow.PinnedTool>().map { it.row.appId })
         state.openTools()
-        assertEquals(listOf("Cheat Database", "Apps", "Beta", "Settings"), state.screen.value.toolRows().map { it.label })
+        assertEquals(listOf("Apps", "Beta", "Cheat Database", "Settings"), state.screen.value.toolRows().map { it.label })
         openToolApps(state)
         assertEquals(listOf("b/B"), assertIs<Screen.ToolApps>(state.screen.value).apps.map { it.id })
         state.onButton(NxButton.B)
@@ -12163,7 +12220,7 @@ class AppStateTest {
         state.goHome()
         assertEquals(listOf("a/A", "b/B"), state.screen.value.homeRows.filterIsInstance<MainRow.PinnedTool>().map { it.row.appId })
         state.openTools()
-        assertEquals(listOf("Cheat Database", "Apps", "Alpha", "Beta", "Settings"), state.screen.value.toolRows().map { it.label })
+        assertEquals(listOf("Alpha", "Apps", "Beta", "Cheat Database", "Settings"), state.screen.value.toolRows().map { it.label })
     }
 
     private fun searchSource() = FakeRomsSource(

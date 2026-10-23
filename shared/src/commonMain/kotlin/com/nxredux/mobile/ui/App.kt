@@ -24,6 +24,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -146,6 +147,7 @@ fun App(state: AppState, onPadEvent: (PadEvent) -> Unit = {}) {
     val gameInfo by state.gameInfo.collectAsState()
     val netplayPage = state.netplay?.page?.collectAsState()   // the Netplay sheet's page (null: closed); no controller, no sheet
     val dualMenu by state.dualMenu.collectAsState()   // the menu is on the second display: the game list's overlays go to the top screen
+    val toolOnTop by state.toolOnTop.collectAsState()   // a tool has the focus: with the menu on the second display, it and its overlays are on the top screen
     LaunchedEffect(Unit) { state.loadOnce() }   // App may be composed again on the other display (the main menu there)
     // Settings are plain properties: every Pad theme change republishes the screen, so re-read it when the screen changes.
     val padTheme = remember(screen) { state.settings.padTheme }
@@ -213,7 +215,9 @@ fun App(state: AppState, onPadEvent: (PadEvent) -> Unit = {}) {
                             }
                             // The Netplay sheet over the game list it was opened on; it takes every press while it shows. With the
                             // menu on the second display it goes with the game list, to the top screen ([MenuTopScreen]).
-                            if (DualMenu.bottom(screen, dualMenu) == BottomContent.Normal) netplayPage?.value?.let { p -> NetplayOverlay(state, p) }
+                            val bottom = DualMenu.bottom(screen, dualMenu, toolOnTop)
+                            if (bottom == BottomContent.Normal) netplayPage?.value?.let { p -> NetplayOverlay(state, p) }
+                            if (bottom == BottomContent.Menu) return@Box   // a tool on the top screen: its loading, dialogs and notices are there ([MenuTopScreen])
                             if (loading) NxLoadingOverlay(loadingMessage)
                             // An installed library's Android games question over the menu (first setup asks it as a step). A one-time
                             // answer: a scrim tap does not give it, and AppState ignores answers in its first moments.
@@ -221,14 +225,7 @@ fun App(state: AppState, onPadEvent: (PadEvent) -> Unit = {}) {
                                 NxDialog(ask.title, ask.text, onConfirm = { state.answerAndroidGames(true) }, confirmLabel = "Yes",
                                     onCancel = { state.answerAndroidGames(false) }, cancelLabel = "Not now", scrimDismisses = false)
                             }
-                            chooser?.let { c -> NxValueDropdown(c.labels, c.selected, valueAnchor.bounds, onPick = state::chooseValue, onDismiss = state::closeChooser) }
-                            error?.let { NxDialog("Problem", it, onConfirm = state::dismissError) }
-                            notice?.let {
-                                Text(
-                                    it, color = LocalNxColors.current.main, fontSize = 12.sp,
-                                    modifier = Modifier.align(Alignment.TopCenter).background(Color(0xCC000000), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
-                                )
-                            }
+                            PageOverlays(state, chooser, error, notice, valueAnchor)
                         }
                     }
                 }
@@ -330,18 +327,43 @@ private fun pageTransition(motion: NavMotion): ContentTransform {
     }
 }
 
+/** The touch value chooser, the Problem dialog and the notice, over the focused page (a tool's on the top screen: [MenuTopScreen]). */
+@Composable
+internal fun BoxScope.PageOverlays(state: AppState, chooser: ValueChooser?, error: String?, notice: String?, valueAnchor: NxValueAnchor) {
+    chooser?.let { c -> NxValueDropdown(c.labels, c.selected, valueAnchor.bounds, onPick = state::chooseValue, onDismiss = state::closeChooser) }
+    error?.let { NxDialog("Problem", it, onConfirm = state::dismissError) }
+    notice?.let {
+        Text(
+            it, color = LocalNxColors.current.main, fontSize = 12.sp,
+            modifier = Modifier.align(Alignment.TopCenter).background(Color(0xCC000000), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
+        )
+    }
+}
+
 /**
  * A page's background and screen; the background slides with it, as NextUI slides the whole captured screen.
  * [selection] and [resume] are read only where they show (the background, and inside the screens: the selected tile,
  * the caption, the hints, the info band), so a selection change does not recompose the whole page. [live]: whether this
- * is the page showing (false while it slides out).
+ * is the page showing (false while it slides out). [onTop]: drawn by [MenuTopScreen] for a tool with the focus, so never
+ * the bottom screen's stand-ins (the menu under it, a game's details).
  */
 @Composable
-private fun PageContent(state: AppState, page: Screen, pageSelection: State<ListSelection>, resume: State<ResumeInfo>, allInfo: Map<String, GameInfo>, live: State<Boolean>) {
+internal fun PageContent(state: AppState, page: Screen, pageSelection: State<ListSelection>, resume: State<ResumeInfo>, allInfo: Map<String, GameInfo>, live: State<Boolean>, onTop: Boolean = false) {
     // The menu on the second display, on a game list: the list and its overlays are on the top screen ([MenuTopScreen]);
     // this screen has the highlighted game's details alone, full screen (no title, no hints).
     val dualMenu by state.dualMenu.collectAsState()
-    if (page is Screen.Games && DualMenu.bottom(page, dualMenu) == BottomContent.Details) {
+    val toolOnTop by state.toolOnTop.collectAsState()
+    // A tool with the focus on the top screen: this one keeps the menu it was opened from, on its row, still and dimmed;
+    // taps on it do nothing (B gives the focus back).
+    if (!onTop && DualMenu.bottom(page, dualMenu, toolOnTop) == BottomContent.Menu) {
+        state.toolUnder()?.let { (menu, at) ->
+            val still = remember(menu, at) { mutableStateOf(at) }
+            PageContent(state, menu, still, resume, allInfo, live)
+        }
+        Box(Modifier.fillMaxSize().background(Color(0x66000000)).pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } })
+        return
+    }
+    if (!onTop && page is Screen.Games && DualMenu.bottom(page, dualMenu) == BottomContent.Details) {
         val ra by state.gameDetailRa.collectAsState()
         val entry = page.entries.getOrNull(pageSelection.value.index)
         GameDetailsPane(entry, entry?.let { allInfo[it.game.path] }, ra, onBack = { state.back() })
