@@ -25,6 +25,8 @@ import com.swordfish.libretrodroid.NxLog
 class AppUpdatedReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "NxUpdate"
+        /** Its own channel, high importance, so the notice shows heads-up (the update service's channel is low, for progress). */
+        private const val CHANNEL_ID = "app-updated"
 
         fun cancelNotice(context: Context) = NotificationManagerCompat.from(context).cancel(NotificationIds.APP_UPDATED)
 
@@ -48,17 +50,15 @@ class AppUpdatedReceiver : BroadcastReceiver() {
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm.getNotificationChannel(AppUpdateService.CHANNEL_ID) == null) {
-            // Same settings as the update service's own channel (KeepAliveService.ensureChannel), which may never have run.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm.getNotificationChannel(CHANNEL_ID) == null) {
             nm.createNotificationChannel(
-                NotificationChannel(AppUpdateService.CHANNEL_ID, AppUpdateService.CHANNEL_NAME, NotificationManager.IMPORTANCE_LOW).apply {
-                    description = AppUpdateService.CHANNEL_DESCRIPTION
-                    setShowBadge(false)
+                NotificationChannel(CHANNEL_ID, "App updated", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "Says when NX Redux was updated"
                 },
             )
         }
         val open = PendingIntent.getActivity(context, 0, launchIntent(context), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val notice = NotificationCompat.Builder(context, AppUpdateService.CHANNEL_ID)
+        val notice = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("NX Redux updated to ${BuildConfig.VERSION_NAME}")
             .setContentText("Tap to open")
