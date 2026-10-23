@@ -9,8 +9,13 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.drawable.AdaptiveIconDrawable
+import android.graphics.drawable.Drawable
 import android.os.Build
 import android.provider.Settings
+import android.util.DisplayMetrics
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -53,13 +58,66 @@ class AndroidAppLauncher(private val activity: ComponentActivity, private val re
     override suspend fun icon(id: String): ImageBitmap? = withContext(Dispatchers.IO) {
         val c = component(id) ?: return@withContext null
         runCatching {
-            val drawable = runCatching { pm.getActivityIcon(c) }.getOrElse { pm.getApplicationIcon(c.packageName) }
+            val drawable = launcherIcon(c)
             val bitmap = Bitmap.createBitmap(ICON_PX, ICON_PX, Bitmap.Config.ARGB_8888)
             drawable.setBounds(0, 0, ICON_PX, ICON_PX)
             drawable.draw(Canvas(bitmap))
             bitmap.asImageBitmap()
         }.getOrNull()
     }
+
+    /**
+     * The shape in [id]'s icon as its package ships it ([packagedIcon]), as [ICON_PX] of alpha (drawn tinted) framed by
+     * [IconSilhouette]: its themed-icon layer (API 33+), else its foreground's own outline, else what stands out from
+     * the plate the icon is painted on. Null for a legacy icon, or one with no shape any of these finds.
+     */
+    override suspend fun silhouette(id: String): ImageBitmap? = withContext(Dispatchers.IO) {
+        val c = component(id) ?: return@withContext null
+        runCatching {
+            val icon = (packagedIcon(c) ?: launcherIcon(c)) as? AdaptiveIconDrawable ?: return@runCatching null
+            // Each tried only when the one before has no shape: drawing a layer is the cost here.
+            val shapes = sequence {
+                if (Build.VERSION.SDK_INT >= 33) icon.monochrome?.let { yield(alphaOf(layerPixels(it))) }
+                icon.foreground?.let { yield(alphaOf(layerPixels(it))) }
+                IconSilhouette.contrastAlpha(layerPixels(icon.background, icon.foreground), SHAPE_PX)?.let { yield(it) }
+            }
+            val (alpha, frame) = shapes.firstNotNullOfOrNull { a -> IconSilhouette.frame(a, SHAPE_PX)?.let { a to it } } ?: return@runCatching null
+            val shape = Bitmap.createBitmap(IntArray(alpha.size) { (alpha[it] shl 24) or 0xFFFFFF }, SHAPE_PX, SHAPE_PX, Bitmap.Config.ARGB_8888)
+            // Alpha alone (a quarter of ARGB's memory): the tile tints it, and the drawer's icons stay cached for the session.
+            val out = Bitmap.createBitmap(ICON_PX, ICON_PX, Bitmap.Config.ALPHA_8)
+            val k = ICON_PX / frame.side
+            val fit = Matrix().apply { setTranslate(-frame.x, -frame.y); postScale(k, k) }
+            Canvas(out).drawBitmap(shape, fit, Paint(Paint.FILTER_BITMAP_FLAG))
+            shape.recycle()
+            out.asImageBitmap()
+        }.getOrNull()
+    }
+
+    private fun alphaOf(pixels: IntArray) = IntArray(pixels.size) { IconSilhouette.shapeAlpha(pixels[it] ushr 24) }
+
+    /**
+     * [layers] drawn in turn as an adaptive icon draws them, half as large again as the visible square, which shows
+     * their middle: that square's [SHAPE_PX] pixels.
+     */
+    private fun layerPixels(vararg layers: Drawable?): IntArray {
+        val bitmap = Bitmap.createBitmap(SHAPE_PX, SHAPE_PX, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        for (layer in layers) layer?.run { setBounds(-SHAPE_PX / 4, -SHAPE_PX / 4, SHAPE_PX + SHAPE_PX / 4, SHAPE_PX + SHAPE_PX / 4); draw(canvas) }
+        return IntArray(SHAPE_PX * SHAPE_PX).also { bitmap.getPixels(it, 0, SHAPE_PX, 0, 0, SHAPE_PX, SHAPE_PX); bitmap.recycle() }
+    }
+
+    /**
+     * [c]'s icon as its own package ships it, read from its resources: PackageManager's may be one the system or an
+     * icon pack drew over it (One UI hands every icon back as a flat bitmap), with no layers left to find a shape in.
+     * Null when it cannot be read.
+     */
+    private fun packagedIcon(c: ComponentName): Drawable? = runCatching {
+        val info = pm.getActivityInfo(c, 0)
+        val res = info.iconResource.takeIf { it != 0 } ?: info.applicationInfo.icon.takeIf { it != 0 } ?: return@runCatching null
+        pm.getResourcesForApplication(info.applicationInfo).getDrawableForDensity(res, DisplayMetrics.DENSITY_XXXHIGH, null)
+    }.getOrNull()
+
+    private fun launcherIcon(c: ComponentName) = runCatching { pm.getActivityIcon(c) }.getOrElse { pm.getApplicationIcon(c.packageName) }
 
     /**
      * Dual mode's top screen, where an app opens ([topScreenDisplay], set by MainActivity): another display's id, this
@@ -124,5 +182,6 @@ class AndroidAppLauncher(private val activity: ComponentActivity, private val re
     private companion object {
         const val OUYA_GAME = "tv.ouya.intent.category.GAME"   // an OUYA-era game activity: a game even without the category or flag
         const val ICON_PX = 192   // sharp at the menu tiles' 48-60 dp tool icons on a 3x screen; Home's large faint one scales it up
+        const val SHAPE_PX = 288  // the visible square a silhouette is cut from: its logo, about two thirds of it, still fills ICON_PX
     }
 }

@@ -6,7 +6,7 @@ import com.nxredux.mobile.netplay.NetplayCores
 import com.nxredux.mobile.runner.CoreRegistry
 import com.nxredux.mobile.settings.MenuCategory
 
-enum class ContextKind { PIN, UNPIN, HIDE, UNHIDE, RENAME, ADD_TO_COLLECTION, GAME_SETTINGS, REMOVE_FROM_COLLECTION, REMOVE_RECENT, EMULATOR, CONSOLE, FETCH_ART, PIN_TOOL, UNPIN_TOOL, RENAME_COLLECTION, DELETE_COLLECTION, NETPLAY, PLAY_FROM_START, OPEN_CONSOLES, OPEN_COLLECTIONS, OPEN_TOOLS, ACHIEVEMENTS }
+enum class ContextKind { PIN, UNPIN, HIDE, UNHIDE, RENAME, ADD_TO_COLLECTION, GAME_SETTINGS, REMOVE_FROM_COLLECTION, REMOVE_RECENT, EMULATOR, CONSOLE, FETCH_ART, PIN_TOOL, UNPIN_TOOL, ADD_TO_TOOLS, REMOVE_FROM_TOOLS, RENAME_COLLECTION, DELETE_COLLECTION, NETPLAY, PLAY_FROM_START, OPEN_CONSOLES, OPEN_COLLECTIONS, OPEN_TOOLS, ACHIEVEMENTS }
 
 data class ContextItem(val kind: ContextKind, val label: String)
 
@@ -163,9 +163,19 @@ object ContextMenus {
         if (netplay) add(netplayItem)
     }
 
-    /** MENU on a tool row: Pin, or Unpin when [pinned] (tool pins live in the app-private `tool-pins.txt`). */
-    fun toolItems(pinned: Boolean): List<ContextItem> =
-        listOf(if (pinned) ContextItem(ContextKind.UNPIN_TOOL, "Unpin") else ContextItem(ContextKind.PIN_TOOL, "Pin"))
+    /**
+     * MENU on a tool row: Pin, or Unpin when [pinned] (tool pins live in the app-private `tool-pins.txt`); an app's
+     * ([app]) also Remove from Tools (it stays in the app drawer).
+     */
+    fun toolItems(pinned: Boolean, app: Boolean = false): List<ContextItem> =
+        listOf(if (pinned) ContextItem(ContextKind.UNPIN_TOOL, "Unpin") else ContextItem(ContextKind.PIN_TOOL, "Pin")) +
+            listOfNotNull(ContextItem(ContextKind.REMOVE_FROM_TOOLS, "Remove from Tools").takeIf { app })
+
+    /** MENU on an app in the drawer: in or out of Tools ([inTools]), then on or off Home ([pinned]); each on its own. */
+    fun drawerItems(inTools: Boolean, pinned: Boolean): List<ContextItem> = listOf(
+        if (inTools) ContextItem(ContextKind.REMOVE_FROM_TOOLS, "Remove from Tools") else ContextItem(ContextKind.ADD_TO_TOOLS, "Add to Tools"),
+        if (pinned) ContextItem(ContextKind.UNPIN_TOOL, "Unpin from Home") else ContextItem(ContextKind.PIN_TOOL, "Pin to Home"),
+    )
 
     /** MENU on a Collections-tab row: Rename (the name prompt) and Delete (a confirm; the games are never touched). */
     fun collectionItems(): List<ContextItem> =

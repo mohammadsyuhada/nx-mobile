@@ -29,6 +29,23 @@ class DualMenuTest {
         assertEquals(TopContent.Backdrop, DualMenu.top(Screen.Loading, null))
     }
 
+    @Test fun top_is_a_tool_with_the_focus_and_the_menu_stays_below() {
+        val cheats = Screen.CheatDb()
+        assertEquals(TopContent.Tool, DualMenu.top(cheats, null, tool = true))
+        assertEquals(TopContent.Backdrop, DualMenu.top(cheats, null))
+        assertEquals(TopContent.GameList, DualMenu.top(games(), null, tool = true))   // a game list from a tool: as any
+        assertEquals(TopContent.Backdrop, DualMenu.top(systems(), null, tool = true))  // back on the menu
+        assertEquals(BottomContent.Menu, DualMenu.bottom(cheats, active = true, tool = true))
+        assertEquals(BottomContent.Normal, DualMenu.bottom(cheats, active = false, tool = true))
+        assertEquals(BottomContent.Details, DualMenu.bottom(games(), active = true, tool = true))
+    }
+
+    @Test fun top_previews_the_drawer_on_the_menu() {
+        val apps = listOf(ToolAppRow("a/A", "Alpha", false))
+        assertEquals(TopContent.AppsPreview(apps), DualMenu.top(systems(), null, apps))
+        assertEquals(TopContent.Preview(list), DualMenu.top(systems(), list, apps))
+    }
+
     @Test fun bottom_shows_details_only_on_games_while_active() {
         assertEquals(BottomContent.Details, DualMenu.bottom(games(), active = true))
         assertEquals(BottomContent.Normal, DualMenu.bottom(games(), active = false))

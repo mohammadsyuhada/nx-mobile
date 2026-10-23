@@ -344,11 +344,12 @@ sealed interface Screen {
     /** Tools -> Settings: one row per section. */
     data class SettingsMenu(val sections: List<SettingsSection>) : Screen
     /**
-     * Settings -> Launcher -> Android apps or Android games. [pick] TOOLS: every launchable app but the Android games
-     * console's; A shows or hides one in Tools. GAMES: detected games first, then every other app; [ToolAppRow.shown] is
-     * "in the Android games console", and A puts one in or takes it out.
+     * [pick] TOOLS: the app drawer (Tools → Apps), every launchable app but the Android games console's; A opens one,
+     * [menu] adds it to Tools or pins it on Home, [ToolAppRow.shown] is "in Tools". GAMES: Settings -> Launcher ->
+     * Android games, detected games first, then every other app; [ToolAppRow.shown] is "in the Android games console",
+     * and A puts one in or takes it out.
      */
-    data class ToolApps(val apps: List<ToolAppRow>, val pick: AppPick = AppPick.TOOLS) : Screen
+    data class ToolApps(val apps: List<ToolAppRow>, val pick: AppPick = AppPick.TOOLS, val menu: ContextMenu? = null) : Screen
     /** [confirmRemove]: the "remove cheat database?" dialog is open. */
     data class CheatDb(val confirmRemove: Boolean = false) : Screen
     /** Tools → Device Sync: no list selection here; its page (and the link choice) live in [AppDeps.deviceSync]. */
@@ -418,7 +419,7 @@ sealed interface Screen {
     data class ArtworkReset(val scopes: List<ResetScope>, val confirm: ResetScope? = null) : Screen
 }
 
-enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SECOND_SCREEN_ENABLE, BOTTOM_SCREEN, PAUSE_UNFOCUSED, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_FOLDER, IMPORT_ZIP, IMPORT_RETROARCH, IMPORT_DONE, RESET_DEFAULTS, ALL_FILES,
+enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SECOND_SCREEN_ENABLE, BOTTOM_SCREEN, PAUSE_UNFOCUSED, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_FOLDER, IMPORT_ZIP, IMPORT_RETROARCH, IMPORT_DONE, RESET_DEFAULTS, ALL_FILES,
     LAYOUT_HOME, LAYOUT_CONSOLES, LAYOUT_COLLECTIONS, LAYOUT_TOOLS, LAYOUT_GAME_LISTS, LAYOUT_TITLE_HINTS, LAYOUT_SWITCHER, TEXT_SIZE }
 
 /**
@@ -566,7 +567,7 @@ internal fun gamesCountLabel(n: Int): String = if (n == 0) "None" else gamesLabe
 /** The Android games console's tag: no folder, core or registry console has it. */
 const val ANDROID_TAG = com.nxredux.mobile.scraper.ANDROID_CONSOLE_TAG
 
-/** What the Android apps picker picks: the apps shown in Tools, or the apps in the Android games console. */
+/** Which apps grid this is: the app drawer (its marks: the apps in Tools), or the Android games console's picker. */
 enum class AppPick { TOOLS, GAMES }
 
 /**
@@ -632,9 +633,6 @@ internal fun withAndroidConsole(rows: List<MainRow.System>, console: SystemFolde
     val at = rows.indexOfFirst { it.system.displayName.lowercase() > name }.takeIf { it >= 0 } ?: rows.size
     return rows.toMutableList().apply { add(at, MainRow.System(console)) }
 }
-
-/** The Launcher page's "Android apps" count. */
-internal fun appsLabel(n: Int): String = when (n) { 0 -> "None"; 1 -> "1 app"; else -> "$n apps" }
 
 /** A main menu tab's or the game list's style, as the Appearance rows show it. */
 internal fun menuStyleLabel(style: MenuStyle): String = when (style) {
@@ -816,12 +814,27 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     val secondList: StateFlow<SecondList?> = _secondList.asStateFlow()
     private var secondListJob: Job? = null
 
+    private val _drawerPreview = MutableStateFlow<List<ToolAppRow>?>(null)
+    /** While [dualMenu] with the Apps tile highlighted: the drawer's apps (what A would open), for the second display; else null. */
+    val drawerPreview: StateFlow<List<ToolAppRow>?> = _drawerPreview.asStateFlow()
+    private var drawerPreviewJob: Job? = null
+
+    private val _toolOnTop = MutableStateFlow(false)
+    /**
+     * A tool opened from the main menu ([openTool]: Tools or a Home pin) has the focus, through all its pages, until the
+     * menu shows again ([showMenu]). While [dualMenu] it is drawn on the top screen, the menu staying below ([toolUnder]).
+     */
+    val toolOnTop: StateFlow<Boolean> = _toolOnTop.asStateFlow()
+    private var toolUnderRow: MainRow? = null   // the menu row the tool was opened from, kept highlighted below it
+    private var toolUnderIndex = 0
+
     /** The platform tells the menu is on the second display ([active]) or back on the main one. */
     fun onDualMenu(active: Boolean) {
         if (_dualMenu.value == active) return
         _dualMenu.value = active
         if (active) closeRaPanel()   // the panel is a single-screen overlay: dual mode shows the details pane instead
         followSecondList()
+        followDrawerPreview()
         followRaDetails()
     }
 
@@ -861,6 +874,65 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             if (highlightedSecondSource() == source) { secondListBuilds++; _secondList.value = SecondList(source, entries, 0); secondKey = key }
         }
     }
+
+    /**
+     * Recomputes [drawerPreview]: the installed apps, read once when the Apps tile is highlighted on the second display,
+     * kept while it stays so; dropped (a read under way cancelled) when it is not.
+     */
+    private fun followDrawerPreview() {
+        val s = _screen.value as? Screen.Systems
+        val l = deps.launcher
+        val on = l != null && _dualMenu.value && s != null && s.menu == null && s.search == null && isAppsTile(s.rows.getOrNull(_selection.value.index))
+        if (!on) { drawerPreviewJob?.cancel(); drawerPreviewJob = null; _drawerPreview.value = null; return }
+        if (_drawerPreview.value != null || drawerPreviewJob?.isActive == true) return
+        drawerPreviewJob = scope.launch {
+            val apps = l!!.installedApps()
+            installedCache = apps
+            _drawerPreview.value = drawerRows(apps)
+        }
+    }
+
+    /** A tap on app [index] of the second display's drawer preview: opens the drawer there on it, as A would (B returns). */
+    fun openDrawerPreviewApp(index: Int) {
+        val s = _screen.value as? Screen.Systems ?: return
+        val app = _drawerPreview.value?.getOrNull(index) ?: return
+        if (loader.active || s.menu != null || s.search != null || !isAppsTile(s.rows.getOrNull(_selection.value.index))) return
+        intendNav(NavMotion.FORWARD)
+        rememberMenuSelection()
+        noteToolOrigin()
+        openToolApps(AppPick.TOOLS, selectId = app.id)
+    }
+
+    /**
+     * While a tool is on the second display ([toolOnTop]): the main menu it was opened from, on the row it was opened
+     * from (found again when the rows moved), drawn on the bottom screen as it stays; null otherwise. A game list
+     * reached from a tool takes both screens as any game list does.
+     */
+    fun toolUnder(): Pair<Screen.Systems, ListSelection>? {
+        val s = _screen.value
+        if (!_dualMenu.value || !_toolOnTop.value || s is Screen.Systems || s is Screen.Games) return null
+        val menu = menuScreen()
+        val at = toolUnderRow?.let { menu.rows.indexOf(it) }?.takeIf { it >= 0 } ?: toolUnderIndex
+        return menu to ListSelection(at, menu.rows.size).clampedTo(menu.rows.size)
+    }
+
+    /** The highlighted menu row is the one a tool opens from: kept for [toolUnder]. */
+    private fun noteToolOrigin() {
+        val s = _screen.value as? Screen.Systems ?: return
+        toolUnderIndex = _selection.value.index
+        toolUnderRow = s.rows.getOrNull(toolUnderIndex)
+    }
+
+    /** The drawer's apps: every installed app but the Android games console's, marked when it is in Tools. */
+    private fun drawerRows(apps: List<InstalledApp>): List<ToolAppRow> {
+        val console = deps.settings.androidConsoleApps.toSet()
+        val inTools = deps.settings.toolApps.toSet()
+        return apps.filter { it.id !in console }.map { ToolAppRow(it.id, it.label, it.id in inTools) }
+    }
+
+    /** The Apps tile, in Tools or pinned on Home. */
+    private fun isAppsTile(row: MainRow?): Boolean =
+        (row is MainRow.Tool && row.row.kind == ToolKind.APPS) || (row is MainRow.PinnedTool && row.row.kind == ToolKind.APPS)
 
     /** The list the highlighted row previews while [dualMenu] on Consoles / Collections; null for any other row, tab or screen. */
     private fun highlightedSecondSource(): ListSource? {
@@ -1019,20 +1091,14 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 refreshGameInfo()   // a game was just played
             }
         }
-        // The Android apps picker left (B, Home, a Settings category, anything): only the apps shown in Tools and the
-        // Android games console's keep their icons.
-        appIcons?.let { icons ->
-            scope.launch {
-                var inPicker = false
-                _screen.collect { s ->
-                    if (s is Screen.ToolApps) inPicker = true
-                    else if (inPicker) { inPicker = false; icons.retain(deps.settings.toolApps + androidConsoleIds()) }
-                }
+        // The achievements panel follows the game list's selection, and closes off the game list.
+        scope.launch { _selection.collect { followRaPanel(); followRaDetails(); followSecondList(); followDrawerPreview() } }
+        scope.launch {
+            _screen.collect {
+                if (setupScreen(it)) _toolOnTop.value = false   // a tool's page no more: setup takes the menu's screen
+                if (it !is Screen.Games) { closeRaPanel() } else { followRaPanel() }; followRaDetails(); followSecondList(); followDrawerPreview()
             }
         }
-        // The achievements panel follows the game list's selection, and closes off the game list.
-        scope.launch { _selection.collect { followRaPanel(); followRaDetails(); followSecondList() } }
-        scope.launch { _screen.collect { if (it !is Screen.Games) { closeRaPanel() } else { followRaPanel() }; followRaDetails(); followSecondList() } }
         deps.achievements?.let { c ->
             scope.launch {
                 var wasBusy = false
@@ -1282,7 +1348,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         // resolved games' own paths, so a home game played as its hidden copy is not "not started".
         val lookup = playable()
         val played = recents.map { it.path }.toSet() + resolveDistinct(lookup, recents.map { it.path }).map { it.game.path }
-        val inputs = HomeInputs(last, resolveDistinct(lookup, pins.map { it.path }) + androidPinned(), pinnedToolRows(toolPins, tools), played)
+        val inputs = HomeInputs(last, resolveDistinct(lookup, pins.map { it.path }) + androidPinned(), pinnedToolRows(toolPins, tools + homeOnlyAppRows(tools)), played)
         val built = homeFor(inputs)   // the stats as they are now, after the reads
         homeInputs = inputs
         allMenuTabs = buildMenuTabs(
@@ -1683,8 +1749,15 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * Shows [screen] with its tab's remembered row, clamped. Over START's open prompt (a rebuild in place: a foreground,
      * a new Home frame, counts landing) the prompt and its draft stay; closing it is the prompt's own keys.
      */
+    /** First setup's steps and onboarding (a folder change in Settings may resume them): never a tool on the top screen. */
+    private fun setupScreen(s: Screen): Boolean = when (s) {
+        is Screen.PermissionsStep, Screen.PickFolder, Screen.AddFirstExtra, is Screen.FolderSummary, is Screen.AndroidGamesStep, is Screen.Onboarding -> true
+        else -> false
+    }
+
     private fun showMenu(menu: Screen.Systems, at: Int = -1) {
         val prev = _screen.value
+        _toolOnTop.value = false   // back on the menu: it has the focus again
         val screen = (prev as? Screen.Systems)?.search?.let { menu.copy(search = it) } ?: menu
         // Another tab (or the menu from another screen): its grid reports its own columns on its first layout. The same
         // tab rebuilt in place keeps them, as its grid stays laid out.
@@ -3400,7 +3473,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         )
         SettingsSection.LAUNCHER -> deps.launcher?.let { l -> listOf(
             SettingsRow(SettingsKind.HOME_SCREEN, "Use as home screen", if (l.isHome()) "On" else "Off"),
-            SettingsRow(SettingsKind.TOOL_APPS, "Android apps", appsLabel(shownToolApps().size)),
             SettingsRow(SettingsKind.ANDROID_GAMES, "Android games", installedCache?.let { gamesCountLabel(androidGames(it).size) } ?: "…"),
         ) }.orEmpty()
         // Logging for a bug report; off, only errors reach logcat.
@@ -4695,31 +4767,53 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (at >= 0) selectTab(at) else openHiddenTab(category)
     }
 
-    /** RetroAchievements leads when this platform has it; the other tools always show; the user's Android apps sit before Settings. */
-    private fun toolRows(): List<ToolRow> = listOfNotNull(
+    /** The tools this platform has and the user's Android apps, all by name; Settings last. */
+    private fun toolRows(): List<ToolRow> = (listOfNotNull(
         deps.achievements?.let { ToolRow(ToolKind.RETRO_ACHIEVEMENTS, "RetroAchievements", null) },
         deps.gameTime?.let { ToolRow(ToolKind.GAME_TIME, "Game Tracker", null) },
         artworkScreens?.let { ToolRow(ToolKind.ARTWORK, "Artwork", null) },
         ToolRow(ToolKind.CHEAT_DB, "Cheat Database", null),
         deps.deviceSync?.let { ToolRow(ToolKind.DEVICE_SYNC, "Device Sync", null) },
-    ) + appToolRows() + ToolRow(ToolKind.SETTINGS, "Settings", null)
+        deps.launcher?.let { ToolRow(ToolKind.APPS, "Apps", null) },
+    ) + appToolRows()).sortedBy { it.label.lowercase() } + ToolRow(ToolKind.SETTINGS, "Settings", null)
 
     /**
-     * The Android apps the user added, in that order; one not installed is skipped (and kept, for a reinstall), and
-     * so is one in the Android games console (kept too: it comes back when it leaves the console).
+     * The Android apps the user added; one not installed is skipped (and kept, for a reinstall), and so is
+     * one in the Android games console (kept too: it comes back when it leaves the console).
      */
     private fun appToolRows(): List<ToolRow> {
         val l = deps.launcher ?: return emptyList()
         return shownToolApps().mapNotNull { id -> l.label(id)?.let { ToolRow(ToolKind.APP, it, null, appId = id) } }
     }
 
-    /** The Android apps the user added that Tools can show: those not in the Android games console (Launcher's count too). */
+    /**
+     * The apps pinned on Home from the drawer without being in Tools ([tools] has no row for them), as rows for
+     * [pinnedToolRows]; one not installed, or in the Android games console, is skipped (its pin is kept).
+     */
+    private fun homeOnlyAppRows(tools: List<ToolRow>): List<ToolRow> {
+        val l = deps.launcher ?: return emptyList()
+        val inTools = tools.mapNotNullTo(HashSet()) { it.appId }
+        val inConsole = deps.settings.androidConsoleApps.toSet()
+        return pinnedAppIds().filter { it !in inTools && it !in inConsole }.mapNotNull { id -> l.label(id)?.let { ToolRow(ToolKind.APP, it, null, appId = id) } }
+    }
+
+    /** The app ids among the tool pins ("APP:" and the id, [pinKey]). */
+    private fun pinnedAppIds(): List<String> = toolPins.filter { it.startsWith("APP:") }.map { it.removePrefix("APP:") }
+
+    /** The Android apps the user added that Tools can show: those not in the Android games console. */
     private fun shownToolApps(): List<String> {
         val inConsole = deps.settings.androidConsoleApps.toSet()
         return deps.settings.toolApps.filter { it !in inConsole }
     }
 
+    /** [row]'s tool opened; any but an app ([ToolKind.APP], which launches) then has the focus ([toolOnTop]). */
     private fun openTool(row: ToolRow) {
+        noteToolOrigin()
+        openToolNow(row)
+        if (row.kind != ToolKind.APP && _screen.value !is Screen.Systems) _toolOnTop.value = true
+    }
+
+    private fun openToolNow(row: ToolRow) {
         when (row.kind) {
             ToolKind.RETRO_ACHIEVEMENTS -> if (deps.achievements != null) showRetroAchievements()
             ToolKind.GAME_TIME -> gameTimeScreen?.open(onCancel = ::showTools)
@@ -4737,6 +4831,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 publishSyncSetup(if ((c.page.value as? DeviceSyncPage.Ready)?.romsAvailable == true) SyncFocus.ROMS else SyncFocus.LINK)
             }
             ToolKind.SETTINGS -> openSettingsMenu()
+            ToolKind.APPS -> openToolApps(AppPick.TOOLS)
             ToolKind.APP -> row.appId?.let { id ->
                 if (deps.launcher?.launch(id) == true) return
                 showNotice("Could not open ${row.label}")
@@ -5348,7 +5443,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             is Screen.Onboarding -> onboardingRow(_selection.value.index)
             is Screen.Systems -> if (styleOf(s) == MenuStyle.MINIMAL) openMinimal(s) else openMainRow(s, _selection.value.index)
             is Screen.SettingsMenu -> s.sections.getOrNull(_selection.value.index)?.let(::openSettings)
-            is Screen.ToolApps -> toggleToolApp(s)
+            is Screen.ToolApps -> if (s.pick == AppPick.GAMES) toggleAndroidGame(s) else launchDrawerApp(s)
             is Screen.CheatDb -> onCheatDbButton(s, NxButton.A)
             Screen.DeviceSync -> onDeviceSyncButton(NxButton.A)
             is Screen.RetroAchievements -> onRaButton(s, NxButton.A)
@@ -5391,7 +5486,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     SettingsKind.INFO -> Unit   // About: read-only
                     SettingsKind.COPY_INFO -> copyDeviceInfo()
                     SettingsKind.HOME_SCREEN -> deps.launcher?.let { it.setHome(!it.isHome()); refreshSettings() }
-                    SettingsKind.TOOL_APPS -> openToolApps(AppPick.TOOLS)
                     SettingsKind.ANDROID_GAMES -> openToolApps(AppPick.GAMES)
                     SettingsKind.RESET_DEFAULTS -> resetToDefaults(s.section)
                     SettingsKind.ALL_FILES -> deps.allFilesAccess?.openSettings()
@@ -5632,6 +5726,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             override fun selectCollection(name: String) = this@AppState.selectCollection(name)
             override fun menuClosed() { if ((_screen.value as? Screen.Systems)?.tabs != menuTabs) swapMainRows() }
             override suspend fun refreshOpenList(select: String?) = this@AppState.refreshOpenList(select)
+            override suspend fun setInTools(id: String, on: Boolean) = this@AppState.setInTools(id, on)
             override fun rescan() = this@AppState.rescan()
             override suspend fun applyHidden(entry: Listed, hidden: Boolean, closeMenu: Boolean) = this@AppState.applyHidden(entry, hidden, closeMenu)
             override suspend fun renameInIndex(game: GameEntry, name: String): Boolean = this@AppState.renameInIndex(game, name)
@@ -6020,7 +6115,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         (_screen.value as? Screen.Onboarding)?.let { onOnboardingButton(it, button); return }
         netplay?.takeIf { it.page.value != null }?.let { it.onButton(button); return }   // the Netplay sheet over a game list
         _screen.value.takeIf { it is Screen.Settings || it is Screen.SettingsMenu }?.let { onSettingsButton(it, button); return }
-        (_screen.value as? Screen.ToolApps)?.let { onToolAppsButton(it, button); return }
+        (_screen.value as? Screen.ToolApps)?.takeIf { it.menu == null }?.let { onToolAppsButton(it, button); return }
         _screen.value.contextMenu?.let { contextMenus.onMenuButton(it, button); return }
         (_screen.value as? Screen.Systems)?.let { s -> s.search?.let { onSearchButton(s, it, button); return } }
         (_screen.value as? Screen.Games)?.let { s ->
@@ -6143,7 +6238,14 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 true
             }
             is Screen.SettingsMenu -> { settingsMenuSelection = _selection.value; showTools(); true }
-            is Screen.ToolApps -> { showSettingsOn(SettingsSection.LAUNCHER, if (s.pick == AppPick.GAMES) SettingsKind.ANDROID_GAMES else SettingsKind.TOOL_APPS); true }
+            is Screen.ToolApps -> {
+                if (s.menu != null) { if (!s.menu.busy) closeContextMenu() }
+                else if (s.pick == AppPick.GAMES) showSettingsOn(SettingsSection.LAUNCHER, SettingsKind.ANDROID_GAMES)
+                // The drawer: back on its tile, found by kind (an app added meanwhile may sort before it).
+                else if (menuCategory == MenuCategory.HOME) showTools()
+                else showSystemsNow(MenuCategory.TOOLS) { it is MainRow.Tool && it.row.kind == ToolKind.APPS }
+                true
+            }
             Screen.AddFirstExtra -> {
                 val page = homePage
                 when {
@@ -6343,34 +6445,37 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     }
 
     /**
-     * The apps picker for [pick]. TOOLS: every installed app but the Android games console's, checked when it is in Tools.
-     * GAMES: the detected games, then every other app ([androidGamesPickOrder]), checked when it is in the console.
+     * The apps grid for [pick]. TOOLS: the app drawer, every installed app but the Android games console's, marked when
+     * it is in Tools. GAMES: the detected games, then every other app ([androidGamesPickOrder]), checked when it is in
+     * the console. [selectId]: the app highlighted first (the second display's preview tapped), else the first.
      */
-    private fun openToolApps(pick: AppPick) {
+    private fun openToolApps(pick: AppPick, selectId: String? = null) {
         val l = deps.launcher ?: return
         (_screen.value as? Screen.Settings)?.let { sectionSelections[it.section] = _selection.value }
         loader.start {
             val apps = l.installedApps()
             installedCache = apps
+            // Icons stay cached between visits, so the drawer opens drawn; only uninstalled apps' go.
+            appIcons?.retain(apps.map { it.id })
             val console = deps.settings.androidConsoleApps.toSet()
-            val (listed, shown) = when (pick) {
-                AppPick.TOOLS -> apps.filter { it.id !in console } to deps.settings.toolApps.toSet()
-                AppPick.GAMES -> androidGamesPickOrder(apps) to console
+            val rows = when (pick) {
+                AppPick.TOOLS -> drawerRows(apps)
+                AppPick.GAMES -> androidGamesPickOrder(apps).map { ToolAppRow(it.id, it.label, it.id in console) }
             }
-            val rows = listed.map { ToolAppRow(it.id, it.label, it.id in shown) }
             toolAppsColumns = 0   // a new picker: it reports its own columns on its first layout
+            if (pick == AppPick.TOOLS) _toolOnTop.value = true   // the drawer, a tool: it lands after a read, so [openTool] could not tell
             _screen.value = Screen.ToolApps(rows, pick)
-            _selection.value = ListSelection(0, rows.size)
+            _selection.value = ListSelection(rows.indexOfFirst { it.id == selectId }.coerceAtLeast(0), rows.size)
         }
     }
 
-    /** The Android apps picker laid out [columns] tiles wide: the d-pad then steps by tiles. */
+    /** The apps grid laid out [columns] tiles wide: the d-pad then steps by tiles. */
     fun onToolAppsLayout(columns: Int) { toolAppsColumns = columns.coerceAtLeast(0) }
 
     /**
-     * The picker is a grid ([gridStep], every row still): the d-pad moves by tiles, UP/DOWN wrapping in the column and
-     * LEFT/RIGHT stopping at the first and last tile. A shows or hides the selected app in Tools (added last); B goes back
-     * to the Launcher page.
+     * The grid ([gridStep], every row still): the d-pad moves by tiles, UP/DOWN wrapping in the column and LEFT/RIGHT
+     * stopping at the first and last tile. The drawer: A opens the selected app, MENU its menu, B back to Tools. The
+     * games picker: A puts the app in the console or takes it out, B back to the Launcher page.
      */
     private fun onToolAppsButton(s: Screen.ToolApps, button: NxButton) {
         when (button) {
@@ -6378,26 +6483,41 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 val sel = _selection.value
                 gridStep(sel.index, sel.count, toolAppsColumns.coerceAtLeast(1), button, rows = sel.count)?.let { _selection.value = sel.copy(index = it) }
             }
-            NxButton.A -> toggleToolApp(s)
+            NxButton.A -> openSelected()
             NxButton.B -> back()
+            NxButton.MENU -> openContextMenu()
             else -> Unit
         }
     }
 
-    private fun toggleToolApp(s: Screen.ToolApps) {
+    /** The drawer's A: opens the selected app; one gone since the drawer opened says so and leaves the grid. */
+    private fun launchDrawerApp(s: Screen.ToolApps) {
         val row = s.apps.getOrNull(_selection.value.index) ?: return
-        if (s.pick == AppPick.GAMES) { toggleAndroidGame(s, row); return }
-        val ids = deps.settings.toolApps
-        deps.settings.toolApps = if (row.shown) ids - row.id else ids + row.id
-        _screen.value = s.copy(apps = s.apps.map { if (it.id == row.id) it.copy(shown = !row.shown) else it })
-        scope.launch { rebuildMainRows(); swapMainRows() }
+        if (deps.launcher?.launch(row.id) == true) return
+        showNotice("Could not open ${row.label}")
+        val apps = s.apps - row
+        _screen.value = s.copy(apps = apps)
+        _selection.value = ListSelection(_selection.value.index, apps.size).clampedTo(apps.size)
+        scope.launch { rebuildMainRows() }   // gone from Tools and Home too, when it was there
     }
 
     /**
-     * The games picker's A: [row]'s app in or out of the console ([setInAndroidConsole]). The checks are then read back
-     * from the list, and the Consoles rows follow, with the Tools rows (an app in the console leaves them).
+     * The app [id] into Tools (added last) or out of it ([on] false), from the drawer's menu or an app tile's: its mark
+     * in an open drawer and the Tools tab follow. A Home pin is its own: it stays either way.
      */
-    private fun toggleAndroidGame(s: Screen.ToolApps, row: ToolAppRow) {
+    private suspend fun setInTools(id: String, on: Boolean) {
+        val ids = deps.settings.toolApps
+        deps.settings.toolApps = if (on) (ids - id) + id else ids - id
+        (_screen.value as? Screen.ToolApps)?.let { s -> _screen.value = s.copy(apps = s.apps.map { if (it.id == id) it.copy(shown = on) else it }) }
+        rebuildMainRows()
+    }
+
+    /**
+     * The games picker's A: the selected app in or out of the console ([setInAndroidConsole]). The checks are then read
+     * back from the list, and the Consoles rows follow, with the Tools rows (an app in the console leaves them).
+     */
+    private fun toggleAndroidGame(s: Screen.ToolApps) {
+        val row = s.apps.getOrNull(_selection.value.index) ?: return
         val joining = !row.shown
         setInAndroidConsole(row.id, on = joining)
         val shown = deps.settings.androidConsoleApps.toSet()

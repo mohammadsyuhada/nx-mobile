@@ -27,9 +27,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** The context menu a screen hosts: a game list's, or the main menu's over a game or tool row; null elsewhere. */
+/** The context menu a screen hosts: a game list's, the main menu's over a game or tool row, or the app drawer's; null elsewhere. */
 internal val Screen.contextMenu: ContextMenu?
-    get() = when (this) { is Screen.Games -> menu; is Screen.Systems -> menu; else -> null }
+    get() = when (this) { is Screen.Games -> menu; is Screen.Systems -> menu; is Screen.ToolApps -> menu; else -> null }
 
 /**
  * What [ContextMenuController] needs from [AppState] that is AppState's own state or behaviour. Nothing here is a
@@ -68,6 +68,9 @@ internal interface ContextMenuHost {
 
     /** A full scan (a stale list after a rename). */
     fun rescan()
+
+    /** Adds the app [id] to the Tools tab (last) or removes it ([on] false); the drawer's marks and the tabs follow. */
+    suspend fun setInTools(id: String, on: Boolean) {}
 
     /** Hides or unhides [entry]'s game (shared with the hidden list's direct unhide). */
     suspend fun applyHidden(entry: Listed, hidden: Boolean, closeMenu: Boolean)
@@ -144,6 +147,7 @@ internal class ContextMenuController(
         _screen.value = when (s) {
             is Screen.Games -> s.copy(menu = m)
             is Screen.Systems -> s.copy(menu = m)
+            is Screen.ToolApps -> s.copy(menu = m)
             else -> s
         }
         if (m == null && s is Screen.Systems && s.menu != null) host.menuClosed()
@@ -204,6 +208,15 @@ internal class ContextMenuController(
                     show(resume)
                 }
             }
+            // The app drawer: the app's Tools and Home items (the Android games picker has no menu).
+            is Screen.ToolApps -> {
+                if (s.pick != AppPick.TOOLS || s.menu?.busy == true) return
+                val i = index ?: _selection.value.index
+                val app = s.apps.getOrNull(i) ?: return
+                if (index != null) host.select(i)
+                val tool = ToolRow(ToolKind.APP, app.label, null, appId = app.id)
+                _screen.value = s.copy(menu = ContextMenu(null, ContextMenus.drawerItems(inTools = app.shown, pinned = tool.pinKey in host.toolPins), tool = tool))
+            }
             else -> Unit
         }
     }
@@ -246,7 +259,7 @@ internal class ContextMenuController(
         is MainRow.Pin -> ContextMenu(row.entry, ContextMenus.pinRowItems(netplay = homeNetplay(row.entry), fromStart = fromStart))
         is MainRow.Shelf -> ContextMenu(row.entry, ContextMenus.homeGameItems(pinned = false, netplay = homeNetplay(row.entry), fromStart = fromStart))   // never a pinned game
         is MainRow.Continue -> ContextMenu(row.entry, ContextMenus.homeGameItems(pinned = host.pins.any { it.path in row.entry.game.lines }, netplay = homeNetplay(row.entry), fromStart = fromStart))
-        is MainRow.Tool -> ContextMenu(null, ContextMenus.toolItems(pinned = row.row.pinKey in host.toolPins), tool = row.row)
+        is MainRow.Tool -> ContextMenu(null, ContextMenus.toolItems(pinned = row.row.pinKey in host.toolPins, app = row.row.kind == ToolKind.APP), tool = row.row)
         is MainRow.PinnedTool -> ContextMenu(null, ContextMenus.toolItems(pinned = true), tool = row.row)
         is MainRow.MoreTools -> null   // Home's "+N": no menu
         else -> null
@@ -332,6 +345,7 @@ internal class ContextMenuController(
         when (kind) {
             ContextKind.PIN_TOOL -> { m.tool?.let { setToolPinned(m, it.pinKey, true) } ?: closeContextMenu(); return }
             ContextKind.UNPIN_TOOL -> { m.tool?.let { setToolPinned(m, it.pinKey, false) } ?: closeContextMenu(); return }
+            ContextKind.ADD_TO_TOOLS, ContextKind.REMOVE_FROM_TOOLS -> { m.tool?.appId?.let { setInTools(m, it, kind == ContextKind.ADD_TO_TOOLS) } ?: closeContextMenu(); return }
             ContextKind.RENAME_COLLECTION -> { m.collection?.let { setMenu(m.copy(prompt = MenuPrompt.RenameCollection(it))) } ?: closeContextMenu(); return }
             ContextKind.DELETE_COLLECTION -> { m.collection?.let { setMenu(m.copy(prompt = MenuPrompt.DeleteCollection(it))) } ?: closeContextMenu(); return }
             ContextKind.OPEN_CONSOLES, ContextKind.OPEN_COLLECTIONS, ContextKind.OPEN_TOOLS -> {
@@ -343,8 +357,8 @@ internal class ContextMenuController(
             else -> if (m.entry == null) { closeContextMenu(); return }
         }
         when (kind) {
-            ContextKind.PIN_TOOL, ContextKind.UNPIN_TOOL, ContextKind.RENAME_COLLECTION, ContextKind.DELETE_COLLECTION,
-            ContextKind.OPEN_CONSOLES, ContextKind.OPEN_COLLECTIONS, ContextKind.OPEN_TOOLS, ContextKind.ACHIEVEMENTS -> Unit   // handled above
+            ContextKind.PIN_TOOL, ContextKind.UNPIN_TOOL, ContextKind.ADD_TO_TOOLS, ContextKind.REMOVE_FROM_TOOLS,
+            ContextKind.RENAME_COLLECTION, ContextKind.DELETE_COLLECTION, ContextKind.OPEN_CONSOLES, ContextKind.OPEN_COLLECTIONS, ContextKind.OPEN_TOOLS, ContextKind.ACHIEVEMENTS -> Unit   // handled above
             ContextKind.EMULATOR -> consoleOf(m)?.let { ContextMenus.emulatorMenu(it) }?.let { setMenu(m.copy(sub = it)) } ?: closeContextMenu()
             ContextKind.CONSOLE -> ContextMenus.consoleMenu(m.game.game.fileName)?.let { setMenu(m.copy(sub = it)) } ?: run {
                 closeContextMenu()
@@ -429,6 +443,14 @@ internal class ContextMenuController(
         host.showNotice(if (pinned) "Pinned" else "Unpinned")
     }
 
+    /** Adds the app [id] to Tools or removes it ([on]), then says so. */
+    private fun setInTools(m: ContextMenu, id: String, on: Boolean) = menuAction(m) {
+        host.setInTools(id, on)
+        closeContextMenu()
+        host.refreshOpenList()
+        host.showNotice(if (on) "Added to Tools" else "Removed from Tools")
+    }
+
     /** Hides or unhides [m]'s game: hidden.txt, then the playable cache, the main menu and the open list are rebuilt. */
     private fun setHidden(m: ContextMenu, hidden: Boolean) = menuAction(m) { host.applyHidden(m.game, hidden, closeMenu = true) }
 
@@ -505,7 +527,8 @@ internal class ContextMenuController(
             ContextKind.ADD_TO_COLLECTION -> if (value.isEmpty()) setMenu(m.copy(sub = null, prompt = MenuPrompt.NewCollection())) else addToCollection(m, value)
             ContextKind.PIN, ContextKind.UNPIN, ContextKind.HIDE, ContextKind.UNHIDE, ContextKind.RENAME,
             ContextKind.REMOVE_FROM_COLLECTION, ContextKind.REMOVE_RECENT, ContextKind.GAME_SETTINGS, ContextKind.FETCH_ART,
-            ContextKind.PIN_TOOL, ContextKind.UNPIN_TOOL, ContextKind.RENAME_COLLECTION, ContextKind.DELETE_COLLECTION, ContextKind.NETPLAY, ContextKind.PLAY_FROM_START,
+            ContextKind.PIN_TOOL, ContextKind.UNPIN_TOOL, ContextKind.ADD_TO_TOOLS, ContextKind.REMOVE_FROM_TOOLS,
+            ContextKind.RENAME_COLLECTION, ContextKind.DELETE_COLLECTION, ContextKind.NETPLAY, ContextKind.PLAY_FROM_START,
             ContextKind.OPEN_CONSOLES, ContextKind.OPEN_COLLECTIONS, ContextKind.OPEN_TOOLS, ContextKind.ACHIEVEMENTS -> closeContextMenu()
         }
     }
