@@ -81,7 +81,8 @@ fun NxModal(
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            Modifier.padding(horizontal = 24.dp).widthIn(max = maxWidth).fillMaxWidth().background(NxModalPanelColor, RoundedCornerShape(24.dp))
+            // 24dp from every screen edge: a tall card (long notes in landscape) stops short of the top and bottom too.
+            Modifier.padding(24.dp).widthIn(max = maxWidth).fillMaxWidth().background(NxModalPanelColor, RoundedCornerShape(24.dp))
                 .pointerInput(Unit) { detectTapGestures { } }   // taps inside stay inside
                 .padding(start = 8.dp, top = 8.dp, end = 8.dp, bottom = if (footer is ModalFooter.None) 8.dp else 0.dp),
         ) {
