@@ -58,6 +58,10 @@ val nxVersionCode: Int = Regex("""(\d{1,3})\.(\d{1,3})\.(\d{1,3})""").matchEntir
 // release.keyPassword. Without a store file the release build stays unsigned. Values are never printed.
 val releaseStoreFile: String = secret("ANDROID_KEYSTORE_FILE", "release.storeFile")
 
+// The in-app updater's feed (BuildConfig.UPDATE_FEED): the latest GitHub release. Only a debug build can point elsewhere,
+// -PnxUpdateFeed=<url> (a local server for testing the update flow); a release build always asks GitHub.
+val githubUpdateFeed = "https://api.github.com/repos/mohammadsyuhada/nx-mobile/releases/latest"
+
 android {
     namespace = "com.nxredux.mobile"
     compileSdk = 37
@@ -89,15 +93,24 @@ android {
             }
         }
     }
+    // github: the build the release workflow ships, which updates itself from GitHub releases. play: for a store listing,
+    // which must not download and install APKs itself, so it carries no updater (each flavor's src set holds its side).
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("github") { dimension = "distribution" }
+        create("play") { dimension = "distribution" }
+    }
     buildTypes {
         // The debug build is "NX Redux Dev" (com.nxredux.mobile.dev, inverted icon in src/debug/res): it installs beside the
         // release app with its own data, so an adb test build never replaces a user's install.
         debug {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
+            buildConfigField("String", "UPDATE_FEED", buildConfigString((findProperty("nxUpdateFeed") as String?)?.trim()?.ifEmpty { null } ?: githubUpdateFeed))
         }
         release {
             isMinifyEnabled = false
+            buildConfigField("String", "UPDATE_FEED", buildConfigString(githubUpdateFeed))
             if (releaseStoreFile.isNotEmpty()) signingConfig = signingConfigs.getByName("release")
         }
     }
