@@ -33,7 +33,7 @@ import java.security.MessageDigest
  * install": Android blocks a hidden app's confirm screen silently, so the install starts once the user is back. Pure, for the test.
  */
 internal fun busyReason(game: Boolean, sync: Boolean, art: Boolean, ra: Boolean, cheats: Boolean, foreground: Boolean): String? = when {
-    game -> "Close your game to install"
+    game -> UpdateController.GAME_REASON
     sync -> "Waiting for Device Sync to finish"
     art -> "Waiting for artwork to finish"
     ra -> "Waiting for the achievements download to finish"

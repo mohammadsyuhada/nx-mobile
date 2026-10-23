@@ -22,7 +22,10 @@ interface UpdatePlatform {
     /** The file's lowercase hex SHA-256. */
     suspend fun sha256(file: UpdateFile): String
     fun discard(file: UpdateFile)
-    /** Why the app can't be replaced now (a game, Device Sync, artwork, achievements, the cheat database), in the Global Constraints order; null when free. */
+    /**
+     * Why the app can't be replaced now (a game as [UpdateController.GAME_REASON], Device Sync, artwork, achievements, the
+     * cheat database), in the Global Constraints order; null when free.
+     */
     fun busyReason(): String?
     /** Whether the app may install packages (`canRequestPackageInstalls()`). */
     fun canInstall(): Boolean
@@ -235,11 +238,16 @@ class UpdateController(
         }
     }
 
-    /** The host's reason first, then the platform's; off the main menu with nothing else running, "Ready to install". */
+    /**
+     * The Global Constraints order: the platform's game reason, then the host's (Netplay), then the platform's others; off
+     * the main menu with nothing else running, "Ready to install".
+     */
     private fun waitReason(): String? {
+        val other = platform.busyReason()
+        if (other == GAME_REASON) return other
         val host = hostBusy()
         if (!host.isNullOrEmpty()) return host
-        return platform.busyReason() ?: if (host == "") READY_REASON else null
+        return other ?: if (host == "") READY_REASON else null
     }
 
     private fun waitFor(release: AppRelease, downloaded: UpdateFile, reason: String) {
@@ -264,6 +272,7 @@ class UpdateController(
 
     companion object {
         const val POLL_MS = 2_000L
+        const val GAME_REASON = "Close your game to install"
         const val PERMISSION_REASON = "Allow installs from NX Redux to update"
         const val READY_REASON = "Ready to install"
     }

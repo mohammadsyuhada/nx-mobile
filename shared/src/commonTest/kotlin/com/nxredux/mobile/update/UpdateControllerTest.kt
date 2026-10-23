@@ -249,6 +249,18 @@ class UpdateControllerTest {
         assertEquals(false, fake.keepAlives.last().first)
     }
 
+    @Test fun a_loaded_game_outranks_an_open_netplay_sheet() = runTest {
+        val fake = FakeUpdatePlatform().apply { busy = "Close your game to install" }
+        val c = downloaded(fake) { "Close Netplay to install" }
+        assertEquals("Close your game to install", assertIs<UpdateState.Waiting>(c.state.value).reason)
+    }
+
+    @Test fun netplay_outranks_the_platforms_later_reasons() = runTest {
+        val fake = FakeUpdatePlatform().apply { busy = "Waiting for Device Sync to finish" }
+        val c = downloaded(fake) { "Close Netplay to install" }
+        assertEquals("Close Netplay to install", assertIs<UpdateState.Waiting>(c.state.value).reason)
+    }
+
     @Test fun a_wait_for_a_game_still_asks_for_the_install_permission() = runTest {
         val fake = FakeUpdatePlatform().apply { busy = "Close your game to install"; installAllowed = false }
         val c = downloaded(fake)
