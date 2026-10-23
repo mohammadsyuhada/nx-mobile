@@ -82,6 +82,8 @@ class UpdateController(
     private var file: UpdateFile? = null
     /** The Waiting state is for the install permission, which only the next [onMainMenu] re-checks. */
     private var awaitingPermission = false
+    /** This download already opened the install-permission screen; the user is asked once per download. */
+    private var asked = false
 
     private val busy: Boolean
         get() = _state.value.let { it is UpdateState.Checking || it is UpdateState.Downloading || it is UpdateState.Waiting || it is UpdateState.Installing }
@@ -90,8 +92,8 @@ class UpdateController(
     fun onMainMenu() {
         val s = _state.value
         if (s is UpdateState.Waiting) {
-            if (!awaitingPermission) { poll?.cancel(); gate(s.release, s.file, askPermission = false); return }
-            if (platform.canInstall()) { awaitingPermission = false; gate(s.release, s.file, askPermission = false); return }
+            if (!awaitingPermission) { poll?.cancel(); gate(s.release, s.file); return }
+            if (platform.canInstall()) { awaitingPermission = false; gate(s.release, s.file); return }
             // Refused again: the user decides when to try, from About's Update to row.
             awaitingPermission = false
             dropFile()
@@ -116,6 +118,7 @@ class UpdateController(
             else -> null
         } ?: return
         _popup.value = null
+        asked = false
         _state.value = UpdateState.Downloading(release, 0L, release.apkSize)
         platform.keepAlive(true, downloadingText(0L, release.apkSize))
         job = scope.launch {
@@ -132,7 +135,7 @@ class UpdateController(
                     finish(UpdateState.Failed("Update failed", release))
                     return@launch
                 }
-                gate(release, downloaded, askPermission = true)
+                gate(release, downloaded)
             } catch (e: CancellationException) {
                 throw e   // cancel() already restored the state
             } catch (e: Exception) {
@@ -195,7 +198,7 @@ class UpdateController(
      * Installs [downloaded] when the host and the platform are free and installs are allowed; otherwise waits, polling the
      * busy reasons every 2 s so a quit game or a finished sync starts the install without another menu event.
      */
-    private fun gate(release: AppRelease, downloaded: UpdateFile, askPermission: Boolean) {
+    private fun gate(release: AppRelease, downloaded: UpdateFile) {
         val reason = waitReason()
         if (reason != null) {
             waitFor(release, downloaded, reason)
@@ -205,12 +208,12 @@ class UpdateController(
                     val next = waitReason() ?: break
                     if (next != (_state.value as? UpdateState.Waiting)?.reason) waitFor(release, downloaded, next)
                 }
-                gate(release, downloaded, askPermission)
+                gate(release, downloaded)
             }
             return
         }
         if (!platform.canInstall()) {
-            if (askPermission) platform.askInstallPermission()
+            if (!asked) { asked = true; platform.askInstallPermission() }
             awaitingPermission = true
             waitFor(release, downloaded, PERMISSION_REASON)
             return

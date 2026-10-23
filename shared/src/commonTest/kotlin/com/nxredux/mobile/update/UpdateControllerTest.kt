@@ -239,6 +239,28 @@ class UpdateControllerTest {
         assertEquals(false, fake.keepAlives.last().first)
     }
 
+    @Test fun a_wait_for_a_game_still_asks_for_the_install_permission() = runTest {
+        val fake = FakeUpdatePlatform().apply { busy = "Close your game to install"; installAllowed = false }
+        val c = downloaded(fake)
+        assertEquals(0, fake.permissionAsks)
+        fake.busy = null
+        c.onMainMenu()
+        assertEquals(1, fake.permissionAsks)
+        assertEquals("Allow installs from NX Redux to update", assertIs<UpdateState.Waiting>(c.state.value).reason)
+        c.onMainMenu()
+        assertEquals(1, fake.permissionAsks)
+        assertEquals(UpdateState.Available(RELEASE), c.state.value)
+        assertTrue(fake.installs.isEmpty())
+    }
+
+    @Test fun each_download_asks_for_the_permission_again() = runTest {
+        val fake = FakeUpdatePlatform().apply { installAllowed = false }
+        val c = downloaded(fake)
+        c.onMainMenu()   // still refused: Available
+        c.update()
+        assertEquals(2, fake.permissionAsks)
+    }
+
     @Test fun a_cancelled_install_is_available_again() = runTest {
         val fake = FakeUpdatePlatform()
         val c = downloaded(fake)
