@@ -47,6 +47,29 @@ class FileRomsSourceTest {
         assertThrows(java.io.IOException::class.java) { runBlocking { source.listChildren(ref(dir)) } }
     }
 
+    // The app's media folder (the home without All files access) lists, reads, writes and is online with access off;
+    // any other file ref is still refused.
+    @Test fun the_own_media_folder_works_without_access_and_others_do_not() = runBlocking {
+        val media = tmp.newFolder("Android", "media", "com.nxredux.mobile.dev")
+        File(media, "Roms").mkdir()
+        File(media, "a.txt").writeText("hi")
+        val other = tmp.newFolder("NXRedux")
+        val own = FileRomsSource({ false }, { false }) { MediaHome.owns(media, it) }
+        assertEquals(listOf("Roms", "a.txt"), own.listChildren(ref(media)).map { it.name }.sorted())
+        assertEquals("hi", own.readText(FileRefs.child(ref(media), "a.txt")))
+        assertFalse(own.isOffline(ref(media)))
+        assertTrue(own.canWrite(ref(media)))
+        assertTrue(own.writeText(FileRefs.child(ref(media), "Roms"), "b.txt", "x"))
+        assertThrows(java.io.IOException::class.java) { runBlocking { own.listChildren(ref(other)) } }
+        assertTrue(own.isOffline(ref(other)))
+        assertFalse(own.canWrite(ref(other)))
+        assertFalse(own.copyFile(ref(media), "a.txt", ref(other)))
+        // A path that only starts like the media folder, or climbs out of it, is not the app's.
+        assertFalse(MediaHome.owns(media, File(media.path + "-other")))
+        assertFalse(MediaHome.owns(media, File(media, "../../x")))
+        assertTrue(MediaHome.owns(media, File(media, "Roms/../Saves")))
+    }
+
     @Test fun child_finds_by_name_and_refuses_other_paths() = runBlocking {
         val dir = tmp.newFolder("Roms")
         File(dir, "a #1.gb").writeText("x")

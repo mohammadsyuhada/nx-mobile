@@ -73,12 +73,13 @@ fun PickFolderScreen(
         listOf("Pick folder"), canGoBack, selected, onSelect, onRow, onHint,
     )
 
-/** First setup, after the home pick: offer an existing ROMs folder as an extra source (scanned in place). */
+/** First setup, after the home pick: offer an existing ROMs folder as an extra source (scanned in place). [note]: a line above it ([AppState.setupNote]). */
 @Composable
-fun AddFirstExtraScreen(title: String, canGoBack: Boolean, selected: Int, onSelect: (Int) -> Unit, onRow: (Int) -> Unit, onHint: (NxButton) -> Unit) =
+fun AddFirstExtraScreen(title: String, canGoBack: Boolean, selected: Int, onSelect: (Int) -> Unit, onRow: (Int) -> Unit, onHint: (NxButton) -> Unit, note: String? = null) =
     SetupStepScreen(
         title, "Add a ROMs folder?",
-        listOf(
+        listOfNotNull(
+            note,
             "Already keep ROMs somewhere else? Add that folder too. It is scanned in place and nothing is moved. " +
                 "You can add more folders later in Settings.",
         ),
@@ -113,11 +114,12 @@ private const val ANDROID_GAMES_LANDSCAPE_LINES = 12
 @Composable
 fun FolderSummaryScreen(
     screen: Screen.FolderSummary, title: String, selected: Int, onSelect: (Int) -> Unit, onRow: (Int) -> Unit, onHint: (NxButton) -> Unit,
+    note: String? = null,
 ) {
     val rows = folderSummaryRows(screen)
     val hints = if (screen.progress != null) listOf(Hint(NxButton.B, "Stop")) else listOf(Hint(NxButton.B, "Back"), Hint(NxButton.A, "Choose"))
     NxDetailListBody(
-        title = title, details = folderSummaryDetails(screen), rows = rows.map { it.row }, selectedIndex = selected, hints = hints,
+        title = title, details = folderSummaryDetails(screen) + listOfNotNull(note), rows = rows.map { it.row }, selectedIndex = selected, hints = hints,
         onSelect = onSelect, onOpen = onRow,
         onHint = onHint,
         // Continue at the title's right, the Move row alone under the console lines.

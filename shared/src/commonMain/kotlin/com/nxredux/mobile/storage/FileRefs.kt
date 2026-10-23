@@ -23,6 +23,14 @@ object FileRefs {
     /** True when [home] is a file ref and All files access is not [granted]: its folder cannot be read now. */
     fun accessOff(home: ContentRef?, granted: Boolean): Boolean = home != null && isFile(home) && !granted
 
+    /** True when [ref] is the file ref [dir] or lies inside it (no `..` segment, which could climb out). */
+    fun within(dir: ContentRef, ref: ContentRef): Boolean {
+        if (!isFile(dir) || !isFile(ref)) return false
+        val v = ref.value
+        if (v.split('/').any { it == ".." }) return false
+        return v == dir.value || v.startsWith(dir.value.trimEnd('/') + "/")
+    }
+
     /** The absolute path of a file ref (the caller checked [isFile]). */
     fun path(ref: ContentRef): String = ref.value.removePrefix(SCHEME)
 

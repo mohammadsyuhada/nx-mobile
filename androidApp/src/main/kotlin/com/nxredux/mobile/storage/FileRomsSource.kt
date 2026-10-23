@@ -20,10 +20,19 @@ private const val FILE_READ_CHUNK = 64 * 1024
  * RomsSource over file refs ([FileRefs]), for trees read with All files access, with [SafRomsSource]'s return
  * conventions; writes are atomic here (`<name>.part`, then a replacing rename). [granted] says whether All files access
  * is on: without it nothing is written and every tree reads as offline, so a revoked grant keeps the home and its
- * extras as an unmounted card does (never "gone"). [mounted]: the volume holding a path is mounted and its root reads.
+ * extras as an unmounted card does (never "gone"); the app's [own] folder is the exception. [mounted]: the volume holding a
+ * path is mounted and its root reads.
  */
-class FileRomsSource(private val granted: () -> Boolean, private val mounted: (File) -> Boolean) : RomsSource {
+class FileRomsSource(
+    private val granted: () -> Boolean,
+    private val mounted: (File) -> Boolean,
+    /** A path the app owns (its media folder): read and written without All files access, and never offline. */
+    private val own: (File) -> Boolean = { false },
+) : RomsSource {
     private fun fileOf(ref: ContentRef) = File(FileRefs.path(ref))
+
+    /** All files access is on, or [f] is the app's own. */
+    private fun allowed(f: File): Boolean = granted() || own(f)
 
     /** [name] in [dir], or null when [name] is not one path segment (it would address some other file). */
     private fun childOf(dir: ContentRef, name: String): File? = if (FileRefs.isPlainName(name)) File(fileOf(dir), name) else null
@@ -36,8 +45,8 @@ class FileRomsSource(private val granted: () -> Boolean, private val mounted: (F
     /** A gone folder fails as SAF's gone tree does (IllegalArgumentException); an unreadable one as an I/O failure. */
     override suspend fun listChildren(dir: ContentRef): List<Entry> = withContext(Dispatchers.IO) {
         // Without access listFiles() may answer an empty array, which would read as an emptied folder: fail instead.
-        if (!granted()) throw IOException("All files access is off")
         val f = fileOf(dir)
+        if (!allowed(f)) throw IOException("All files access is off")
         if (!f.isDirectory) throw IllegalArgumentException("Folder no longer exists")
         val listed = f.listFiles() ?: throw IOException("Cannot list ${f.path}")
         listed.map { entryOf(dir, it) }
@@ -83,11 +92,11 @@ class FileRomsSource(private val granted: () -> Boolean, private val mounted: (F
     }
 
     override suspend fun isOffline(tree: ContentRef): Boolean = withContext(Dispatchers.IO) {
-        runCatching { !granted() || !mounted(fileOf(tree)) }.getOrDefault(false)
+        runCatching { val f = fileOf(tree); !own(f) && (!granted() || !mounted(f)) }.getOrDefault(false)
     }
 
     override suspend fun canWrite(tree: ContentRef): Boolean = withContext(Dispatchers.IO) {
-        granted() && fileOf(tree).let { it.isDirectory && it.canWrite() }
+        fileOf(tree).let { allowed(it) && it.isDirectory && it.canWrite() }
     }
 
     override suspend fun createDirectory(parent: ContentRef, name: String): Entry? = withContext(Dispatchers.IO) {
@@ -132,17 +141,17 @@ class FileRomsSource(private val granted: () -> Boolean, private val mounted: (F
 
     /** A rename into [toDir]: fails across volumes (renameTo cannot), or when [toDir] already holds [name]. */
     override suspend fun moveFile(fromDir: ContentRef, name: String, toDir: ContentRef): Boolean = withContext(Dispatchers.IO) {
-        if (!granted()) return@withContext false
         val src = childOf(fromDir, name)?.takeIf { it.exists() } ?: return@withContext false
         val dst = childOf(toDir, name) ?: return@withContext false
+        if (!allowed(src) || !allowed(dst)) return@withContext false
         !dst.exists() && runCatching { src.renameTo(dst) }.getOrDefault(false)
     }
 
     /** A whole copy (a folder recursively); any failure or a size mismatch deletes what was written. */
     override suspend fun copyFile(fromDir: ContentRef, name: String, toDir: ContentRef): Boolean = withContext(Dispatchers.IO) {
-        if (!granted()) return@withContext false
         val src = childOf(fromDir, name)?.takeIf { it.exists() } ?: return@withContext false
         val dst = childOf(toDir, name) ?: return@withContext false
+        if (!allowed(src) || !allowed(dst)) return@withContext false
         if (dst.exists()) return@withContext false
         val ok = runCatching { src.copyRecursively(dst, overwrite = false) && sizeOf(src) == sizeOf(dst) }.getOrDefault(false)
         if (!ok) dst.deleteRecursively()

@@ -19,11 +19,9 @@ class AndroidHomeLocator(context: Context) : HomeLocator {
         HomeChoice.effective(settings.treeRef, AndroidAllFilesAccess.isGranted(), { File(FileRefs.path(it)).isDirectory }, media)
 
     private companion object {
-        @Volatile private var dir: File? = null
-
-        /** [MediaHome.dir], found once; [MediaHome.ensure] returns at once after its first success (a failure retries next call). */
+        /** [MediaHome.cachedDir]; [MediaHome.ensure] returns at once after its first success (a failure retries next call). */
         fun mediaRef(app: Context): ContentRef {
-            val d = dir ?: MediaHome.dir(app).also { dir = it }
+            val d = MediaHome.cachedDir(app)
             MediaHome.ensure(d)
             return FileRefs.of(d.path)
         }

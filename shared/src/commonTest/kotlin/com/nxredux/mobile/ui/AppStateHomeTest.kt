@@ -206,4 +206,116 @@ class AppStateHomeTest {
         assertEquals(mediaNotice, st.notice.value)
         assertFalse(st.screen.value is Screen.PickFolder)
     }
+
+    private val gamesNote = "Your games folder is Android/media/com.nxredux.mobile.dev/. Put ROMs and BIOS there with a file manager. Uninstalling the app removes it."
+
+    /** A fresh install without All files access, walked to its Permissions page. */
+    private fun TestScope.noAccessSetup(source: RomsSource, picker: Picker = Picker()): Pair<AppState, MemorySettings> {
+        val settings = MemorySettings().apply { onboardingDone = null }
+        val st = state(settings, source, Homes(media, media), picker, FakeAllFilesAccess(declared = true, isGranted = false))
+        st.load()
+        st.onButton(NxButton.A)                                    // Get started
+        st.select(1); st.onButton(NxButton.A)                      // Text size: Continue
+        assertIs<Screen.PermissionsStep>(st.screen.value)
+        return st to settings
+    }
+
+    @Test fun backFromTheMediaHomeSkipsThePicker() = runTest {
+        // The home page (the media home has a game): B goes back to Permissions, and on again to the home page.
+        val (st, _) = noAccessSetup(Listing(media.value))
+        val seen = screens(st)
+        st.skipAllFiles()
+        assertIs<Screen.FolderSummary>(st.screen.value)
+        st.onButton(NxButton.B)
+        assertIs<Screen.PermissionsStep>(st.screen.value)
+        st.skipAllFiles()
+        val home = assertIs<Screen.FolderSummary>(st.screen.value)
+        assertEquals(Recents.HOME, home.extraId)
+        st.select(folderSummaryRows(home).lastIndex); st.onButton(NxButton.A)
+        assertIs<Screen.AddFirstExtra>(st.screen.value)
+        st.onButton(NxButton.B)                                    // back to the home page
+        assertIs<Screen.FolderSummary>(st.screen.value)
+        assertTrue(seen.none { it is Screen.PickFolder })
+
+        // No game in the media home: the ROMs folder offer first; B goes back to Permissions, and on again to the offer.
+        val (empty, _) = noAccessSetup(FakeRomsSource(mapOf(media.value to emptyList())))
+        val seenEmpty = screens(empty)
+        empty.skipAllFiles()
+        assertIs<Screen.AddFirstExtra>(empty.screen.value)
+        empty.onButton(NxButton.B)
+        assertIs<Screen.PermissionsStep>(empty.screen.value)
+        empty.skipAllFiles()
+        assertIs<Screen.AddFirstExtra>(empty.screen.value)
+        assertTrue(seenEmpty.none { it is Screen.PickFolder })
+    }
+
+    @Test fun noAccessStepsCountNoPick() = runTest {
+        val (st, _) = noAccessSetup(Listing(media.value))
+        val (permissions, _) = st.setupChrome()
+        st.skipAllFiles()
+        val (homePage, _) = st.setupChrome()
+        val home = assertIs<Screen.FolderSummary>(st.screen.value)
+        st.select(folderSummaryRows(home).lastIndex); st.onButton(NxButton.A)
+        val (offer, _) = st.setupChrome()
+        val total = homePage.substringAfter(" of ").toInt()
+        // No pick between Permissions and the home page; the home page itself joins the count once the scan found games, as after a pick.
+        assertEquals(listOf("Setup · Step 1 of ${total - 1}", "Setup · Step 2 of $total", "Setup · Step 3 of $total"), listOf(permissions, homePage, offer))
+        // Permissions, the home page, the ROMs folder offer, then onboarding's own steps: no pick among them.
+        st.skipFirstExtra()
+        assertEquals(OnboardingStep.HANDHELD, assertIs<Screen.Onboarding>(st.screen.value).step)
+    }
+
+    @Test fun mediaHomeSetupNote() = runTest {
+        val (st, _) = noAccessSetup(Listing(media.value))
+        assertNull(st.setupNote())
+        st.skipAllFiles()
+        assertEquals(gamesNote, st.setupNote())                    // the home page: the first folder page here
+        val home = assertIs<Screen.FolderSummary>(st.screen.value)
+        st.select(folderSummaryRows(home).lastIndex); st.onButton(NxButton.A)
+        assertNull(st.setupNote())                                 // the offer after it: said already
+
+        val (empty, _) = noAccessSetup(FakeRomsSource(mapOf(media.value to emptyList())))
+        empty.skipAllFiles()
+        assertIs<Screen.AddFirstExtra>(empty.screen.value)
+        assertEquals(gamesNote, empty.setupNote())                 // no home page: the offer is the first
+    }
+
+    @Test fun accessBackSwitchesToTheSavedHome() = runTest {
+        val source = Listing(media.value, fileHome.value)
+        val access = FakeAllFilesAccess(declared = true, isGranted = false)
+        val homes = Homes(media, media)
+        val picker = Picker()
+        val settings = MemorySettings(fileHome)
+        val st = state(settings, source, homes, picker, access)
+        st.load()
+        assertIs<Screen.Systems>(st.screen.value)
+        assertTrue(source.listed.none { it.startsWith(fileHome.value) })
+        val seen = screens(st)
+        access.isGranted = true; homes.now = fileHome            // back from Android's page with access on
+        st.onAllFilesAccessChanged()
+        assertIs<Screen.Systems>(st.screen.value)
+        assertTrue(source.listed.any { it.startsWith(fileHome.value) })   // the saved home is the library again
+        assertTrue(seen.none { it is Screen.PickFolder })
+        assertEquals(0, picker.picks)
+        assertEquals(fileHome, settings.treeRef)
+    }
+
+    @Test fun aPickAfterOnboardingIsNotFirstSetup() = runTest {
+        val settings = MemorySettings()                            // onboarding done, no saved home: the media one
+        val homes = Homes(media, media)
+        val st = state(settings, Listing(media.value, fileHome.value), homes, allFiles = FakeAllFilesAccess(isGranted = true))
+        st.load()
+        assertIs<Screen.Systems>(st.screen.value)
+        homes.now = fileHome
+        st.setHome(fileHome)
+        assertEquals(fileHome, settings.treeRef)
+        assertIs<Screen.Systems>(st.screen.value)                  // no first-setup home page
+        assertNull(settings.onboardingStep)
+    }
+
+    @Test fun missingHomeNoticeWithAccessOn() = runTest {
+        val st = state(MemorySettings(fileHome), Listing(media.value), Homes(media, media), allFiles = FakeAllFilesAccess(isGranted = true))
+        st.load()
+        assertEquals("Your home folder can't be found. Using Android/media/com.nxredux.mobile.dev/ until it's back. Saves made there stay there.", st.notice.value)
+    }
 }

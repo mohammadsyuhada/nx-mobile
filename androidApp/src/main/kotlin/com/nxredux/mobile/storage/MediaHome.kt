@@ -25,6 +25,17 @@ object MediaHome {
 
     fun ref(context: Context): ContentRef = FileRefs.of(dir(context).path)
 
+    /** [dir], looked up once per process (the media dirs are a system call): the path never changes while the app runs. */
+    @Volatile private var cached: File? = null
+    fun cachedDir(context: Context): File = cached ?: dir(context).also { cached = it }
+
+    /** True when [file] is [dir] or inside it: the app's own folder, readable and writable without All files access. */
+    fun owns(dir: File, file: File): Boolean {
+        val f = file.absoluteFile.normalize().path
+        val d = dir.absoluteFile.normalize().path.trimEnd('/')
+        return f == d || f.startsWith("$d/")
+    }
+
     /** Makes `Roms/`, `Bios/`, `Collections/`, `Saves/` and an empty `.nomedia` (so the gallery skips box art) in [dir]. */
     fun ensure(dir: File) {
         if (ensured == dir.path) return

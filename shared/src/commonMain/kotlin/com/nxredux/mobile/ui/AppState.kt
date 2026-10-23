@@ -1313,7 +1313,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (ask) { allFilesStepShown = true; showPermissions(); return }
         // No All files access: the home is the app's Android/media folder, nothing to pick. Once per run (a failed scan of it picks).
         val media = deps.homes?.media
-        if (media != null && inFirstSetup() && !mediaHomeTaken && deps.allFilesAccess?.takeIf { it.declared }?.granted() != true) return takeMediaHome(media)
+        if (media != null && inFirstSetup() && !mediaHomeTaken && !homePickShown()) return takeMediaHome(media)
         _screen.value = Screen.PickFolder
         _selection.value = ListSelection(0, 1)
     }
@@ -1324,6 +1324,33 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         firstSetup = true
         if (deps.settings.onboardingDone == false) deps.settings.onboardingStep = FOLDER_STEPS
         rescan(then = { showHomePage(media) })
+    }
+
+    /** All files access is on (or there is no media home): first setup shows the home pick; without it the media home is used. */
+    private fun homePickShown(): Boolean = deps.homes?.media == null || deps.allFilesAccess?.takeIf { it.declared }?.granted() == true
+
+    /** B from the media home's first page (the home page, or the ROMs folder offer without one): back past the skipped pick, which runs again going on. */
+    private fun backPastMediaHome() {
+        mediaHomeTaken = false
+        homePage = null
+        firstSetup = false
+        if (deps.settings.onboardingStep == FOLDER_STEPS) deps.settings.onboardingStep = null
+        backFromHomePick()
+    }
+
+    /**
+     * The no-access line on the media home's first folder-steps page (the home page, or the ROMs folder offer when the
+     * home has no game): where the games folder is. Null on every other page.
+     */
+    fun setupNote(): String? {
+        val media = deps.homes?.media ?: return null
+        if (!mediaHomeTaken || !inFirstSetup()) return null
+        val first = when (val s = _screen.value) {
+            is Screen.FolderSummary -> s.extraId == Recents.HOME
+            Screen.AddFirstExtra -> homePage == null
+            else -> false
+        }
+        return if (first) "Your games folder is ${mediaPath(media)}. Put ROMs and BIOS there with a file manager. Uninstalling the app removes it." else null
     }
 
     /** The Permissions page's state now: each permission this device uses, granted or not. */
@@ -2551,7 +2578,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (!inFirstSetup()) return 0
         val access = deps.allFilesAccess
         val allFiles = allFilesStepShown || (access != null && access.declared && !access.granted() && !deps.settings.allFilesAsked)
-        return (if (allFiles) 1 else 0) + 2 + (if (homePage != null) 1 else 0) + (if (addedExtraId != null) 1 else 0) + (if (androidStepShown) 1 else 0)
+        val pick = if (mediaHomeTaken || !homePickShown()) 0 else 1   // no home pick on the media home
+        return (if (allFiles) 1 else 0) + 1 + pick + (if (homePage != null) 1 else 0) + (if (addedExtraId != null) 1 else 0) + (if (androidStepShown) 1 else 0)
     }
 
     /**
@@ -2564,12 +2592,13 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val access = deps.allFilesAccess
         val allFiles = allFilesStepShown || (access != null && access.declared && !access.granted() && !deps.settings.allFilesAsked)
         val home = if (homePage != null) 1 else 0   // the home page, between the pick and the ROMs folder offer
+        val pick = if (mediaHomeTaken || !homePickShown()) 0 else 1   // no home pick on the media home
         val at = (if (allFiles) 1 else 0) + when (screen) {
             is Screen.PermissionsStep -> 0
             Screen.PickFolder -> 1
-            Screen.AddFirstExtra -> 2 + home
-            is Screen.FolderSummary -> if (screen.extraId == Recents.HOME) 2 else 3 + home
-            else -> 3 + home + (if (addedExtraId != null) 1 else 0)
+            Screen.AddFirstExtra -> 1 + pick + home
+            is Screen.FolderSummary -> if (screen.extraId == Recents.HOME) 1 + pick else 2 + pick + home
+            else -> 2 + pick + home + (if (addedExtraId != null) 1 else 0)
         }
         val total = setupFolderSteps() + onboardingSteps(onboarding.context).size
         return "Setup · Step $at of $total" to true
@@ -3070,15 +3099,21 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private fun mediaHomeNotice(root: ContentRef) {
         val saved = deps.settings.treeRef ?: return
         if (root != deps.homes?.media || !FileRefs.isFile(saved) || saved == root) return
-        showNotice("All files access is off. Using ${mediaPath(root)} until it's back on. Saves made there stay there.")
+        showNotice(
+            if (deps.allFilesAccess?.granted() == true) "Your home folder can't be found. Using ${mediaPath(root)} until it's back. Saves made there stay there."
+            else "All files access is off. Using ${mediaPath(root)} until it's back on. Saves made there stay there.",
+        )
     }
 
     /** The error for a home that cannot be read now: a file home without All files access ([ACCESS_OFF]), else the unmounted card's. */
     private fun homeAwayError(root: ContentRef, then: String): String =
-        if (FileRefs.isFile(root) && deps.allFilesAccess?.granted() != true) ACCESS_OFF else "$HOME_OFFLINE $then"
+        if (FileRefs.isFile(root) && deps.allFilesAccess?.granted() != true && !inMediaHome(root)) ACCESS_OFF else "$HOME_OFFLINE $then"
 
     /** True for a file ref read without All files access: its folder is not "offline", the permission is off. */
-    private fun fileAccessOff(ref: ContentRef): Boolean = FileRefs.isFile(ref) && deps.allFilesAccess?.granted() == false
+    private fun fileAccessOff(ref: ContentRef): Boolean = FileRefs.isFile(ref) && deps.allFilesAccess?.granted() == false && !inMediaHome(ref)
+
+    /** [ref] is the app's own media folder or inside it: readable without All files access. */
+    private fun inMediaHome(ref: ContentRef): Boolean = deps.homes?.media?.let { FileRefs.within(it, ref) } == true
 
     private class OldPick : RuntimeException()
 
@@ -3147,10 +3182,13 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (_screen.value is Screen.PermissionsStep) { showPermissions(keep = true); return }   // back from a prompt: the rows show its answer
         if ((_screen.value as? Screen.Settings)?.section == SettingsSection.ROM_FOLDERS) refreshSettings()
         // Granted meanwhile: SAF folders on external storage become paths. The main menu reloads at once (rescanning, as the
-        // index no longer fits); any other page leaves it to the next load. A load in flight converts first itself.
-        if (_screen.value is Screen.Loading || deps.allFilesAccess?.granted() != true) return
+        // index no longer fits); any other page leaves it to the next load. A load in flight converts first itself. The
+        // same when the home itself changed with the access (the saved one back, or the media one in its place).
+        if (_screen.value is Screen.Loading) return
         scope.launch {
-            if (!convertToFiles()) return@launch
+            val converted = deps.allFilesAccess?.granted() == true && convertToFiles()
+            val switched = library?.let { it.home != home()?.value } == true
+            if (!converted && !switched) return@launch
             val now = _screen.value
             if (now is Screen.Systems && now.menu == null && now.search == null) load() else libraryDirty = true
         }
@@ -3171,7 +3209,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             return
         }
         // First setup: no home yet, or a pick from the setup screen (a retry after a failed first load keeps treeRef).
-        val first = old == null || _screen.value is Screen.PickFolder
+        val first = (old == null && inFirstSetup()) || _screen.value is Screen.PickFolder
         val fromLibrary = if (first) null else rememberLibraryPage()
         deps.settings.treeRef = ref
         if (first) firstSetup = true
@@ -6290,6 +6328,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 when {
                     !inFirstSetup() -> skipFirstExtra()
                     page != null -> { _screen.value = page; _selection.value = ListSelection(0, folderSummaryRows(page).size) }   // back to the home page
+                    mediaHomeTaken -> backPastMediaHome()
                     else -> { _screen.value = Screen.PickFolder; _selection.value = ListSelection(0, 1) }
                 }
                 true
@@ -6304,6 +6343,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             is Screen.FolderSummary -> {
                 when {
                     s.progress != null -> moveCancelled = true
+                    s.extraId == Recents.HOME && mediaHomeTaken -> backPastMediaHome()
                     s.extraId == Recents.HOME -> { homePage = null; _screen.value = Screen.PickFolder; _selection.value = ListSelection(0, 1) }
                     else -> showAddFirstExtra()
                 }

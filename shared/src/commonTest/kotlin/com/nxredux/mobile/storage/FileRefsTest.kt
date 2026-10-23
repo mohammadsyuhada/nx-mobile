@@ -52,4 +52,13 @@ class FileRefsTest {
         assertFalse(FileRefs.accessOff(ContentRef("content://x/tree/a"), granted = false))
         assertFalse(FileRefs.accessOff(null, granted = false))
     }
+
+    @Test fun within_is_the_folder_itself_or_inside_it() {
+        val media = FileRefs.of("/storage/emulated/0/Android/media/com.nxredux.mobile")
+        assertTrue(FileRefs.within(media, media))
+        assertTrue(FileRefs.within(media, FileRefs.child(media, "Roms")))
+        assertFalse(FileRefs.within(media, FileRefs.of("/storage/emulated/0/Android/media/com.nxredux.mobile.dev")))   // a prefix, not a child
+        assertFalse(FileRefs.within(media, FileRefs.child(media, "..")))
+        assertFalse(FileRefs.within(media, ContentRef("content://x/tree/primary%3AAndroid")))
+    }
 }
