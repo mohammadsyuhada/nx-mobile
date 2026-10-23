@@ -129,6 +129,7 @@ class AndroidSaveTransfer(
     private fun importWork(progress: (String) -> Unit, done: (ImportResult) -> Unit, block: () -> ImportResult) {
         SaveTransferRules.importRefusal(gameScreenAlive(), syncing())?.let { return done(ImportResult.Message(it)) }
         importsRunning.incrementAndGet()
+        DataRoot.useBegin()   // an import writes saves: no data move starts under it
         main.post { progress("Working…") }
         executor.execute {
             val result = try {
@@ -136,6 +137,8 @@ class AndroidSaveTransfer(
             } catch (e: Throwable) {
                 NxLog.e(TAG, "save import failed", e)
                 ImportResult.Message(failure(e))
+            } finally {
+                DataRoot.useEnd(app)
             }
             main.post { importsRunning.decrementAndGet(); done(result) }
         }

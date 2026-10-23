@@ -484,6 +484,8 @@ class GameActivity : ComponentActivity() {
     private var saveStates: SaveStates? = null
     /** Saves, states, configs and `.minui` markers: [DataRoot.settled] once per session. */
     private lateinit var dataRoot: File
+    /** This screen holds off the data move ([DataRoot.useBegin]) until it is destroyed. */
+    private var usingData = false
     /** Overlays and shaders: app-private for good ([DataRoot.private]). */
     private lateinit var privateRoot: File
     private lateinit var paths: NxPaths
@@ -1097,6 +1099,7 @@ class GameActivity : ComponentActivity() {
         }
         sessionClaim?.let { sessions.release(it.token) }
         sessionClaim = null
+        if (usingData) { usingData = false; DataRoot.useEnd(this) }   // after the core's last write (destroyed above)
     }
 
     /** A foreground kill (crash, OOM) closes the session at the last touch: keep it at most a minute old while started. */
@@ -1139,6 +1142,7 @@ class GameActivity : ComponentActivity() {
         val content = ContentRef(intent.getStringExtra(EXTRA_CONTENT_URI) ?: return fail("No content given"))
         val romFileName = intent.getStringExtra(EXTRA_FILE_NAME)
             ?: withContext(Dispatchers.IO) { runCatching { refs.displayName(content) }.getOrNull() } ?: title
+        if (!usingData) { DataRoot.useBegin(); usingData = true }   // no move starts under the session
         dataRoot = withContext(Dispatchers.IO) { DataRoot.settled(this@GameActivity) }   // waits for a move still running
         privateRoot = DataRoot.private(this)
         cheatsFolder = Cheats.folder(tag, romFileName)

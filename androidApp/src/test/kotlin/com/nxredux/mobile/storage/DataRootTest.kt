@@ -47,36 +47,109 @@ class DataRootTest {
         assertEquals(1_000_000L, File(home, "Saves/GBA/a.srm").lastModified())
     }
 
-    @Test fun aFileWrittenDuringTheMoveStaysPrivate() {
+    @Test fun aFileWrittenOnceDuringTheMoveIsCopiedAgain() {
+        write(private, "Saves/GBA/a.srm", "save", mtime = 1000L)
+        write(private, ".userdata/android/hidden.txt", "a", mtime = 1000L)
+        var passes = 0
+
+        DataRoot.moveAll(private, home, beforeDelete = {
+            if (passes++ == 0) write(private, ".userdata/android/hidden.txt", "a\nb", mtime = 3000L)   // a store still on the private root
+        })
+
+        assertEquals(emptySet<String>(), files(private))
+        assertEquals("a\nb", File(home, ".userdata/android/hidden.txt").readText())   // over the copy this move made, no backup
+        assertEquals(setOf("Saves/GBA/a.srm", ".userdata/android/hidden.txt"), files(home))
+    }
+
+    @Test fun aFileStillChangingDeletesNothing() {
         write(private, "Saves/GBA/a.srm", "save", mtime = 1000L)
         write(private, ".userdata/android/hidden.txt", "a", mtime = 1000L)
         write(private, NxPaths.GAME_TIME_DB, "db", mtime = 1000L)
         write(private, NxPaths.GAME_TIME_DB + "-wal", "wal", mtime = 1000L)
+        var n = 0
 
         try {
-            DataRoot.moveAll(private, home) {
-                write(private, ".userdata/android/hidden.txt", "a\nb", mtime = 3000L)   // a store still on the private root
-                write(private, NxPaths.GAME_TIME_DB + "-wal", "wal2", mtime = 3000L)
-            }
+            DataRoot.moveAll(private, home, beforeDelete = {
+                n++
+                write(private, ".userdata/android/hidden.txt", "a\n$n", mtime = 3000L + n * 1000L)
+                write(private, NxPaths.GAME_TIME_DB + "-wal", "wal$n", mtime = 3000L + n * 1000L)
+            })
             fail("an incomplete move must be reported, so the marker stays unset")
         } catch (e: DataRoot.IncompleteMove) {
             assertEquals(2, e.kept.size)
         }
 
-        assertEquals("a\nb", File(private, ".userdata/android/hidden.txt").readText())
-        assertEquals("db", File(private, NxPaths.GAME_TIME_DB).readText())   // its set stays whole
-        assertEquals("wal2", File(private, NxPaths.GAME_TIME_DB + "-wal").readText())
-        assertFalse(File(private, "Saves/GBA/a.srm").exists())                // the rest moved
-        assertEquals("a", File(home, ".userdata/android/hidden.txt").readText())
+        // Nothing private is deleted: the session reading the private root keeps a whole set.
+        assertEquals("save", File(private, "Saves/GBA/a.srm").readText())
+        assertEquals("db", File(private, NxPaths.GAME_TIME_DB).readText())
+        assertEquals("a\n$n", File(private, ".userdata/android/hidden.txt").readText())
 
-        // The next move settles them by the clash rule: the newer private files win, the first copies become backups.
+        // The next move drops the identical copies and settles the changed ones by the clash rule.
         DataRoot.moveAll(private, home)
 
         assertEquals(emptySet<String>(), files(private))
-        assertEquals("a\nb", File(home, ".userdata/android/hidden.txt").readText())
-        assertEquals("a", File(home, ".userdata/android/hidden.txt.bak-${DataRoot.backupStamp(1000L)}").readText())
-        assertEquals("db", File(home, NxPaths.GAME_TIME_DB).readText())
-        assertEquals("wal2", File(home, NxPaths.GAME_TIME_DB + "-wal").readText())
+        assertEquals("save", File(home, "Saves/GBA/a.srm").readText())
+        assertFalse(files(home).any { it.startsWith("Saves/GBA/a.srm.bak") })
+        assertEquals("a\n$n", File(home, ".userdata/android/hidden.txt").readText())
+        assertEquals("wal$n", File(home, NxPaths.GAME_TIME_DB + "-wal").readText())
+        assertFalse(files(home).any { it.endsWith(".moving") })
+    }
+
+    // A kill mid-copy leaves a cut-off file. It must never sit at the save's name, where its newer time would beat the real save.
+    @Test fun aCopyCutOffNeverBeatsThePrivateSave() {
+        write(private, "Saves/GBA/a.srm", "the whole save", mtime = 1000L)
+        try {
+            DataRoot.moveAll(private, home, onCopy = { it.writeText("the wh"); throw IllegalStateException("killed") })
+            fail("the kill should stop the move")
+        } catch (_: IllegalStateException) {
+        }
+        assertFalse(File(home, "Saves/GBA/a.srm").exists())
+
+        DataRoot.moveAll(private, home)
+
+        assertEquals("the whole save", File(home, "Saves/GBA/a.srm").readText())
+        assertEquals(setOf("Saves/GBA/a.srm"), files(home))   // no backup, no staging left
+        assertEquals(emptySet<String>(), files(private))
+    }
+
+    @Test fun staleStagingIsDroppedFirst() {
+        write(private, "Saves/GBA/a.srm", "save", mtime = 1000L)
+        write(home, "Saves/GBA/.a.srm.moving", "sa", mtime = 9000L)
+        write(private, "Saves/GBA/.b.srm.moving", "x", mtime = 9000L)
+        write(home, "Cheats/GB/.a.cht.moving", "ch")
+
+        DataRoot.moveAll(private, home)
+
+        assertEquals(setOf("Saves/GBA/a.srm"), files(home))
+        assertEquals(emptySet<String>(), files(private))
+    }
+
+    @Test fun aTimeThatWontSetFailsTheMove() {
+        write(private, "Saves/GBA/a.srm", "save", mtime = 1000L)
+        val was = DataRoot.setTime
+        DataRoot.setTime = { _, _ -> false }
+        try {
+            DataRoot.moveAll(private, home)
+            fail("a copy without its time must not count")
+        } catch (_: IOException) {
+        } finally {
+            DataRoot.setTime = was
+        }
+        assertEquals("save", File(private, "Saves/GBA/a.srm").readText())
+        assertFalse(File(home, "Saves/GBA/a.srm").exists())
+    }
+
+    @Test fun aDbSetSharesOneBackupName() {
+        val stamp = DataRoot.backupStamp(1000L)
+        write(home, NxPaths.GAME_TIME_DB, "home db", mtime = 5000L)
+        write(home, NxPaths.GAME_TIME_DB + ".bak-$stamp", "earlier backup")
+        write(private, NxPaths.GAME_TIME_DB, "private db", mtime = 1000L)
+        write(private, NxPaths.GAME_TIME_DB + "-wal", "private wal", mtime = 1000L)
+
+        DataRoot.moveAll(private, home)
+
+        assertEquals("private db", File(home, NxPaths.GAME_TIME_DB + ".bak-$stamp-2").readText())
+        assertEquals("private wal", File(home, NxPaths.GAME_TIME_DB + "-wal.bak-$stamp-2").readText())
     }
 
     @Test fun leavesCachesAndCredentials() {
@@ -235,6 +308,27 @@ class DataRootTest {
         write(private, "Saves/GB/a.sav", "a")
         assertEquals(0, DataRoot.moveAll(private, private))
         assertTrue(File(private, "Saves/GB/a.sav").exists())
+    }
+
+    // A home change's copy (Copy your saves to the new folder?)
+
+    @Test fun copyHomeCopiesByTheClashRuleAndDeletesNothing() {
+        val old = File(base, "old").apply { mkdirs() }
+        write(old, "Saves/GBA/a.srm", "a", mtime = 1000L)
+        write(old, "Saves/GBA/b.srm", "old b", mtime = 3000L)
+        write(old, ".userdata/shared/MGBA-mgba/a.st0", "state", mtime = 1000L)
+        write(old, "Roms/GBA/a.gba", "rom")
+        write(home, "Saves/GBA/b.srm", "new b", mtime = 2000L)
+
+        assertEquals(3, DataRoot.copyHome(old, home))
+
+        assertEquals("a", File(home, "Saves/GBA/a.srm").readText())
+        assertEquals(1000L, File(home, "Saves/GBA/a.srm").lastModified())
+        assertEquals("old b", File(home, "Saves/GBA/b.srm").readText())   // newer wins
+        assertEquals("new b", File(home, "Saves/GBA/b.srm.bak-${DataRoot.backupStamp(2000L)}").readText())
+        assertEquals("state", File(home, ".userdata/shared/MGBA-mgba/a.st0").readText())
+        assertFalse(File(home, "Roms").exists())                              // no ROMs
+        assertEquals(setOf("Saves/GBA/a.srm", "Saves/GBA/b.srm", ".userdata/shared/MGBA-mgba/a.st0", "Roms/GBA/a.gba"), files(old))   // nothing deleted
     }
 
     // The root choice

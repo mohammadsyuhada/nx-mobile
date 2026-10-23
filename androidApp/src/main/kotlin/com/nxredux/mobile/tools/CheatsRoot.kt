@@ -59,18 +59,19 @@ object CheatsRoot {
 
     private fun copy(from: File, to: File): Copy {
         if (to.exists()) {
-            // Lengths first: a home database from another device differs in most files, and reading both is the cost.
-            val same = to.isFile && to.length() == from.length() &&
-                runCatching { to.readBytes().contentEquals(from.readBytes()) }.getOrDefault(false)
-            return if (same) Copy.SAME else Copy.KEPT
+            // Lengths first (in DataRoot.sameContent): a home database from another device differs in most files.
+            return if (DataRoot.sameContent(to, from)) Copy.SAME else Copy.KEPT
         }
+        // Staged beside it first, so a kill mid-copy never leaves a cut-off file under the real name (the next move drops it).
+        val staged = File(to.parentFile, ".${to.name}${DataRoot.STAGED}")
         return try {
             to.parentFile?.mkdirs()
-            from.copyTo(to)
+            from.copyTo(staged, overwrite = true)
+            if (!staged.renameTo(to)) throw IOException("cannot place ${to.path}")
             Copy.COPIED
         } catch (e: IOException) {
             NxLog.w(TAG, "could not move ${from.name}", e)
-            to.delete()
+            staged.delete()
             Copy.KEPT
         }
     }

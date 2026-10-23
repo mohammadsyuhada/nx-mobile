@@ -14,7 +14,7 @@ class NxApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         // Starts moving older private data into the home folder; off the main thread, as it reads storage.
-        Thread({ DataRoot.of(this) }, "data-root").start()
+        Thread({ DataRoot.startIfDue(this) }, "data-root").start()
         // Off is both flags' default: only On needs setting, so a launcher-only start never loads the native library.
         if (!AndroidAppSettings(this).debugLog) return
         try {
