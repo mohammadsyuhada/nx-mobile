@@ -122,10 +122,17 @@ class SettingsSplitTest {
         assertEquals(0.175f, settingsMarkShift(split = true), 1e-6f)   // 0.35 + 0.65 / 2 - 0.5 of the width
     }
 
-    @Test fun theAndroidAppsPickerIsALauncherPage() {
-        val picker = Screen.ToolApps(emptyList())
+    @Test fun theAndroidGamesPickerIsALauncherPage() {
+        val picker = Screen.ToolApps(emptyList(), AppPick.GAMES)
         assertEquals(SettingsPane.RIGHT, settingsPane(picker))
         assertEquals(SettingsSection.LAUNCHER, settingsCategoryOf(picker))
+    }
+
+    // The app drawer is a tool (Tools → Apps), never a Settings pane.
+    @Test fun theAppDrawerIsNoSettingsPage() {
+        val drawer = Screen.ToolApps(emptyList(), AppPick.TOOLS)
+        assertNull(settingsPane(drawer))
+        assertNull(settingsCategoryOf(drawer))
     }
 
     @Test fun eachPageBelongsToItsTopCategory() {

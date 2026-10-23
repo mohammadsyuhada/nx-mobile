@@ -3,7 +3,8 @@ package com.nxredux.mobile.ui
 import com.nxredux.mobile.cheats.db.CheatDatabase
 import com.nxredux.mobile.cheats.db.CheatDbState
 
-enum class ToolKind { RETRO_ACHIEVEMENTS, GAME_TIME, ARTWORK, CHEAT_DB, DEVICE_SYNC, SETTINGS, APP }
+/** [APPS]: the app drawer (every launchable app); [APP]: one Android app added to Tools or pinned on Home. */
+enum class ToolKind { RETRO_ACHIEVEMENTS, GAME_TIME, ARTWORK, CHEAT_DB, DEVICE_SYNC, SETTINGS, APPS, APP }
 
 /** A row on the Tools screen: the tool's name and a one-line status. [appId]: an Android app's id ([ToolKind.APP] only). */
 data class ToolRow(val kind: ToolKind, val label: String, val secondary: String?, val appId: String? = null)
@@ -20,6 +21,7 @@ val ToolKind.toolName: String?
         ToolKind.CHEAT_DB -> "Cheat Database"
         ToolKind.DEVICE_SYNC -> "Device Sync"
         ToolKind.SETTINGS -> "Settings"
+        ToolKind.APPS -> "Apps"
         ToolKind.APP -> null
     }
 
@@ -57,7 +59,7 @@ fun toolPageTitleHead(screen: Screen, split: Boolean = false): String? = when (s
     else -> null
 }
 
-/** A row of Settings -> Launcher -> Android apps: [shown] = in the Tools tab. */
+/** A tile of the app drawer or the Android games picker: [shown] = in the Tools tab (drawer) or the console (games). */
 data class ToolAppRow(val id: String, val label: String, val shown: Boolean)
 
 /** The rows of the Cheat Database page; which ones show depends on the state. */

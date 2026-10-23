@@ -524,7 +524,8 @@ private fun SettingsPage(state: AppState, s: Screen, selection: State<ListSelect
         is Screen.ToolApps -> {
             // Only the picker showing reports its columns (one sliding out never overwrites the count).
             val onColumns: (Int) -> Unit = remember(s) { { columns -> if (state.screen.value === s) state.onToolAppsLayout(columns) } }
-            WithIndex(selection) { ToolAppsScreen(s, it, state::select, { state.openSelected() }, onColumns, onHint = state::onButton, titled = titled) }
+            WithIndex(selection) { ToolAppsScreen(s, it, state::select, { state.openSelected() }, onColumns, onHint = state::onButton, onLongPress = state::openContextMenu, titled = titled) }
+            s.menu?.let { ContextMenuOverlay(it, onButton = state::onButton, onSelect = state::menuSelect, onOpen = state::menuOpen, onDraft = state::menuDraft, onColumns = state::onMenuLayout) }
         }
         else -> Unit
     }
