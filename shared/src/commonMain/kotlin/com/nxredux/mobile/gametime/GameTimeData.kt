@@ -36,10 +36,12 @@ class StoreGameTimeData(private val store: GameTimeStore, private val io: Corout
     override suspend fun byPath() = withContext(io) { store.byPath() }
 }
 
-/** Opens the store on first use, inside the caller's coroutine; a store that can't open fails every call. */
+/**
+ * Asks [open] for the store on every call, inside the caller's coroutine (the opener keeps it open), so a store reopened
+ * at another data root (All files access turned off or back on) is followed; a call while it can't open fails.
+ */
 class LazyGameTimeData(private val open: suspend () -> GameTimeData?) : GameTimeData {
-    private var real: GameTimeData? = null
-    private suspend fun d(): GameTimeData = real ?: (open() ?: error("game time unavailable")).also { real = it }
+    private suspend fun d(): GameTimeData = open() ?: error("game time unavailable")
     override suspend fun totals() = d().totals()
     override suspend fun grandTotal() = d().grandTotal()
     override suspend fun members(target: Long) = d().members(target)

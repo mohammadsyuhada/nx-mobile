@@ -73,8 +73,9 @@ class SourcesTest {
         assertEquals("/storage/emulated/0", Sources.mappedPath(ContentRef("${tree}primary%3A")))
         assertEquals("/storage/1234-ABCD/Games/NXRedux", Sources.mappedPath(ContentRef("${tree}1234-ABCD%3AGames%2FNXRedux")))
         assertEquals("/storage/emulated/0/Jeux vidéo", Sources.mappedPath(ContentRef("${tree}primary%3AJeux%20vid%C3%A9o")))
-        // A document under a tree maps by its tree (home and extras are trees).
-        assertEquals("/storage/emulated/0/NXRedux", Sources.mappedPath(ContentRef("${tree}primary%3ANXRedux/document/primary%3ANXRedux%2FRoms")))
+        // A document under a tree maps by its own id: an old picker home's Roms folder is an extra (the storage upgrade).
+        assertEquals("/storage/emulated/0/NXRedux/Roms", Sources.mappedPath(ContentRef("${tree}primary%3ANXRedux/document/primary%3ANXRedux%2FRoms")))
+        assertEquals("/storage/emulated/0/NXRedux", Sources.mappedPath(ContentRef("${tree}primary%3ANXRedux/document/primary%3ANXRedux")))
         assertNull(Sources.mappedPath(ContentRef("content://com.android.providers.downloads.documents/tree/raw%3A%2Fstorage%2Femulated%2F0%2FDownload")))
         assertNull(Sources.mappedPath(ContentRef("${tree}home%3ARoms")))   // the Documents root: no volume
         assertNull(Sources.mappedPath(FileRefs.of("/storage/emulated/0/NXRedux")))

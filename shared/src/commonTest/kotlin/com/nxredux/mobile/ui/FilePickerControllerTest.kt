@@ -94,6 +94,9 @@ class FilePickerControllerTest {
         assertEquals("Empty folder", homeFolderStatus(listOf(LocalEntry(".nomedia", false))))
         assertEquals("NX Redux folder", homeFolderStatus(listOf(LocalEntry("Roms", true), LocalEntry("Bios", true), LocalEntry(".userdata", true))))
         assertEquals(other, homeFolderStatus(listOf(LocalEntry("Roms", true), LocalEntry("Games", true))))
+        // A home after a reinstall: the cheat download and the saves are its own folders too.
+        val reinstalled = listOf("Roms", "Bios", "Collections", "Cheats", "Saves", ".userdata").map { LocalEntry(it, true) }
+        assertEquals("NX Redux folder", homeFolderStatus(reinstalled))
         assertEquals(other, homeFolderStatus(listOf(LocalEntry("Tetris.gb", false))))
     }
 

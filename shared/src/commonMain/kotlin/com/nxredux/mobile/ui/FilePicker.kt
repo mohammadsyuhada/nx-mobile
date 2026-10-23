@@ -69,7 +69,7 @@ private val byName: Comparator<String> = compareBy<String> { it.lowercase() }.th
 internal fun homeFolderStatus(entries: List<LocalEntry>): String {
     val shown = entries.filter { !it.name.startsWith(".") }
     if (shown.isEmpty()) return "Empty folder"
-    val own = setOf("roms", "bios", "saves", "collections")
+    val own = setOf("roms", "bios", "saves", "collections", "cheats")
     if (shown.any { it.isDir && it.name.equals("Roms", true) } && shown.all { it.isDir && it.name.lowercase() in own }) return "NX Redux folder"
     return "Has other files: games found in it will be sorted into Roms"
 }

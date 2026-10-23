@@ -53,6 +53,9 @@ INSERT INTO game(rom_path, name, tag) VALUES (?, ?, ?);
 lastInsertRowId:
 SELECT last_insert_rowid();
 
+renamePath:
+UPDATE OR IGNORE game SET rom_path = :to WHERE rom_path = :from;
+
 setTitle:
 UPDATE game SET title = ? WHERE id = ?;
 

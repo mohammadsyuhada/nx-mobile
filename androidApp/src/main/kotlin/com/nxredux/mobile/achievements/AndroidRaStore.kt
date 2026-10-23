@@ -1,8 +1,8 @@
 package com.nxredux.mobile.achievements
 
 import android.content.Context
-import com.nxredux.mobile.runner.NxStorage
 import com.nxredux.mobile.runner.writeAtomically
+import com.nxredux.mobile.storage.DataRoot
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -10,15 +10,28 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * RaStore under `sd/.userdata/`. Appends are fsync'd; whole-file writes go through writeAtomically (which
- * creates the parent). A missing file reads as null and lists as empty; every failure is an [RaStoreException].
+ * RaStore under `.userdata/` of two roots: the account tree ([RaPaths.ACCOUNT]: login, journal, sessions) under
+ * [privateRoot] (app-private for good), everything else ([RaPaths.SHARED], the game definitions nx-redux reads too)
+ * under [dataRoot] ([DataRoot.of], the home folder once the data moved), resolved per call so a home change is followed.
+ * Appends are fsync'd; whole-file writes go through writeAtomically (which creates the parent). A missing file reads
+ * as null and lists as empty; every failure is an [RaStoreException].
  */
-class AndroidRaStore(context: Context) : RaStore {
-    private val root = File(NxStorage.root(context), RaPaths.ROOT).canonicalFile
+class AndroidRaStore internal constructor(private val privateRoot: () -> File, private val dataRoot: () -> File) : RaStore {
+    constructor(context: Context) : this({ DataRoot.private(context) }, { DataRoot.of(context) })
 
-    /** [path] under the ra root; anything that resolves outside it (`..`, an absolute path, a symlink) is refused. */
+    /**
+     * [path] under its root: an account path under the private account tree, any other under the data root's
+     * `.userdata`; anything that resolves outside it (`..`, an absolute path, a symlink) is refused.
+     */
     private fun file(path: String): File {
-        val f = try { File(root, path).canonicalFile } catch (e: IOException) { throw RaStoreException("resolve $path", e) }
+        val account = path == RaPaths.ACCOUNT || path.startsWith(RaPaths.ACCOUNT + "/")
+        val (root, f) = try {
+            val userdata = File(if (account) privateRoot() else dataRoot(), RaPaths.ROOT).canonicalFile
+            val root = if (account) File(userdata, RaPaths.ACCOUNT).canonicalFile else userdata
+            root to File(userdata, path).canonicalFile
+        } catch (e: IOException) {
+            throw RaStoreException("resolve $path", e)
+        }
         if (f != root && !f.path.startsWith(root.path + File.separator)) throw RaStoreException("outside ra root: $path")
         return f
     }

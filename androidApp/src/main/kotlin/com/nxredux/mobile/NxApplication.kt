@@ -5,14 +5,15 @@ import android.app.Application
 import android.app.NotificationManager
 import android.os.Bundle
 import com.nxredux.mobile.settings.AndroidAppSettings
-import com.nxredux.mobile.tools.CheatsRoot
+import com.nxredux.mobile.storage.DataRoot
 import com.swordfish.libretrodroid.NxLog
 import java.io.File
 
 /**
  * Applies Settings → Developer → Debug log when the process starts, whichever activity starts it (a game
- * launched from another launcher starts at GameActivity), moves cheats an earlier version kept in private
- * storage into the home folder, and clears an earlier run's in-app update download.
+ * launched from another launcher starts at GameActivity), moves the saves, states, settings and cheats an earlier
+ * version kept in private storage into the home folder when it can do so quietly, and clears an earlier run's in-app
+ * update download.
  */
 class NxApplication : Application() {
     companion object {
@@ -38,11 +39,11 @@ class NxApplication : Application() {
             override fun onActivityDestroyed(activity: Activity) {}
         })
         // Off the main thread, as both touch storage: drops an earlier run's update download (its .part, or an APK the
-        // installer already took or the user cancelled), then starts moving older private cheats into the home folder.
+        // installer already took or the user cancelled), then starts moving older private data into the home folder.
         Thread({
             File(cacheDir, "update").deleteRecursively()
-            CheatsRoot.of(this)
-        }, "cheats-root").start()
+            DataRoot.startIfDue(this)
+        }, "data-root").start()
         // A dead process's install wait notice: that wait ended with it.
         getSystemService(NotificationManager::class.java)?.cancel(NotificationIds.APP_UPDATE_WAIT)
         // Off is both flags' default: only On needs setting, so a launcher-only start never loads the native library.

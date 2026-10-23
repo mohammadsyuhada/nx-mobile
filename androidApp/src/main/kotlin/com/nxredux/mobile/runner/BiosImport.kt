@@ -4,6 +4,7 @@ import android.content.Context
 import com.nxredux.mobile.storage.AndroidAllFilesAccess
 import com.nxredux.mobile.storage.FileRefs
 import com.nxredux.mobile.storage.ImportTree
+import com.nxredux.mobile.storage.MediaHome
 import com.swordfish.libretrodroid.NxLog
 import java.io.File
 
@@ -21,7 +22,8 @@ import java.io.File
 object BiosImport {
     fun sync(context: Context, home: ContentRef?, tags: List<String>, biosDir: File, names: List<String> = emptyList()) {
         home ?: return
-        if (FileRefs.accessOff(home, AndroidAllFilesAccess.isGranted())) return NxLog.w("BiosImport", "All files access is off; Bios import skipped")
+        val own = FileRefs.isFile(home) && MediaHome.owns(MediaHome.cachedDir(context), File(FileRefs.path(home)))   // the media home needs no access
+        if (!own && FileRefs.accessOff(home, AndroidAllFilesAccess.isGranted())) return NxLog.w("BiosImport", "All files access is off; Bios import skipped")
         runCatching {
             val tree = ImportTree.of(context.contentResolver, home)
             val bios = tree.child(home, "Bios")?.takeIf { it.isDirectory } ?: return

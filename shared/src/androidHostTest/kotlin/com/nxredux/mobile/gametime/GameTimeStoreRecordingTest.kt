@@ -65,4 +65,21 @@ class GameTimeStoreRecordingTest {
         clock += 10_000; store.end(id)
         assertEquals(10_000L, q.sessionByUuid(id).executeAsOne().duration)
     }
+
+    @Test fun renamePathsKeepsSessions() {
+        val a = store.start("/Roms/GB/Tetris.gb", "GB", "Tetris"); clock += 5_000; store.end(a)
+        val b = store.start("/Roms/GB/Tetris.gb", "GB", "Tetris"); clock += 5_000; store.end(b)
+        store.renamePaths(mapOf("/Roms/GB/Tetris.gb" to "/Extra/x/GB/Tetris.gb"))
+        val g = q.gameByPath("/Extra/x/GB/Tetris.gb").executeAsOne()
+        assertEquals(g.id, q.sessionByUuid(a).executeAsOne().game_id)
+        assertEquals(g.id, q.sessionByUuid(b).executeAsOne().game_id)
+        assertNull(q.gameByPath("/Roms/GB/Tetris.gb").executeAsOneOrNull())
+    }
+
+    // Every recorded game's path, played or not: the storage upgrade renames them all.
+    @Test fun romPathsListsEveryGame() {
+        store.start("/Roms/GB/Tetris.gb", "GB", "Tetris")
+        val b = store.start("/Extra/x/GBA/Zelda.gba", "GBA", "Zelda"); clock += 5_000; store.end(b)
+        assertEquals(setOf("/Roms/GB/Tetris.gb", "/Extra/x/GBA/Zelda.gba"), store.romPaths().toSet())
+    }
 }

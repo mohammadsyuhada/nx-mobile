@@ -2,91 +2,24 @@ package com.nxredux.mobile.tools
 
 import android.content.Context
 import com.nxredux.mobile.cheats.db.CheatDbManifest
-import com.nxredux.mobile.runner.ContentRef
-import com.nxredux.mobile.runner.NxStorage
-import com.nxredux.mobile.settings.AndroidAppSettings
-import com.nxredux.mobile.storage.AndroidAllFilesAccess
-import com.nxredux.mobile.storage.FileRefs
+import com.nxredux.mobile.storage.DataRoot
 import com.swordfish.libretrodroid.NxLog
 import java.io.File
 import java.io.IOException
-import java.util.concurrent.CountDownLatch
 
 /**
- * Where `Cheats/<TAG>/` and the Cheat Database manifest live: the home folder when it is a file path with All files
- * access, so an uninstall keeps the download and the folders match the handheld's card; app-private storage otherwise
- * (a picker home has no path to read cheats by, and access can be turned off).
+ * Where `Cheats/<TAG>/` and the Cheat Database manifest live: the data root ([DataRoot]), so an uninstall keeps the
+ * download and the folders match the handheld's card. [moveFromPrivate] is the cheats' rule in [DataRoot]'s move.
  */
 object CheatsRoot {
     private const val TAG = "CheatsRoot"
     private const val CHEATS = "Cheats"
-    /** In no-backup storage: present once private cheats were moved into the home folder (or there were none). */
-    private const val MOVED_MARKER = "cheats-moved-to-home"
 
-    private val lock = Any()
-    @Volatile private var move: CountDownLatch? = null
-    @Volatile private var moveFailed = false
-
-    /**
-     * The root to read and write cheats in. Until cheats an earlier version kept privately are in the home folder, that is
-     * private storage, whose set stays whole until the move's last step; the move starts in the background the first time
-     * it is needed (at process start, or once All files access or a file-path home is set) and happens once.
-     */
-    fun of(context: Context): File {
-        val private = NxStorage.root(context)
-        val home = pick(AndroidAppSettings(context).treeRef, AndroidAllFilesAccess.isGranted(), private)
-        val marker = File(context.noBackupFilesDir, MOVED_MARKER)
-        if (home == private) {
-            if (marker.exists()) marker.delete()   // access off: what is installed meanwhile moves when it is back on
-            return home
-        }
-        if (marker.exists()) return home
-        if (!hasCheats(private)) { markMoved(marker); return home }
-        if (!moveFailed) startMove(context.applicationContext)
-        return private
-    }
+    /** The root to read and write cheats in: [DataRoot.of]. */
+    fun of(context: Context): File = DataRoot.of(context)
 
     /** [of] once a move it needs has finished: one root for a whole install. Blocks, so never on the main thread. */
-    fun settled(context: Context): File {
-        of(context)
-        move?.await()
-        return of(context)
-    }
-
-    /** [home] when it is a file ref, [granted] and an existing folder; [private] otherwise. */
-    fun pick(home: ContentRef?, granted: Boolean, private: File): File =
-        home?.takeIf { granted && FileRefs.isFile(it) }?.let { File(FileRefs.path(it)) }?.takeIf { it.isDirectory } ?: private
-
-    private fun startMove(app: Context) {
-        val done = synchronized(lock) {
-            if (move != null) return
-            CountDownLatch(1).also { move = it }
-        }
-        Thread({
-            try {
-                val private = NxStorage.root(app)
-                val home = pick(AndroidAppSettings(app).treeRef, AndroidAllFilesAccess.isGranted(), private)
-                if (home != private) {
-                    val moved = moveFromPrivate(private, home)
-                    if (moved > 0) NxLog.i(TAG, "moved $moved cheat files into ${home.path}")
-                    markMoved(File(app.noBackupFilesDir, MOVED_MARKER))
-                }
-            } catch (e: Exception) {
-                moveFailed = true   // not retried in this process: cheats stay private until the next start
-                NxLog.w(TAG, "moving cheats into the home folder failed", e)
-            } finally {
-                synchronized(lock) { move = null }
-                done.countDown()
-            }
-            CheatDbService.refreshIfStarted()
-        }, "cheats-move").start()
-    }
-
-    private fun markMoved(marker: File) {
-        runCatching { marker.parentFile?.mkdirs(); marker.createNewFile() }.onFailure { NxLog.w(TAG, "cannot mark the move done", it) }
-    }
-
-    private fun hasCheats(private: File) = File(private, CHEATS).isDirectory || File(private, CheatDbManifest.PATH).isFile
+    fun settled(context: Context): File = DataRoot.settled(context)
 
     /**
      * Moves [private]'s `Cheats/` files and the manifest into [home], never over a file there: a private copy identical
@@ -126,18 +59,19 @@ object CheatsRoot {
 
     private fun copy(from: File, to: File): Copy {
         if (to.exists()) {
-            // Lengths first: a home database from another device differs in most files, and reading both is the cost.
-            val same = to.isFile && to.length() == from.length() &&
-                runCatching { to.readBytes().contentEquals(from.readBytes()) }.getOrDefault(false)
-            return if (same) Copy.SAME else Copy.KEPT
+            // Lengths first (in DataRoot.sameContent): a home database from another device differs in most files.
+            return if (DataRoot.sameContent(to, from)) Copy.SAME else Copy.KEPT
         }
+        // Staged beside it first, so a kill mid-copy never leaves a cut-off file under the real name (the next move drops it).
+        val staged = File(to.parentFile, ".${to.name}${DataRoot.STAGED}")
         return try {
             to.parentFile?.mkdirs()
-            from.copyTo(to)
+            from.copyTo(staged, overwrite = true)
+            if (!staged.renameTo(to)) throw IOException("cannot place ${to.path}")
             Copy.COPIED
         } catch (e: IOException) {
             NxLog.w(TAG, "could not move ${from.name}", e)
-            to.delete()
+            staged.delete()
             Copy.KEPT
         }
     }

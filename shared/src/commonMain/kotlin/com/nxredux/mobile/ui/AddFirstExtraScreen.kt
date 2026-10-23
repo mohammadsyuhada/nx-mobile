@@ -73,12 +73,43 @@ fun PickFolderScreen(
         listOf("Pick folder"), canGoBack, selected, onSelect, onRow, onHint,
     )
 
-/** First setup, after the home pick: offer an existing ROMs folder as an extra source (scanned in place). */
+/**
+ * The one-time storage upgrade ([Screen.StorageUpgrade], installs from v0.3.0 and earlier; remove after v1.0), in the
+ * setup steps' shape. Required: B never leaves it for the library, so no Back hint.
+ */
 @Composable
-fun AddFirstExtraScreen(title: String, canGoBack: Boolean, selected: Int, onSelect: (Int) -> Unit, onRow: (Int) -> Unit, onHint: (NxButton) -> Unit) =
+fun StorageUpgradeScreen(screen: Screen.StorageUpgrade, selected: Int, onSelect: (Int) -> Unit, onRow: (Int) -> Unit, onHint: (NxButton) -> Unit) {
+    val (headline, line) = when {
+        screen.error != null -> "Saves not moved" to screen.error
+        screen.stage == Screen.StorageUpgrade.Stage.EXPLAIN ->
+            "Keep your saves" to "Your saves can now live in your own folder, so uninstalling keeps them. This needs All files access."
+        screen.stage == Screen.StorageUpgrade.Stage.PICK ->
+            "Pick your home folder" to "Pick the folder that holds your Roms again. Your saves, states and settings move into it."
+        else -> "Saves moved" to
+            "Your saves, states and settings are now in ${screen.folder}. Uninstalling the app removes them. Your games stay where they are."
+    }
+    SetupStepScreen("Storage", headline, listOf(line), storageUpgradeRows(screen), canGoBack = false, selected, onSelect, onRow, onHint)
+}
+
+/** A home change in Settings ([Screen.CopySaves]): copy the old home's saves into the new one, or keep them separate. */
+@Composable
+fun CopySavesScreen(screen: Screen.CopySaves, selected: Int, onSelect: (Int) -> Unit, onRow: (Int) -> Unit, onHint: (NxButton) -> Unit) {
+    val (headline, line) = when {
+        screen.error != null -> "Saves not copied" to screen.error
+        screen.busy -> "Copying your saves" to "Copying saves, states and settings into the new folder…"
+        else -> "Copy your saves to the new folder?" to
+            "Saves, states and settings in the old folder stay there. Copy puts them in the new folder too; where both have a file, the newer one is kept and the other saved beside it."
+    }
+    SetupStepScreen("Storage", headline, listOf(line), if (screen.busy) emptyList() else copySavesRows(screen), canGoBack = !screen.busy, selected, onSelect, onRow, onHint)
+}
+
+/** First setup, after the home pick: offer an existing ROMs folder as an extra source (scanned in place). [note]: a line above it ([AppState.setupNote]). */
+@Composable
+fun AddFirstExtraScreen(title: String, canGoBack: Boolean, selected: Int, onSelect: (Int) -> Unit, onRow: (Int) -> Unit, onHint: (NxButton) -> Unit, note: String? = null) =
     SetupStepScreen(
         title, "Add a ROMs folder?",
-        listOf(
+        listOfNotNull(
+            note,
             "Already keep ROMs somewhere else? Add that folder too. It is scanned in place and nothing is moved. " +
                 "You can add more folders later in Settings.",
         ),
@@ -113,11 +144,12 @@ private const val ANDROID_GAMES_LANDSCAPE_LINES = 12
 @Composable
 fun FolderSummaryScreen(
     screen: Screen.FolderSummary, title: String, selected: Int, onSelect: (Int) -> Unit, onRow: (Int) -> Unit, onHint: (NxButton) -> Unit,
+    note: String? = null,
 ) {
     val rows = folderSummaryRows(screen)
     val hints = if (screen.progress != null) listOf(Hint(NxButton.B, "Stop")) else listOf(Hint(NxButton.B, "Back"), Hint(NxButton.A, "Choose"))
     NxDetailListBody(
-        title = title, details = folderSummaryDetails(screen), rows = rows.map { it.row }, selectedIndex = selected, hints = hints,
+        title = title, details = folderSummaryDetails(screen) + listOfNotNull(note), rows = rows.map { it.row }, selectedIndex = selected, hints = hints,
         onSelect = onSelect, onOpen = onRow,
         onHint = onHint,
         // Continue at the title's right, the Move row alone under the console lines.

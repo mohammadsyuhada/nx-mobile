@@ -94,6 +94,8 @@ interface DeviceSyncPlatform {
     suspend fun clearSaveStaging()
     /** Sets a temp file's time in the home Roms/ a day back and reads it again: true when it stuck (±2 s). */
     suspend fun checkFileTimes(): Boolean
+    /** [checkFileTimes] in the data root's `Saves/` (the home folder's once the saves moved): saves sync by file times too. */
+    suspend fun checkSaveFileTimes(): Boolean = true
     /** `--list-only` of the peer's roms module: exit code and output lines. */
     suspend fun listRemoteRoms(peerIp: String): Pair<Int, List<String>>
     /** `--list-only` of the peer's `roms/<folder>/` (every top-level entry): exit code and output lines. */

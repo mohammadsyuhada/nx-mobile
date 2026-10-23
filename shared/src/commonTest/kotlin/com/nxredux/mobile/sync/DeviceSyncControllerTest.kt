@@ -856,6 +856,21 @@ class DeviceSyncControllerTest {
         assertTrue(p.romRuns.isEmpty())
     }
 
+    // Saves sync by file times too: a Saves/ that can't keep them (shared storage) stops the run before step 1.
+    @Test fun save_file_times_failing_stops_before_step_one() = runTest {
+        val p = FakeSyncPlatform().apply { roms = false; saveTimesOk = false }
+        val c = romClient(p, toggle = false)
+        assertEquals(DeviceSyncPage.Failed(SyncLink.WIFI, DeviceSyncText.NO_SAVE_FILE_TIMES), c.page.value)
+        assertTrue(p.stepsRun.isEmpty())
+    }
+
+    @Test fun save_file_times_failing_serves_nothing() = runTest {
+        val p = FakeSyncPlatform().apply { saveTimesOk = false }
+        val c = serving(p)
+        assertEquals(DeviceSyncPage.Failed(SyncLink.WIFI, DeviceSyncText.NO_SAVE_FILE_TIMES), c.page.value)
+        assertNull(p.serverStarted)
+    }
+
     /** A phone at the lower IP serves (both are client-only), so this phone at .20 is the client. */
     @Test fun a_phone_peer_without_roms_module_is_named() = runTest {
         val p = FakeSyncPlatform().apply { roms = true; remoteListing = 5 to emptyList() }

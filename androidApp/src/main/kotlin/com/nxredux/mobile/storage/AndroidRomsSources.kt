@@ -8,13 +8,15 @@ import com.nxredux.mobile.library.RomsSource
 import com.nxredux.mobile.library.RoutingRomsSource
 import java.io.File
 
-/** The app's RomsSource: SAF trees, and file refs read with All files access ([RoutingRomsSource]). */
+/** The app's RomsSource: SAF trees, and file refs read with All files access or inside the app's media folder ([RoutingRomsSource]). */
 object AndroidRomsSources {
     fun of(context: Context): RomsSource {
         val app = context.applicationContext
         val storage = app.getSystemService(StorageManager::class.java)
         val access = AndroidAllFilesAccess(app)
-        return RoutingRomsSource(SafRomsSource(app.contentResolver, storage), FileRomsSource(access::granted, mountedOn(storage)))
+        // The app's own media folder (the home without All files access) reads and writes without the permission.
+        val media = MediaHome.cachedDir(app)
+        return RoutingRomsSource(SafRomsSource(app.contentResolver, storage), FileRomsSource(access::granted, mountedOn(storage)) { MediaHome.owns(media, it) })
     }
 
     /** True when a path's volume is mounted (read-only too) and, on Android 11+, its root reads; a path on no volume is not. */

@@ -96,6 +96,8 @@ class FakeSyncPlatform(override val cable: FakeUsbCable = FakeUsbCable()) : Devi
     var romHoldAt: Int? = null
     val romHoldResult = CompletableDeferred<Int>()
     override suspend fun checkFileTimes() = fileTimesOk
+    var saveTimesOk = true
+    override suspend fun checkSaveFileTimes() = saveTimesOk
     /** Every client step and ROM/BIOS run, by step name, in the order they ran. */
     val calls = mutableListOf<String>()
     /** The peer's `bios` module listing: exit code and lines (default: listed, no tag folders). */

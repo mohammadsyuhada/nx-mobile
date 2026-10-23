@@ -158,6 +158,8 @@ import com.nxredux.mobile.storage.NxPaths
 import com.nxredux.mobile.storage.AndroidLibraryIndexStore
 import com.nxredux.mobile.storage.AndroidRefs
 import com.nxredux.mobile.storage.AndroidRomsSources
+import com.nxredux.mobile.storage.DataRoot
+import com.nxredux.mobile.storage.AndroidHomeLocator
 import com.nxredux.mobile.test.NxTestResults
 import com.nxredux.mobile.tools.CheatsRoot
 import com.swordfish.libretrodroid.GLRetroView
@@ -480,7 +482,12 @@ class GameActivity : ComponentActivity() {
         onMenu = { menuRouter.onEvent(it) },
     )
     private var saveStates: SaveStates? = null
-    private lateinit var sdRoot: File
+    /** Saves, states, configs and `.minui` markers: [DataRoot.settled] once per session. */
+    private lateinit var dataRoot: File
+    /** This screen holds off the data move ([DataRoot.useBegin]) until it is destroyed. */
+    private var usingData = false
+    /** Overlays and shaders: app-private for good ([DataRoot.private]). */
+    private lateinit var privateRoot: File
     private lateinit var paths: NxPaths
     private var batterySaves: BatterySaves? = null
     private var clockSave: ClockSave? = null
@@ -1026,7 +1033,7 @@ class GameActivity : ComponentActivity() {
     private fun debugReportStopped() {
         if (debugGame?.get() === this) debugGame = null
         val app = applicationContext
-        val auto = if (::sdRoot.isInitialized && ::paths.isInitialized) File(sdRoot, paths.state(NxPaths.AUTO_SLOT)) else null
+        val auto = if (::dataRoot.isInitialized && ::paths.isInitialized) File(dataRoot, paths.state(NxPaths.AUTO_SLOT)) else null
         val since = debugStartedAt
         autoWriter.execute {
             val written = auto?.takeIf { it.isFile && it.lastModified() >= since }?.absolutePath
@@ -1092,6 +1099,7 @@ class GameActivity : ComponentActivity() {
         }
         sessionClaim?.let { sessions.release(it.token) }
         sessionClaim = null
+        if (usingData) { usingData = false; DataRoot.useEnd(this) }   // after the core's last write (destroyed above)
     }
 
     /** A foreground kill (crash, OOM) closes the session at the last touch: keep it at most a minute old while started. */
@@ -1134,13 +1142,15 @@ class GameActivity : ComponentActivity() {
         val content = ContentRef(intent.getStringExtra(EXTRA_CONTENT_URI) ?: return fail("No content given"))
         val romFileName = intent.getStringExtra(EXTRA_FILE_NAME)
             ?: withContext(Dispatchers.IO) { runCatching { refs.displayName(content) }.getOrNull() } ?: title
-        sdRoot = NxStorage.root(this)
+        if (!usingData) { DataRoot.useBegin(); usingData = true }   // no move starts under the session
+        dataRoot = withContext(Dispatchers.IO) { DataRoot.settled(this@GameActivity) }   // waits for a move still running
+        privateRoot = DataRoot.private(this)
         cheatsFolder = Cheats.folder(tag, romFileName)
         // The battery-save, clock and state names follow the handheld's save settings. The save setup waits
         // for the unpack (after the inner-file check below), since Use extracted file name names them after the
         // archive's inner file; the config and marker names never depend on the settings.
         paths = NxPaths(tag, coreId, romFileName, AndroidAppSettings(this).saveNaming)
-        val home = AndroidAppSettings(this).treeRef   // a SAF tree or a file ref: BiosImport picks the tree
+        val home = AndroidHomeLocator(this).current()   // a SAF tree or a file ref (the media home without access): BiosImport picks the tree
         // netplay: a session on a copy never touches the real saves: its session folder is its own.
         val sessionDir = if (np?.onCopy == true) NetplaySessionDir.dir(filesDir) else null
         gameTag = tag
@@ -1165,7 +1175,7 @@ class GameActivity : ComponentActivity() {
             val gles = (getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager).deviceConfigurationInfo.reqGlEsVersion
             descriptorDefaults = NdsRenderer.defaults(gles) + descriptorDefaults
         }
-        val store = CoreConfigStore(File(sdRoot, paths.consoleConfig), File(sdRoot, paths.gameConfig)).also { configStore = it }
+        val store = CoreConfigStore(File(dataRoot, paths.consoleConfig), File(dataRoot, paths.gameConfig)).also { configStore = it }
         val resolved = withContext(Dispatchers.IO) {
             val (console, game) = store.read()
             CoreConfig.resolve(descriptorDefaults, console, game, forcedOptions, hiddenValues)
@@ -1207,7 +1217,7 @@ class GameActivity : ComponentActivity() {
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         val ndsAtStart = NdsOptions.appliesTo(tag)
         val (sets, preloaded) = withContext(Dispatchers.IO) {
-            val found = Overlays.sets(sdRoot, tag)
+            val found = Overlays.sets(privateRoot, tag)
             val overlay = FrontendSettings.parse(FrontendOptions.fromConfig(resolved.values)).overlay
             val file = if (ndsAtStart) null else OverlayResolver.resolve(tag, found, overlay, landscape)
             found to file?.let { f -> decodeOverlay(f)?.let { f.path to it } }
@@ -1222,7 +1232,7 @@ class GameActivity : ComponentActivity() {
         if (np != null && PadMap.isSegaPadTag(tag)) frontendValues = frontendValues + (PadOptions.SEGA_PAD to SegaPadType.AUTO)
         val netplayPad = if (np != null) NetplayPads.forSession(tag, descriptor?.id) else null
         shaderValues = ShaderOptions.fromConfig(resolved.values)
-        presetNames = withContext(Dispatchers.IO) { Shaders.presets(sdRoot) }
+        presetNames = withContext(Dispatchers.IO) { Shaders.presets(privateRoot) }
         // 3DS with a second display: Azahar starts in the split's fixed layout, which replaces the rows' values below. The core
         // never runs the user's swap values then, so leaving split puts back the stored ones.
         val launchDual = dualModeNow()
@@ -1309,7 +1319,7 @@ class GameActivity : ComponentActivity() {
         }
         // minarch names saves after the unpacked file when Use extracted file name is on (ma_game.c:75-76): known only now.
         paths = paths.withInner(inner?.let { unpackedEntry })
-        saveStates = if (np == null) SaveStates(sdRoot, paths) else null   // netplay: no save states, no auto-resume
+        saveStates = if (np == null) SaveStates(dataRoot, paths) else null   // netplay: no save states, no auto-resume
         refreshSlots()   // warm for the first menu open
         dropStaleNdsResume(tag, coreId, romFileName)
         np?.let { prepareNetplaySaves(it, tag, romFileName) }
@@ -1318,8 +1328,8 @@ class GameActivity : ComponentActivity() {
         val sessionPaths = if (sessionDir != null) NxPaths(tag, coreId, romFileName) else null
         // melonDS DS: a handheld Saves/NDS/<rom>.dsv that is the game's only save is played in place (not on a netplay copy).
         val dsvStem = if (coreId == NdsDsvSave.CORE_ID && sessionDir == null) paths.saveStem else null
-        val battery = BatterySaves(sessionDir ?: File(sdRoot, paths.savesDir), sessionPaths ?: paths, dsvStem).also { batterySaves = it }
-        val clock = if (sessionDir != null) null else ClockSave(File(sdRoot, paths.clock)).also { clockSave = it }
+        val battery = BatterySaves(sessionDir ?: File(dataRoot, paths.savesDir), sessionPaths ?: paths, dsvStem).also { batterySaves = it }
+        val clock = if (sessionDir != null) null else ClockSave(File(dataRoot, paths.clock)).also { clockSave = it }
         val (sram, rtc) = withContext(Dispatchers.IO) {
             battery.load() to clock?.load()
         }
@@ -1417,7 +1427,7 @@ class GameActivity : ComponentActivity() {
                 return fail("$title needs $set.zip: put it next to the game or in Bios/FBN/")
             }
         }
-        val savesDir = (sessionDir ?: File(sdRoot, paths.savesDir)).apply { mkdirs() }
+        val savesDir = (sessionDir ?: File(dataRoot, paths.savesDir)).apply { mkdirs() }
         // netplay: a link session's game is the player's own, so it gets achievements as a normal launch; lockstep has none.
         if (np == null || np.allowsAchievements) prepareAchievements(tag, romFileName, content, inner)
 
@@ -1563,7 +1573,7 @@ class GameActivity : ComponentActivity() {
         // First run or after an update: the bundled sets may still be copying; pick them up once swapped in.
         lifecycleScope.launch {
             val synced = extraction.await()
-            val found = withContext(Dispatchers.IO) { Overlays.sets(sdRoot, tag) }
+            val found = withContext(Dispatchers.IO) { Overlays.sets(privateRoot, tag) }
             // After a sync, re-apply even with the same names: an overlay decoded mid-swap may have failed.
             if (synced || found != overlaySets) {
                 overlaySets = found   // the Overlay value is unchanged (its default is None whatever the files)
@@ -1572,7 +1582,7 @@ class GameActivity : ComponentActivity() {
         }
         lifecycleScope.launch {
             shaderExtraction.join()
-            presetNames = withContext(Dispatchers.IO) { Shaders.presets(sdRoot) }
+            presetNames = withContext(Dispatchers.IO) { Shaders.presets(privateRoot) }
             menuModel?.let { it.setShaders(shaderValues, presetNames, shaderParams); menuState.value = it.state }
         }
         lifecycleScope.launch {
@@ -1691,9 +1701,9 @@ class GameActivity : ComponentActivity() {
         val dropped = withContext(Dispatchers.IO) {
             awaitAutoWrites()   // a Home write of this game's auto state may still be landing
             runCatching {
-                val marker = File(sdRoot, paths.lastSlot).takeIf { it.exists() }?.readText()
-                val victims = NdsResumeCleanup.victims(tag, coreId, romFileName, marker, paths.naming, paths.innerFileName) { File(sdRoot, it).exists() }
-                victims.forEach { File(sdRoot, it).delete() }
+                val marker = File(dataRoot, paths.lastSlot).takeIf { it.exists() }?.readText()
+                val victims = NdsResumeCleanup.victims(tag, coreId, romFileName, marker, paths.naming, paths.innerFileName) { File(dataRoot, it).exists() }
+                victims.forEach { File(dataRoot, it).delete() }
                 victims.isNotEmpty()
             }.onFailure { NxLog.w("GameActivity", "stale NDS resume cleanup failed", it) }.getOrDefault(false)
         }
@@ -1715,7 +1725,7 @@ class GameActivity : ComponentActivity() {
             if (!ok) toast("Resume failed")
         } finally {
             if (BuildConfig.DEBUG) {
-                NxTestResults.write(this, "resume", "slot" to slot, "ok" to ok, "path" to File(sdRoot, paths.state(slot)).absolutePath)
+                NxTestResults.write(this, "resume", "slot" to slot, "ok" to ok, "path" to File(dataRoot, paths.state(slot)).absolutePath)
             }
             resumePending = false
         }
@@ -2585,9 +2595,9 @@ class GameActivity : ComponentActivity() {
             lifecycleScope.launch {
                 val result = withContext(Dispatchers.IO) {
                     runCatching {
-                        val chain = GlslPreset.parse(preset) { Shaders.read(sdRoot, it) }
+                        val chain = GlslPreset.parse(preset) { Shaders.read(privateRoot, it) }
                         chain.warnings.forEach { NxLog.i(TAG_LOG, "shader $preset: $it") }
-                        val luts = chain.luts.mapNotNull { lut -> decodeLut(Shaders.file(sdRoot, lut.path), lut) }
+                        val luts = chain.luts.mapNotNull { lut -> decodeLut(Shaders.file(privateRoot, lut.path), lut) }
                         chain to luts
                     }
                 }
@@ -2695,7 +2705,7 @@ class GameActivity : ComponentActivity() {
 
     /** Decodes an overlay PNG; null (logged) when missing or unreadable. */
     private fun decodeOverlay(file: OverlayFile): Bitmap? =
-        runCatching { BitmapFactory.decodeFile(File(sdRoot, file.path).absolutePath) }.getOrNull()
+        runCatching { BitmapFactory.decodeFile(File(privateRoot, file.path).absolutePath) }.getOrNull()
             .also { if (it == null) NxLog.w(TAG_LOG, "overlay not readable: ${file.path}") }
 
     /** The overlay image: inside the game container above the GLRetroView, so pads and the menu stay above it. */
@@ -3732,7 +3742,7 @@ class GameActivity : ComponentActivity() {
             menuListingJob?.cancel()
             menuListingJob = lifecycleScope.launch {
                 val (found, presets) = withContext(Dispatchers.IO) {
-                    runCatching { Overlays.sets(sdRoot, tag) }.getOrNull() to runCatching { Shaders.presets(sdRoot) }.getOrNull()
+                    runCatching { Overlays.sets(privateRoot, tag) }.getOrNull() to runCatching { Shaders.presets(privateRoot) }.getOrNull()
                 }
                 if (found != null && found != overlaySets) {
                     // The shown overlay may have been added/removed on disk: re-resolve it against the new list.
@@ -4366,15 +4376,15 @@ class GameActivity : ComponentActivity() {
                 when {
                     !np.onCopy -> {
                         awaitAutoWrites()   // a Home write of this game's auto state may still be landing
-                        val marker = File(sdRoot, NxPaths(tag, np.folderCoreId, romFileName).lastSlot).takeIf { it.exists() }?.readText()
-                        NetplaySaves.resumeVictims(tag, np.folderCoreId, romFileName, marker, paths.naming, paths.innerFileName) { File(sdRoot, it).exists() }
-                            .forEach { File(sdRoot, it).delete() }
+                        val marker = File(dataRoot, NxPaths(tag, np.folderCoreId, romFileName).lastSlot).takeIf { it.exists() }?.readText()
+                        NetplaySaves.resumeVictims(tag, np.folderCoreId, romFileName, marker, paths.naming, paths.innerFileName) { File(dataRoot, it).exists() }
+                            .forEach { File(dataRoot, it).delete() }
                         lastSlotCache = null
                     }
                     // A host on another core plays on a copy of its own saves; one whose saves were not served on an empty
                     // copy, as the joiner does. Under the session folder's lock (prepareHost).
                     np.role == NetplayRole.HOST -> {
-                        val savesDir = if (np.emptySaves) null else File(sdRoot, paths.savesDir)
+                        val savesDir = if (np.emptySaves) null else File(dataRoot, paths.savesDir)
                         val copied = NetplaySessionDir.prepareHost(filesDir, netplayOwner, savesDir, paths) {
                             NxLog.e(TAG_LOG, "netplay: copying the host's own saves failed", it)
                         }
@@ -4484,7 +4494,7 @@ class GameActivity : ComponentActivity() {
     private fun playLocally() {
         if (netplayLocal) return
         netplayLocal = true
-        saveStates = SaveStates(sdRoot, paths).also { ss ->
+        saveStates = SaveStates(dataRoot, paths).also { ss ->
             // Read now, as openMenu does for a menu opened before the first read: an open menu shows this slot.
             lastSlotCache = ss.lastSlot()
         }

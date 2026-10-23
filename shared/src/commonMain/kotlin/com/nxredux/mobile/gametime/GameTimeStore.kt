@@ -45,6 +45,17 @@ class GameTimeStore(
         return id
     }
 
+    /**
+     * Moves games to new rom paths ([map]: old to new) in one transaction; sessions and merges follow, as they point at
+     * the game id. A path with no game is skipped, and a game whose new path already has one is left as it is (no merge).
+     */
+    fun renamePaths(map: Map<String, String>) {
+        db.transaction { map.forEach { (from, to) -> q.renamePath(to = to, from = from) } }
+    }
+
+    /** Every game's rom path, played or not (merged members too). */
+    fun romPaths(): List<String> = q.gameGroups().executeAsList().map { it.rom_path }
+
     fun touch(uuid: String) {
         q.touchSession(now(), uuid)
     }

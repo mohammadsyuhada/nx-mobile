@@ -44,6 +44,7 @@ object DeviceSyncText {
     fun ownIp(ip: String, link: SyncLink) = "IP: $ip (${linkName(link)})"
     fun syncingWith(ip: String, link: SyncLink) = "Syncing with $ip via ${linkName(link)}"
     const val NO_FILE_TIMES = "This phone can't set file times in Roms, so ROM sync can't run."
+    const val NO_SAVE_FILE_TIMES = "This phone can't set file times in Saves, so saves can't sync."
     const val PEER_NO_ROMS = "The other phone can't sync ROMs."
     const val NO_SPACE_HERE = "Not enough space on this phone."
     const val NO_SPACE_PEER = "Not enough space on the other device."

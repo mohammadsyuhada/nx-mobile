@@ -12,7 +12,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * Settings → Emulators → Saves → Export saves: the [SaveArchive] areas of private storage ([root] = `filesDir/sd`) as
+ * Settings → Emulators → Saves → Export saves: the [SaveArchive] areas of the data root ([root], [DataRoot.of]) as
  * one zip, entry names from the card root and entry times from the files, so it unzips onto a handheld card as is.
  * Files are copied byte for byte. [out] is finished but left open (the caller owns the document). No logging here:
  * JVM-tested. Files whose entry names meet (`Saves/GBA/x` and a leftover `Saves/MGBA/x`, both leaving as
@@ -20,12 +20,15 @@ import java.util.zip.ZipOutputStream
  * consoles that would meet keep their console folders instead ([entryNames]).
  */
 object SaveExport {
+    /** In the name of a file the data move kept aside (`<name>.bak-<time>`, [DataRoot]): never exported. */
+    private const val MOVE_BACKUP = ".bak-"
+
     fun write(root: File, out: OutputStream, exportTag: (String) -> String = { it }, onFile: (String) -> Unit = {}): ExportSummary {
         var saves = 0; var states = 0; var bytes = 0L
         val zip = ZipOutputStream(out)
         for (top in SaveArchive.ROOTS) {
             val dir = File(root, top).takeIf { it.isDirectory } ?: continue
-            val files = dir.walkTopDown().filter { it.isFile && !it.name.endsWith(".tmp") }.sortedBy { it.path }.toList()
+            val files = dir.walkTopDown().filter { it.isFile && !it.name.endsWith(".tmp") && MOVE_BACKUP !in it.name }.sortedBy { it.path }.toList()
             val named = files.map { f -> f to f.relativeTo(root).invariantSeparatorsPath }
                 .filter { (_, path) -> SaveArchive.areaOf(path) != null }
             val entries = entryNames(named.map { it.second }, exportTag)

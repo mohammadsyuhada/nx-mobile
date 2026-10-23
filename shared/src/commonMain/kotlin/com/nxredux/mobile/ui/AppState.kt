@@ -119,6 +119,10 @@ import com.nxredux.mobile.settings.Sources
 import com.nxredux.mobile.settings.SourceConversion
 import com.nxredux.mobile.storage.FileRefs
 import com.nxredux.mobile.storage.AllFilesAccess
+import com.nxredux.mobile.storage.HomeLocator
+import com.nxredux.mobile.storage.StorageUpgradeGate
+import com.nxredux.mobile.storage.StorageUpgradePlatform
+import com.nxredux.mobile.storage.UpgradeCase
 import com.nxredux.mobile.storage.LocalFiles
 import com.nxredux.mobile.storage.GamePath
 import com.nxredux.mobile.storage.GameRef
@@ -265,6 +269,10 @@ class AppDeps(
      * is the bottom one. The platform shows the step's second button on it ([AppState.onboardingBottomScreenOnSecond]).
      */
     val builtInSecondScreen: () -> Boolean = { false },
+    /** Where the home is now (the full-access folder, else the app's Android/media one); null: the saved [AppSettings.treeRef] (tests). */
+    val homes: HomeLocator? = null,
+    /** The one-time storage upgrade for installs from v0.3.0 and earlier (remove after v1.0); null: none (tests, other platforms). */
+    val storageUpgrade: StorageUpgradePlatform? = null,
     /** The in-app updater (Android's, process-wide): the main menu's Update available popup and About's update row; null: neither. */
     val updater: UpdateController? = null,
 )
@@ -308,6 +316,19 @@ sealed interface Screen {
     ) : Screen
     /** First setup only: offer an existing ROMs folder as an extra source. */
     data object AddFirstExtra : Screen
+    /**
+     * The one-time storage upgrade (installs from v0.3.0 and earlier, without a full-access home; remove after v1.0): its
+     * [stage]. [folder]: the media home's path (`Android/media/<package>/`), which DECLINED names. [error]: the move did
+     * not finish; the page says so and OK goes on to the library (the screen shows again on the next start).
+     */
+    data class StorageUpgrade(val stage: Stage, val folder: String = "", val error: String? = null) : Screen {
+        enum class Stage { EXPLAIN, PICK, DECLINED }
+    }
+    /**
+     * A home change in Settings with All files access: copy the data (saves, states, settings) of the old home [from]
+     * into the new one [to]? Copy or Keep separate; [busy] while the copy runs, [error] when it did not finish.
+     */
+    data class CopySaves(val from: ContentRef, val to: ContentRef, val busy: Boolean = false, val error: String? = null) : Screen
     /** First setup's last step, after the ROM folders: "Add N Android games to Consoles?" (A Yes, B Not now). */
     data class AndroidGamesStep(val ask: AndroidGamesAsk) : Screen
 
@@ -703,7 +724,7 @@ enum class NavMotion {
 data class NavStep(val seq: Int = 0, val motion: NavMotion = NavMotion.NONE)
 
 class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
-    private val sidecars = Sidecars(deps.source, deps.sidecarStore) { deps.settings.treeRef }
+    private val sidecars = Sidecars(deps.source, deps.sidecarStore) { home() }
     private val scanner = LibraryScanner(deps.source, sidecars, deps.arcadeSets, deps.naomiSets, compute = deps.compute, chdSectors = deps.chdSectors)
     private val _screen = MutableStateFlow<Screen>(Screen.Loading)
     val screen: StateFlow<Screen> = _screen.asStateFlow()
@@ -723,7 +744,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** The last search confirmed this run (START's prompt opens on it); not saved. */
     internal var lastSearch: String = ""
         private set
-    private val collections = Collections(deps.source, deps.sidecarStore) { deps.settings.treeRef }
+    private val collections = Collections(deps.source, deps.sidecarStore) { home() }
     private var allMenuTabs: List<MenuTab> = emptyList()   // every tab with content as last built, hidden ones too (no I/O to show it again)
     /** The tabs the main menu shows: [allMenuTabs] less the ones Layouts hides ([visibleMenuTabs]). */
     private val menuTabs: List<MenuTab> get() = visibleMenuTabs(allMenuTabs, shownTabs())
@@ -793,6 +814,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private var homeOutside: List<com.nxredux.mobile.library.LooseFile> = emptyList()   // that home's games outside Roms
     @Volatile private var moveCancelled = false   // B while a summary's move runs: it stops after the current game
     private var welcomeDone = false   // the welcome was answered this run: a load without a home goes to the folder steps
+    private var mediaHomeTaken = false   // first setup went on with the media home (no All files access): no pick to wait for
     private var onboardingSync = false   // Device Sync was opened from the sync offer: leaving it returns there
     private var onboardingSigningIn = false   // onboarding's RetroAchievements sign-in is running: its end moves the step on
     private var onboardingSynced: String? = null   // the sync offer's last result ("done", "failed", "stopped"; "" left before one ended)
@@ -1358,8 +1380,46 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private fun showPickFolder() {
         val ask = !deps.settings.allFilesAsked && permissionsStep().let { it.allFiles == false || it.notifications == false }
         if (ask) { allFilesStepShown = true; showPermissions(); return }
+        // No All files access: the home is the app's Android/media folder, nothing to pick. Once per run (a failed scan of it picks).
+        val media = deps.homes?.media
+        if (media != null && inFirstSetup() && !mediaHomeTaken && !homePickShown()) return takeMediaHome(media)
         _screen.value = Screen.PickFolder
         _selection.value = ListSelection(0, 1)
+    }
+
+    /** First setup's folder steps on [media] as after a pick ([setHome]), the saved home left unset: its scan, then the home page. */
+    private fun takeMediaHome(media: ContentRef) {
+        mediaHomeTaken = true
+        firstSetup = true
+        if (deps.settings.onboardingDone == false) deps.settings.onboardingStep = FOLDER_STEPS
+        rescan(then = { showHomePage(media) })
+    }
+
+    /** All files access is on (or there is no media home): first setup shows the home pick; without it the media home is used. */
+    private fun homePickShown(): Boolean = deps.homes?.media == null || deps.allFilesAccess?.takeIf { it.declared }?.granted() == true
+
+    /** B from the media home's first page (the home page, or the ROMs folder offer without one): back past the skipped pick, which runs again going on. */
+    private fun backPastMediaHome() {
+        mediaHomeTaken = false
+        homePage = null
+        firstSetup = false
+        if (deps.settings.onboardingStep == FOLDER_STEPS) deps.settings.onboardingStep = null
+        backFromHomePick()
+    }
+
+    /**
+     * The no-access line on the media home's first folder-steps page (the home page, or the ROMs folder offer when the
+     * home has no game): where the games folder is. Null on every other page.
+     */
+    fun setupNote(): String? {
+        val media = deps.homes?.media ?: return null
+        if (!mediaHomeTaken || !inFirstSetup()) return null
+        val first = when (val s = _screen.value) {
+            is Screen.FolderSummary -> s.extraId == Recents.HOME
+            Screen.AddFirstExtra -> homePage == null
+            else -> false
+        }
+        return if (first) "Your games folder is ${mediaPath(media)}. Put ROMs and BIOS there with a file manager. Uninstalling the app removes it." else null
     }
 
     /** The Permissions page's state now: each permission this device uses, granted or not. */
@@ -1567,7 +1627,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** [CountStamps.library] of [systems] (the games a collection line can resolve to), taken once per systems list. */
     private suspend fun libraryStamp(systems: List<SystemFolder>): String {
         libraryStampOf?.takeIf { it.first === systems }?.let { return it.second }
-        val home = deps.settings.treeRef?.value
+        val home = home()?.value
         val lookup = playableOffMain(systems)
         val stamp = withContext(deps.compute) { CountStamps.library(home, lookup.keys) }
         libraryStampOf = systems to stamp
@@ -1802,7 +1862,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      */
     /** First setup's steps and onboarding (a folder change in Settings may resume them): never a tool on the top screen. */
     private fun setupScreen(s: Screen): Boolean = when (s) {
-        is Screen.PermissionsStep, Screen.PickFolder, Screen.AddFirstExtra, is Screen.FolderSummary, is Screen.AndroidGamesStep, is Screen.Onboarding -> true
+        is Screen.PermissionsStep, Screen.PickFolder, Screen.AddFirstExtra, is Screen.FolderSummary, is Screen.AndroidGamesStep, is Screen.Onboarding, is Screen.StorageUpgrade -> true
         else -> false
     }
 
@@ -1936,8 +1996,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      */
     private fun resumeFolderSteps(): Boolean {
         if (firstSetup || deps.settings.onboardingDone != false || deps.settings.onboardingStep != FOLDER_STEPS) return false
-        val home = deps.settings.treeRef ?: return false
+        val home = home() ?: return false
         firstSetup = true
+        if (deps.settings.treeRef == null && home == deps.homes?.media) mediaHomeTaken = true   // a restart on the media home: no pick behind it
         showHomePage(home)
         return true
     }
@@ -1991,7 +2052,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      */
     fun menuPadShown(): Boolean {
         when (_screen.value) {
-            is Screen.PermissionsStep, Screen.PickFolder, Screen.AddFirstExtra, is Screen.AndroidGamesStep, is Screen.FolderSummary -> return false
+            is Screen.PermissionsStep, Screen.PickFolder, Screen.AddFirstExtra, is Screen.AndroidGamesStep, is Screen.FolderSummary, is Screen.StorageUpgrade -> return false
             else -> Unit
         }
         // First setup between the welcome and HANDHELD (the folder steps and their pickers): not asked yet.
@@ -2443,7 +2504,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
 
     /** The home page with [summary] (after a move: what the home held before it, and the move's [result]). */
     private fun showHomeSummary(summary: com.nxredux.mobile.library.FolderSummary, result: MoveResult? = null) {
-        val name = deps.settings.treeRef?.let { deps.source.displayName(it) } ?: ""
+        val name = home()?.let { deps.source.displayName(it) } ?: ""
         val s = Screen.FolderSummary(Recents.HOME, name, name, summary, move = result == null && homeTidy(summary), result = result)
         homePage = s
         _screen.value = s
@@ -2459,7 +2520,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * collections), then a rescan and the result.
      */
     private fun moveHomeOutside(s: Screen.FolderSummary) {
-        val home = deps.settings.treeRef ?: return
+        val home = home() ?: return
         val index = library ?: return
         moveCancelled = false
         _screen.value = s.copy(progress = 0 to 0)
@@ -2535,7 +2596,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val index = library ?: return afterFolderSteps { load() }
         val extra = deps.settings.extraFolders.firstOrNull { it.id == extraId }
         val name = extra?.let { deps.source.displayName(it.ref) } ?: ""
-        val home = deps.settings.treeRef?.let { deps.source.displayName(it) } ?: ""
+        val home = home()?.let { deps.source.displayName(it) } ?: ""
         val summary = before ?: folderSummary(index, extraId)
         val s = Screen.FolderSummary(extraId, name, home, summary, move = result != null, result = result)
         _screen.value = s
@@ -2560,7 +2621,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
 
     /** The summary's move: [s]'s placed games into the home's Roms, its progress on the page, then a rescan and the result. */
     private fun moveSummaryGames(s: Screen.FolderSummary) {
-        val home = deps.settings.treeRef ?: return
+        val home = home() ?: return
         val index = library ?: return
         moveCancelled = false
         _screen.value = s.copy(progress = 0 to 0)
@@ -2597,7 +2658,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (!inFirstSetup()) return 0
         val access = deps.allFilesAccess
         val allFiles = allFilesStepShown || (access != null && access.declared && !access.granted() && !deps.settings.allFilesAsked)
-        return (if (allFiles) 1 else 0) + 2 + (if (homePage != null) 1 else 0) + (if (addedExtraId != null) 1 else 0) + (if (androidStepShown) 1 else 0)
+        val pick = if (mediaHomeTaken || !homePickShown()) 0 else 1   // no home pick on the media home
+        return (if (allFiles) 1 else 0) + 1 + pick + (if (homePage != null) 1 else 0) + (if (addedExtraId != null) 1 else 0) + (if (androidStepShown) 1 else 0)
     }
 
     /**
@@ -2610,12 +2672,13 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val access = deps.allFilesAccess
         val allFiles = allFilesStepShown || (access != null && access.declared && !access.granted() && !deps.settings.allFilesAsked)
         val home = if (homePage != null) 1 else 0   // the home page, between the pick and the ROMs folder offer
+        val pick = if (mediaHomeTaken || !homePickShown()) 0 else 1   // no home pick on the media home
         val at = (if (allFiles) 1 else 0) + when (screen) {
             is Screen.PermissionsStep -> 0
             Screen.PickFolder -> 1
-            Screen.AddFirstExtra -> 2 + home
-            is Screen.FolderSummary -> if (screen.extraId == Recents.HOME) 2 else 3 + home
-            else -> 3 + home + (if (addedExtraId != null) 1 else 0)
+            Screen.AddFirstExtra -> 1 + pick + home
+            is Screen.FolderSummary -> if (screen.extraId == Recents.HOME) 1 + pick else 2 + pick + home
+            else -> 2 + pick + home + (if (addedExtraId != null) 1 else 0)
         }
         val total = setupFolderSteps() + onboardingSteps(onboarding.context).size
         return "Setup · Step $at of $total" to true
@@ -2657,6 +2720,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         resetOnboardingRun()
         deps.settings.onboardingDone = true
         deps.settings.onboardingStep = null
+        // A new install has nothing to upgrade, unless data waits to move. Before any load can ask the gate (a new install's
+        // private root is a few files to walk).
+        deps.storageUpgrade?.markIfEmpty()
         scope.launch {
             rebuildMainRows()
             showSystemsNow(MenuCategory.HOME)
@@ -2788,7 +2854,12 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     fun load(then: ((List<SystemFolder>) -> Unit)? = null) {
         // An install from before onboarding has its home already: it counts as done. A fresh one has onboarding to do.
         if (deps.settings.onboardingDone == null) deps.settings.onboardingDone = deps.settings.treeRef != null
-        if (deps.settings.treeRef == null) {
+        // The one-time storage upgrade (v0.3.0 and earlier) comes before anything else; a load while it is up leaves it.
+        if (upgradeOn || upgradeDue()) { if (!upgradeOn) startStorageUpgrade(); return }
+        if (upgradeCase() == UpgradeCase.QUIET) deps.storageUpgrade?.startQuietMove()   // Case A: in the background, never mid-game
+        // First setup's folder steps come first even with a media home to fall back to; a saved step means they were reached.
+        val setupFirst = deps.settings.treeRef == null && deps.settings.onboardingDone == false && deps.settings.onboardingStep == null && !mediaHomeTaken
+        if (home() == null || setupFirst) {
             if (deps.settings.onboardingDone == false && !welcomeDone && onboarding.step == null) { onboarding.startWelcome(); showOnboarding(); return }
             showPickFolder(); return
         }
@@ -2796,7 +2867,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         _screen.value = Screen.Loading
         scope.launch {
             convertToFiles()   // before the index is read, so a converted home or extra scans once
-            val root = deps.settings.treeRef ?: return@launch
+            val root = home() ?: return@launch
+            mediaHomeNotice(root)
             countCache.load()   // before the first menu build: the collections listed next show their stored counts
             toolPins = readToolPins()
             val usable = fittingIndex(root)
@@ -2839,7 +2911,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * rebuilt from that index first, and the scan's notice or error stays, so a caller on Settings can go back there.
      */
     fun rescan(kept: (() -> Unit)? = null, then: ((List<SystemFolder>) -> Unit)? = null) {   // [then] last: a trailing lambda stays the success step
-        val root = deps.settings.treeRef ?: run { showPickFolder(); return }
+        val root = home() ?: run { showPickFolder(); return }
         _screen.value = Screen.Loading
         scope.launch { scanNow(root, then, kept) }
     }
@@ -2854,7 +2926,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             // Revoked access can list a file home as empty rather than fail: never scan (and so never store) that as an emptied library.
             if (FileRefs.isFile(root) && deps.source.isOffline(root)) throw IllegalStateException(ACCESS_OFF)
             if (isOldRomsPick(root)) {
-                deps.settings.treeRef = null
+                if (!FileRefs.isFile(root)) deps.settings.treeRef = null   // a file home is only switched from, never cleared
                 throw OldPick()
             }
             ensureSkeleton(root)
@@ -2921,7 +2993,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     // Only drop the persisted tree when the failure means the tree itself is gone or
                     // invalid (a revoked SAF permission -> SecurityException, an invalid/stale tree URI
                     // -> IllegalArgumentException). Transient failures keep the tree so the user can retry.
-                    if (isGone(e)) deps.settings.treeRef = null
+                    if (isGone(e) && !FileRefs.isFile(root)) deps.settings.treeRef = null   // a file home is kept: the next load falls back to the media home
                     _error.value = "Could not read the home folder: ${e.message ?: e::class.simpleName}"
                 }
                 showPickFolder()
@@ -3007,7 +3079,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (failure != null) {
             val e = failure
             if (isGone(e) && homeNotBackYet(root)) return
-            if (isGone(e) && deps.settings.treeRef == root) {
+            if (isGone(e) && deps.settings.treeRef == root && !FileRefs.isFile(root)) {
                 deps.settings.treeRef = null
                 indexLock.withLock {
                     library = null
@@ -3103,12 +3175,36 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         return true
     }
 
+    /** The home to read now: the platform's choice ([HomeLocator.current]: the full-access folder, else the media one), else the saved one. */
+    private fun home(): ContentRef? = deps.homes?.current() ?: deps.settings.treeRef
+
+    /** `Android/media/<package>/` for [media] (its last path segment is the package). */
+    private fun mediaPath(media: ContentRef): String = "Android/media/${FileRefs.path(media).substringAfterLast('/')}/"
+
+    /** A saved full-access home that cannot be read now ([root] is the media one instead): the library says so, once per load. */
+    private fun mediaHomeNotice(root: ContentRef) {
+        if (deps.storageUpgrade?.quietMoveStuck() == true) return showNotice(MOVE_STUCK)
+        val saved = deps.settings.treeRef ?: return
+        if (root != deps.homes?.media || !FileRefs.isFile(saved) || saved == root) return
+        val saves = if (dataMoved()) "Saves made there stay there." else SAVES_STILL_INSIDE
+        showNotice(
+            if (deps.allFilesAccess?.granted() == true) "Your home folder can't be found. Using ${mediaPath(root)} until it's back. $saves"
+            else "All files access is off. Using ${mediaPath(root)} until it's back on. $saves",
+        )
+    }
+
+    /** The data is in the home now (the one-time move done, or none due): until then it is read and written inside the app. */
+    private fun dataMoved(): Boolean = deps.storageUpgrade?.isDone() != false
+
     /** The error for a home that cannot be read now: a file home without All files access ([ACCESS_OFF]), else the unmounted card's. */
     private fun homeAwayError(root: ContentRef, then: String): String =
-        if (FileRefs.isFile(root) && deps.allFilesAccess?.granted() != true) ACCESS_OFF else "$HOME_OFFLINE $then"
+        if (FileRefs.isFile(root) && deps.allFilesAccess?.granted() != true && !inMediaHome(root)) ACCESS_OFF else "$HOME_OFFLINE $then"
 
     /** True for a file ref read without All files access: its folder is not "offline", the permission is off. */
-    private fun fileAccessOff(ref: ContentRef): Boolean = FileRefs.isFile(ref) && deps.allFilesAccess?.granted() == false
+    private fun fileAccessOff(ref: ContentRef): Boolean = FileRefs.isFile(ref) && deps.allFilesAccess?.granted() == false && !inMediaHome(ref)
+
+    /** [ref] is the app's own media folder or inside it: readable without All files access. */
+    private fun inMediaHome(ref: ContentRef): Boolean = deps.homes?.media?.let { FileRefs.within(it, ref) } == true
 
     private class OldPick : RuntimeException()
 
@@ -3125,11 +3221,18 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** Whether a folder pick goes to the app's own picker (All files access), not Android's. */
     fun filePickerOn(): Boolean = filePicker != null && deps.allFilesAccess?.granted() == true
 
-    /** The home pick: the list-style picker with All files access, else Android's ([FolderPicker.pickHome]). */
+    /**
+     * The home pick: the list-style picker with All files access. Without it no picker home is saved any more (the
+     * home is the media one): All files access is asked for instead, and the row picks once it is on. Only a platform
+     * without a media home or that permission keeps Android's picker ([FolderPicker.pickHome]).
+     */
     fun pickHome() {
         val p = filePicker
-        if (p != null && filePickerOn()) p.open(FilePickMode.Home, deps.settings.treeRef) { it?.let(::setHome) }
-        else deps.folderPicker.pickHome()
+        when {
+            p != null && filePickerOn() -> p.open(FilePickMode.Home, deps.settings.treeRef) { it?.let(::setHome) }
+            deps.homes != null && deps.allFilesAccess?.declared == true -> deps.allFilesAccess.openSettings()   // the media home's platform
+            else -> deps.folderPicker.pickHome()
+        }
     }
 
     /** An extra ROM folder pick, routed as [pickHome]. */
@@ -3174,13 +3277,17 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      */
     fun onAllFilesAccessChanged() {
         deps.allFilesAccess ?: return
+        if (upgradeOn) { upgradeAccessChanged(); return }   // the upgrade screen answers it, never a library reload
         if (_screen.value is Screen.PermissionsStep) { showPermissions(keep = true); return }   // back from a prompt: the rows show its answer
         if ((_screen.value as? Screen.Settings)?.section == SettingsSection.ROM_FOLDERS) refreshSettings()
         // Granted meanwhile: SAF folders on external storage become paths. The main menu reloads at once (rescanning, as the
-        // index no longer fits); any other page leaves it to the next load. A load in flight converts first itself.
-        if (_screen.value is Screen.Loading || deps.allFilesAccess?.granted() != true) return
+        // index no longer fits); any other page leaves it to the next load. A load in flight converts first itself. The
+        // same when the home itself changed with the access (the saved one back, or the media one in its place).
+        if (_screen.value is Screen.Loading) return
         scope.launch {
-            if (!convertToFiles()) return@launch
+            val converted = deps.allFilesAccess?.granted() == true && convertToFiles()
+            val switched = library?.let { it.home != home()?.value } == true
+            if (!converted && !switched) return@launch
             val now = _screen.value
             if (now is Screen.Systems && now.menu == null && now.search == null) load() else libraryDirty = true
         }
@@ -3201,26 +3308,277 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             return
         }
         // First setup: no home yet, or a pick from the setup screen (a retry after a failed first load keeps treeRef).
-        val first = old == null || _screen.value is Screen.PickFolder
+        val first = (old == null && inFirstSetup()) || _screen.value is Screen.PickFolder
         val fromLibrary = if (first) null else rememberLibraryPage()
+        // The data home this change leaves (the full-access folder, or the media one): its saves may be copied over.
+        val copyFrom = home()?.takeIf { !first && copyOffered(it, ref) }
         deps.settings.treeRef = ref
         if (first) firstSetup = true
         // First setup's folder steps, saved: a restart before they end comes back to them ([resumeFolderSteps]).
         if (first && deps.settings.onboardingDone == false) deps.settings.onboardingStep = FOLDER_STEPS
         if (old != null && old != ref && old !in extras) deps.folderPicker.forget(old)
+        // Once the new home listed: the copy offer when it applies, else back to the Settings page.
+        val after = { if (copyFrom != null) offerCopySaves(copyFrom, ref, fromLibrary) else fromLibrary?.let(::openSettings) }
         rescan(
             then = {   // runs only on a good scan, so a Roms-folder mispick never shows the offer
                 if (first) {
                     showHomePage(ref)
-                } else fromLibrary?.let(::openSettings)
+                } else after()
             },
-            kept = { fromLibrary?.let(::openSettings) },   // the same home again, not listing now
+            kept = { after() },   // the same home again, not listing now
         )
+    }
+
+    /**
+     * A deliberate home change from [from] to [to] with All files access, once the data lives in the home: both file
+     * folders, not the same. The data is not moved, only offered to copy (the old home may be another build's, e.g. a dev
+     * build's own folder, and must never be emptied).
+     */
+    private fun copyOffered(from: ContentRef, to: ContentRef): Boolean =
+        deps.storageUpgrade != null && deps.allFilesAccess?.granted() == true && dataMoved() &&
+            FileRefs.isFile(from) && FileRefs.isFile(to) && from != to
+
+    /** Where [copySavesRow] goes when the offer is answered: the Settings page the home change came from. */
+    private var copySavesThen: SettingsSection? = null
+
+    private fun offerCopySaves(from: ContentRef, to: ContentRef, then: SettingsSection?) {
+        copySavesThen = then
+        _screen.value = Screen.CopySaves(from, to)
+        _selection.value = ListSelection(0, 2)
+    }
+
+    // The one-time storage upgrade (installs from v0.3.0 and earlier without a full-access home; remove after v1.0).
+
+    /** The upgrade screen is up (from its first page until the library loads after it): access changes drive it, not the library. */
+    private var upgradeOn = false
+    /** Its adoption or move is running: presses and access changes wait for it. */
+    private var upgradeBusy = false
+    /** The move failed this run: the library goes on with the private data; the screen comes back on the next start. */
+    private var upgradeDeferred = false
+    /** The saved home when the screen first showed (a picker home the pick may replace). */
+    private var upgradeOld: ContentRef? = null
+
+    /** Its first page is for a file home without All files access ([UpgradeCase.ASK_ACCESS]): Not now waits, it never declines. */
+    private var upgradeWaits = false
+
+    /** How the upgrade is due now ([StorageUpgradeGate]); null: not due, or no upgrade here. */
+    private fun upgradeCase(): UpgradeCase? {
+        val up = deps.storageUpgrade ?: return null
+        return StorageUpgradeGate.due(deps.settings.onboardingDone, up.isDone(), deps.allFilesAccess?.granted() == true, deps.settings.treeRef, up.isWaiting())
+    }
+
+    /** The upgrade screen is due. QUIET needs no screen: the platform moves in the background ([load] starts it). */
+    private fun upgradeDue(): Boolean {
+        if (upgradeDeferred) return false
+        val case = upgradeCase()
+        return case == UpgradeCase.ASK || case == UpgradeCase.ASK_ACCESS
+    }
+
+    /** The upgrade's first page; where All files access cannot be had (not declared), the declined path at once. */
+    private fun startStorageUpgrade() {
+        upgradeOn = true
+        upgradeOld = deps.settings.treeRef
+        upgradeWaits = upgradeCase() == UpgradeCase.ASK_ACCESS
+        if (deps.allFilesAccess?.declared != true) return if (upgradeWaits) upgradeWait() else upgradeDecline()
+        showStorageUpgrade(Screen.StorageUpgrade(Screen.StorageUpgrade.Stage.EXPLAIN))
+    }
+
+    private fun showStorageUpgrade(s: Screen.StorageUpgrade) {
+        _screen.value = s
+        _selection.value = ListSelection(0, storageUpgradeRows(s).size)
+    }
+
+    /** A or a tap on the upgrade page's row [index]. */
+    fun storageUpgradeRow(index: Int) {
+        val s = _screen.value as? Screen.StorageUpgrade ?: return
+        if (upgradeBusy) return
+        if (s.error != null) return upgradeLater()
+        when (s.stage) {
+            Screen.StorageUpgrade.Stage.EXPLAIN -> when {
+                index == 0 -> upgradeAllow()
+                upgradeWaits -> upgradeWait()
+                else -> upgradeDecline()
+            }
+            Screen.StorageUpgrade.Stage.PICK -> upgradePick()
+            Screen.StorageUpgrade.Stage.DECLINED -> upgradeFinished()
+        }
+    }
+
+    /** B on the upgrade page: the page is required, so EXPLAIN stays and PICK goes back to it; DECLINED and an error go on as OK. */
+    private fun storageUpgradeBack(s: Screen.StorageUpgrade) {
+        if (upgradeBusy) return
+        when {
+            s.error != null -> upgradeLater()
+            s.stage == Screen.StorageUpgrade.Stage.PICK -> showStorageUpgrade(Screen.StorageUpgrade(Screen.StorageUpgrade.Stage.EXPLAIN))
+            s.stage == Screen.StorageUpgrade.Stage.DECLINED -> upgradeFinished()
+            else -> Unit
+        }
+    }
+
+    /** Allow: granted already, on at once; else Android's page, and the answer comes back through [onAllFilesAccessChanged]. */
+    private fun upgradeAllow() {
+        if (deps.allFilesAccess?.granted() == true) upgradeGranted() else deps.allFilesAccess?.openSettings()
+    }
+
+    /** All files access changed while the upgrade is up: granted on its first page goes on; revoked on the pick goes back to it. */
+    private fun upgradeAccessChanged() {
+        val s = _screen.value as? Screen.StorageUpgrade ?: return
+        if (upgradeBusy || s.error != null) return
+        val granted = deps.allFilesAccess?.granted() == true
+        when {
+            s.stage == Screen.StorageUpgrade.Stage.EXPLAIN && granted -> upgradeGranted()
+            s.stage == Screen.StorageUpgrade.Stage.PICK && !granted -> showStorageUpgrade(Screen.StorageUpgrade(Screen.StorageUpgrade.Stage.EXPLAIN))
+            else -> Unit
+        }
+    }
+
+    /**
+     * Not now on a file home's page: nothing moves to the media home and nothing is marked. The data stays in the app,
+     * and the quiet move runs into the file home once access is back.
+     */
+    private fun upgradeWait() {
+        deps.storageUpgrade?.setWaiting()
+        upgradeFinished()
+    }
+
+    /** Granted: the picker home becomes its path where it can ([convertToFiles]) and the data moves into it; else the pick. */
+    private fun upgradeGranted() {
+        upgradeBusy = true
+        _screen.value = Screen.Loading
+        scope.launch {
+            convertToFiles()
+            val home = deps.settings.treeRef
+            // A file home that can't be read now (card out) waits: the quiet move runs once it is back.
+            if (home != null && FileRefs.isFile(home) && deps.homes?.let { it.current() != home } == true) return@launch upgradeFinished()
+            if (home != null && FileRefs.isFile(home)) return@launch upgradeMove(home) { upgradeFinished() }
+            upgradeBusy = false
+            showStorageUpgrade(Screen.StorageUpgrade(Screen.StorageUpgrade.Stage.PICK))
+        }
+    }
+
+    /** The pick's page: the list-style picker on the home (with access on it is always there). */
+    private fun upgradePick() {
+        val p = filePicker ?: return
+        if (filePickerOn()) p.open(FilePickMode.Home, null) { it?.let(::storageUpgradePicked) }
+    }
+
+    /**
+     * The folder picked on the upgrade's pick page becomes the home and the data moves into it. A folder other than the
+     * old picker home makes that one an extra first (its Bios and Collections copied into [ref], its keys rewritten). A
+     * folder over an extra, or over the old home without being it, is refused (its files would list twice).
+     */
+    fun storageUpgradePicked(ref: ContentRef) {
+        val up = deps.storageUpgrade ?: return
+        if (!upgradeOn || upgradeBusy) return
+        val old = upgradeOld?.takeIf { !FileRefs.isFile(it) }
+        val adopt = old != null && Sources.mappedPath(old) != FileRefs.path(ref).trimEnd('/')
+        // The extra on this folder's own Roms/ is the old home adopted by an earlier try: the home takes it back.
+        val back = deps.settings.extraFolders.firstOrNull { e ->
+            (if (FileRefs.isFile(e.ref)) FileRefs.path(e.ref).trimEnd('/') else Sources.mappedPath(e.ref)) == FileRefs.path(ref).trimEnd('/') + "/Roms"
+        }
+        val clash = deps.settings.extraFolders.filter { it != back }.map { it.ref }.firstOrNull { Sources.overlaps(it, ref) } ?: old?.takeIf { adopt && Sources.overlaps(it, ref) }
+        if (clash != null) {
+            _error.value = "That folder overlaps ${deps.source.displayName(clash)}; files would list twice."
+            return
+        }
+        upgradeBusy = true
+        _screen.value = Screen.Loading
+        scope.launch {
+            if (back != null) {
+                val restored = try { up.restoreHomeKeys(back.id) } catch (e: CancellationException) { throw e } catch (e: Exception) { false }
+                if (!restored) return@launch upgradeFailed()
+                deps.settings.extraFolders = deps.settings.extraFolders.filter { it != back }
+            }
+            if (adopt) {
+                val extra = upgradeAdopt(old!!, ref).getOrElse { return@launch upgradeFailed() }
+                extra?.let { deps.settings.extraFolders = deps.settings.extraFolders + it }
+            }
+            deps.settings.treeRef = ref
+            upgradeMove(ref) { upgradeFinished() }
+        }
+    }
+
+    /** Not now (or no All files access here): the picker home becomes an extra, and the data moves into the media home. */
+    private fun upgradeDecline() {
+        val up = deps.storageUpgrade ?: return
+        upgradeBusy = true
+        _screen.value = Screen.Loading
+        scope.launch {
+            val old = deps.settings.treeRef
+            if (old != null && !FileRefs.isFile(old)) {
+                val extra = upgradeAdopt(old, null).getOrElse { return@launch upgradeFailed() }
+                extra?.let { deps.settings.extraFolders = deps.settings.extraFolders + it }
+                deps.settings.treeRef = null
+            }
+            deps.settings.allFilesAsked = true
+            val media = deps.homes?.media ?: return@launch upgradeFailed()
+            upgradeMove(media) {
+                upgradeBusy = false
+                showStorageUpgrade(Screen.StorageUpgrade(Screen.StorageUpgrade.Stage.DECLINED, folder = mediaPath(media)))
+            }
+        }
+    }
+
+    /** [StorageUpgradePlatform.adoptPickerHome]: the extra (null: the old home is gone, nothing to adopt), or its failure. */
+    private suspend fun upgradeAdopt(old: ContentRef, into: ContentRef?): Result<ExtraFolder?> {
+        val up = deps.storageUpgrade ?: return Result.success(null)
+        return try { Result.success(up.adoptPickerHome(old, into)) } catch (e: CancellationException) { throw e } catch (e: Exception) { Result.failure(e) }
+    }
+
+    /** Moves the private data into [home]; marks the upgrade done and runs [then] only when the move finished. */
+    private suspend fun upgradeMove(home: ContentRef, then: () -> Unit) {
+        val up = deps.storageUpgrade ?: return
+        if (!up.moveInto(home)) return upgradeFailed()
+        up.markDone()
+        then()
+    }
+
+    /** The adoption or move did not finish: nothing is marked, the private data stays, and the page says so. */
+    private fun upgradeFailed() {
+        upgradeBusy = false
+        showStorageUpgrade(Screen.StorageUpgrade(Screen.StorageUpgrade.Stage.EXPLAIN, error = UPGRADE_FAILED))
+    }
+
+    /** OK after a failure: on to the library for this run; the next start asks again. */
+    private fun upgradeLater() {
+        upgradeDeferred = true
+        upgradeFinished()
+    }
+
+    /** The upgrade is over (or put off): the library loads on the home now. */
+    private fun upgradeFinished() {
+        upgradeOn = false
+        upgradeBusy = false
+        upgradeOld = null
+        load()
+    }
+
+    /** A or a tap on the copy offer's row [index]: Copy (off the main thread), Keep separate, or OK after a failure. */
+    fun copySavesRow(index: Int) {
+        val s = _screen.value as? Screen.CopySaves ?: return
+        if (s.busy) return
+        val up = deps.storageUpgrade
+        if (s.error != null || index != 0 || up == null) return copySavesDone()
+        _screen.value = s.copy(busy = true)
+        _selection.value = ListSelection(0, 0)
+        scope.launch {
+            val copied = try { withContext(deps.compute) { up.copySaves(s.from, s.to) } } catch (e: CancellationException) { throw e } catch (e: Exception) { false }
+            if (_screen.value != s.copy(busy = true)) return@launch
+            if (copied) copySavesDone()
+            else { _screen.value = s.copy(error = COPY_FAILED); _selection.value = ListSelection(0, 1) }
+        }
+    }
+
+    /** The offer answered: back to the Settings page the change came from, else the library. */
+    private fun copySavesDone() {
+        val then = copySavesThen
+        copySavesThen = null
+        if (then != null) openSettings(then) else load()
     }
 
     /** From the platform picker: refuses a folder that is, contains or lies inside the home or another extra. */
     fun addExtra(ref: ContentRef) {
-        val home = deps.settings.treeRef
+        val home = home()
         val clash = (listOfNotNull(home) + deps.settings.extraFolders.map { it.ref }).firstOrNull { Sources.overlaps(it, ref) }
         if (clash != null) {
             // Release the grant the picker just took, unless it is one we still use (the home itself, or an extra picked twice).
@@ -3391,8 +3749,17 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
 
     /** [section]'s page as it stands now; [confirm]: the remove dialog over it. */
     /** A page's note under its title ([Screen.Settings.banner]): Saves', where they live. */
-    private fun settingsBanner(section: SettingsSection): String? =
-        if (section == SettingsSection.SAVES) "Saves are stored inside the app. Export them before uninstalling or clearing app data." else null
+    private fun settingsBanner(section: SettingsSection): String? {
+        if (section != SettingsSection.SAVES) return null
+        val home = home()
+        val media = deps.homes?.media
+        return when {
+            !dataMoved() -> SAVES_STILL_INSIDE
+            home != null && home == media -> "Saves are in ${mediaPath(media)}. Uninstalling the app removes them."
+            home != null && deps.homes != null && FileRefs.isFile(home) -> "Saves are in your home folder."
+            else -> "Saves are stored inside the app. Export them before uninstalling or clearing app data."   // a picker home: still private
+        }
+    }
 
     private fun settingsPage(section: SettingsSection, confirm: ExtraFolder? = null): Screen.Settings =
         Screen.Settings(section, settingsRows(section), confirm, settingsDetails(section), layoutShot(section), settingsBanner(section))
@@ -3602,10 +3969,10 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      */
     private fun settingsDetails(section: SettingsSection): List<String> = when (section) {
         SettingsSection.LIBRARY -> buildList {
-            add(deps.settings.treeRef?.let { Sources.displayPath(it) ?: deps.source.displayName(it) } ?: "No home folder")
+            add(home()?.let { Sources.displayPath(it) ?: deps.source.displayName(it) } ?: "No home folder")
             val consoles = systemsCache.filter { !it.unassigned }.map { it.displayName }.distinct().size
             add("${gamesLabel(systemsCache.sumOf { it.gameCount })} · ${if (consoles == 1) "1 console" else "$consoles consoles"}")
-            val folders = (if (deps.settings.treeRef != null) 1 else 0) + deps.settings.extraFolders.size
+            val folders = (if (home() != null) 1 else 0) + deps.settings.extraFolders.size
             add(if (folders == 1) "1 ROM folder" else "$folders ROM folders")
             library?.scannedAt?.let { add("Last scan: ${formatDateTime(it)}") }
         }
@@ -3628,7 +3995,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val s = deps.settings
         val ix = library
         return buildList {
-            val home = s.treeRef?.let { root ->
+            val home = home()?.let { root ->
                 val name = deps.source.displayName(root)
                 if (offlineHomeSaid == root) "$name · not available" else name
             }
@@ -3868,7 +4235,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * and the main rows), so a cancel between them would leave them disagreeing.
      */
     private fun rescanFromSettings(section: SettingsSection = SettingsSection.LIBRARY, row: SettingsKind = SettingsKind.RESCAN) {
-        val root = deps.settings.treeRef ?: run { showPickFolder(); return }
+        val root = home() ?: run { showPickFolder(); return }
         dismissNotice()   // a tap reaches openSelected without onButton's dismissal; a notice raised by this scan still wins below
         val backToRow = { showSettingsOn(section, row) }
         loader.start(message = "Scanning library…", cancellable = false) {
@@ -4041,7 +4408,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (section == SettingsSection.IMPORT_RESULT) return showSettingsOn(SettingsSection.SAVES, SettingsKind.IMPORT_SAVES)   // past Import saves
         val parent = section.parent ?: return
         val opener = section.opener ?: return
-        val root = deps.settings.treeRef
+        val root = home()
         val stale = section == SettingsSection.DEFAULT_EMULATORS && root != null &&
             library?.fits(root, deps.settings.extraFolders, deps.settings.defaultTags) != true
         if (stale) rescanFromSettings(parent, opener) else showSettingsOn(parent, opener)
@@ -4052,7 +4419,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         libraryDirty = true
         deps.folderPicker.forget(extra.ref)
         refreshSettings()
-        val root = deps.settings.treeRef ?: return
+        val root = home() ?: return
         scope.launch {   // background re-index without Loading; Back then reads it (the lock orders the two)
             runCatching {
                 mutateIndex(IndexRefresh(counts = true)) { current ->
@@ -4720,7 +5087,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (s.menu != null) return
         if (!firstSetup) updaterOnMainMenu()   // back over the menu (from a game, or the install-permission screen)
         scope.launch { rebuildMainRows(); swapMainRows() }   // Continue's save (its resume frame) may be new since the rows were built
-        val root = deps.settings.treeRef ?: return
+        val root = home() ?: return
         if (foregroundJob?.isActive == true) return   // a quick second onStart: the first check (or its scan) covers it
         foregroundJob = scope.launch {
             val ix = indexLock.withLock { library } ?: return@launch
@@ -4788,7 +5155,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         _tabFocus.value = false   // Home lands on its content (a stale-library reload too)
         // Onboarding (and its embedded Device Sync) stays put, as first setup does.
         if (_screen.value is Screen.Onboarding || (_screen.value == Screen.DeviceSync && onboardingSync)) return
-        when (_screen.value) { Screen.Loading, is Screen.PermissionsStep, Screen.PickFolder, Screen.AddFirstExtra, is Screen.AndroidGamesStep, is Screen.FilePicker -> return; else -> Unit }
+        when (_screen.value) { Screen.Loading, is Screen.PermissionsStep, Screen.PickFolder, Screen.AddFirstExtra, is Screen.AndroidGamesStep, is Screen.FilePicker, is Screen.StorageUpgrade -> return; else -> Unit }
         switcherJob?.cancel()
         loader.cancel()
         if (loader.active) return   // a non-cancellable load (the library rescan) runs on and lands by itself
@@ -5557,6 +5924,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 }
             }
             Screen.PickFolder, is Screen.PermissionsStep -> setupStepRow(_selection.value.index)
+            is Screen.StorageUpgrade -> storageUpgradeRow(_selection.value.index)
+            is Screen.CopySaves -> copySavesRow(_selection.value.index)
             is Screen.FilePicker -> filePicker?.onButton(s, NxButton.A)
             Screen.AddFirstExtra, is Screen.AndroidGamesStep, is Screen.FolderSummary -> setupStepRow(_selection.value.index)
             Screen.Loading -> Unit
@@ -6281,7 +6650,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * some storage is known offline (the reload's probe reads it again once it is back).
      */
     private fun libraryStale(): Boolean {
-        val root = deps.settings.treeRef ?: return true
+        val root = home() ?: return true
         val ix = library ?: return true
         return libraryDirty || !ix.fits(root, deps.settings.extraFolders, deps.settings.defaultTags) ||
             offlineHomeSaid != null || ix.offline.isNotEmpty()
@@ -6337,6 +6706,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 when {
                     !inFirstSetup() -> skipFirstExtra()
                     page != null -> { _screen.value = page; _selection.value = ListSelection(0, folderSummaryRows(page).size) }   // back to the home page
+                    mediaHomeTaken -> backPastMediaHome()
                     else -> { _screen.value = Screen.PickFolder; _selection.value = ListSelection(0, 1) }
                 }
                 true
@@ -6345,12 +6715,15 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             Screen.PickFolder -> if (inFirstSetup()) { backFromHomePick(); true } else false
             is Screen.FilePicker -> { filePicker?.onButton(s, NxButton.B); true }
             is Screen.PermissionsStep -> { if (deps.settings.onboardingDone == false) backToWelcome() else skipAllFiles(); true }
+            is Screen.StorageUpgrade -> { storageUpgradeBack(s); true }   // required: B never leaves it for the library
+            is Screen.CopySaves -> { if (!s.busy) copySavesRow(if (s.error != null) 0 else 1); true }   // B: Keep separate (or OK)
             is Screen.AndroidGamesStep -> { if (inFirstSetup()) showAddFirstExtra() else answerAndroidGames(false); true }
             // The summary: B stops a running move (after the current game); otherwise back to the ROMs folder step (the folder stays added).
             // The home page: back to the pick (a new pick shows its page again).
             is Screen.FolderSummary -> {
                 when {
                     s.progress != null -> moveCancelled = true
+                    s.extraId == Recents.HOME && mediaHomeTaken -> backPastMediaHome()
                     s.extraId == Recents.HOME -> { homePage = null; _screen.value = Screen.PickFolder; _selection.value = ListSelection(0, 1) }
                     else -> showAddFirstExtra()
                 }
@@ -6459,7 +6832,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * launcher, before it was answered, and when [installedCache] has a detected game. First setup asks it as a step instead.
      */
     private fun maybeAskAndroidGames() {
-        if (deps.launcher == null || deps.settings.treeRef == null || deps.settings.androidGamesAsked || firstSetup) return
+        if (deps.launcher == null || home() == null || deps.settings.androidGamesAsked || firstSetup) return
         if (_androidGamesAsk.value != null) return
         val s = _screen.value as? Screen.Systems ?: return
         if (s.menu != null) return
@@ -6721,6 +7094,29 @@ private const val FOLDER_STEPS = "FOLDERS"
 
 /** How often a home move rewrites the lines of the games it moved so far. */
 private const val LINES_FLUSH_MS = 3_000L
+
+/** Settings' Saves note and the library's notice until the one-time move is done. */
+private const val SAVES_STILL_INSIDE = "Saves are still stored inside the app until your home folder is available."
+
+/** The library's notice once the quiet move failed on several starts. */
+private const val MOVE_STUCK = "Saves couldn't move to your home folder. They're still inside the app."
+
+/** The copy offer's error when its copy did not finish. */
+private const val COPY_FAILED = "Couldn't copy every save. The old folder still has them all."
+
+/** The storage upgrade's error when its move did not finish. */
+private const val UPGRADE_FAILED = "Couldn't move your saves. They're safe; the app will try again next time."
+
+/** [s]'s rows: Allow and Not now on the first page, Pick folder on the pick, OK after (or after an error). */
+internal fun storageUpgradeRows(s: Screen.StorageUpgrade): List<String> = when {
+    s.error != null -> listOf("OK")
+    s.stage == Screen.StorageUpgrade.Stage.EXPLAIN -> listOf("Allow", "Not now")
+    s.stage == Screen.StorageUpgrade.Stage.PICK -> listOf("Pick folder")
+    else -> listOf("OK")
+}
+
+/** [s]'s rows: Copy and Keep separate; OK once a copy failed. */
+internal fun copySavesRows(s: Screen.CopySaves): List<String> = if (s.error != null) listOf("OK") else listOf("Copy", "Keep separate")
 
 /** A Permissions page row. */
 internal enum class PermissionRow { ALL_FILES, NOTIFICATIONS, CONTINUE }

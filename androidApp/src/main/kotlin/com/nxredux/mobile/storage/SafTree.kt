@@ -172,9 +172,12 @@ class SafTree(private val resolver: ContentResolver) {
      * False when tree root [dir]'s own document row is gone (a deleted folder lists as empty); one query, for roots only.
      * Provider errors propagate.
      */
-    fun rootExists(dir: Uri): Boolean {
+    fun rootExists(dir: Uri): Boolean = rootFound(dir) ?: false
+
+    /** [rootExists], with null when the provider gave no answer (no cursor): not proof the folder is gone. */
+    fun rootFound(dir: Uri): Boolean? {
         val uri = DocumentsContract.buildDocumentUriUsingTree(treeOf(dir), docIdOf(dir))
-        return resolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)?.use { it.moveToFirst() } ?: false
+        return resolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)?.use { it.moveToFirst() }
     }
 
     /** True when [uri] addresses its tree's root document. */

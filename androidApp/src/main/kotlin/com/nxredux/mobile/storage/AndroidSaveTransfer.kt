@@ -10,7 +10,6 @@ import com.nxredux.mobile.library.LibraryIndex
 import com.nxredux.mobile.library.LibraryIndexCodec
 import com.nxredux.mobile.runner.ContentRef
 import com.nxredux.mobile.runner.CoreRegistry
-import com.nxredux.mobile.runner.NxStorage
 import com.nxredux.mobile.settings.AndroidAppSettings
 import com.nxredux.mobile.settings.ImportResult
 import com.nxredux.mobile.settings.ImportSource
@@ -60,11 +59,12 @@ class AndroidSaveTransfer(
             work(report) {
                 // The list-style picker's target (the user agreed to replace an existing one): written through a part.
                 val exportTag = exportTagMapper()
-                if (FileRefs.isFile(ref)) return@work SaveExport.writeFile(NxStorage.root(app), File(FileRefs.path(ref)), exportTag).text()
+                val root = DataRoot.settled(app)   // on the work thread: after a move still running, one whole set
+                if (FileRefs.isFile(ref)) return@work SaveExport.writeFile(root, File(FileRefs.path(ref)), exportTag).text()
                 val uri = Uri.parse(ref.value)
                 val summary = try {
                     val out = resolver.openOutputStream(uri, "wt") ?: error("cannot write the zip")
-                    out.use { SaveExport.write(NxStorage.root(app), it, exportTag) }
+                    out.use { SaveExport.write(root, it, exportTag) }
                 } catch (e: Throwable) {
                     deleteDocument(uri)   // never leave a half zip
                     throw e
@@ -131,11 +131,14 @@ class AndroidSaveTransfer(
         importsRunning.incrementAndGet()
         main.post { progress("Working…") }
         executor.execute {
+            DataRoot.useBegin()   // an import writes saves: no data move starts under it (begun in the task, so always ended)
             val result = try {
                 block()
             } catch (e: Throwable) {
                 NxLog.e(TAG, "save import failed", e)
                 ImportResult.Message(failure(e))
+            } finally {
+                DataRoot.useEnd(app)
             }
             main.post { importsRunning.decrementAndGet(); done(result) }
         }
@@ -159,12 +162,15 @@ class AndroidSaveTransfer(
         return { x -> CoreRegistry.consoleOf(x)?.let { CoreRegistry.handheldTag(it.defaultTagFor(defaults[it.id])) } ?: x }
     }
 
-    /** An importer writing console-folder saves in the phone's save naming, matching loose saves to the library's games. */
-    private fun importer() = SaveImporter(NxStorage.root(app), naming = AndroidAppSettings(app).saveNaming, matcher = SaveMatcher(libraryIndex()))
+    /**
+     * An importer writing console-folder saves in the phone's save naming, matching loose saves to the library's games,
+     * into the data root once a move still running is done (called on the work thread).
+     */
+    private fun importer() = SaveImporter(DataRoot.settled(app), naming = AndroidAppSettings(app).saveNaming, matcher = SaveMatcher(libraryIndex()))
 
     /** The library's index, read off the main thread; null when there is none (every loose save is then unmatched). */
     private fun libraryIndex(): LibraryIndex? = runCatching {
-        File(NxStorage.root(app), ".userdata/android/library.json").takeIf { it.isFile }?.readText()?.let(LibraryIndexCodec::decode)
+        File(DataRoot.private(app), ".userdata/android/library.json").takeIf { it.isFile }?.readText()?.let(LibraryIndexCodec::decode)
     }.getOrNull()
 
     /** True when the stream starts like a zip (`PK\3\4`, or `PK\5\6` for an empty one). */
