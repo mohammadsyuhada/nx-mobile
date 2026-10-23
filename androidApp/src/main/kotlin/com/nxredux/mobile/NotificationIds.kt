@@ -1,7 +1,7 @@
 package com.nxredux.mobile
 
 /**
- * Every foreground service's notification id, in one place. Android keeps one notification record per (package, id):
+ * Every notification id (the foreground services' and the update notice), in one place. Android keeps one notification record per (package, id):
  * two services sharing an id overwrite each other's text and progress, and the first to stop removes the other's
  * notification (and its Pause / Cancel actions) while it still runs in the foreground. A new service takes the next
  * free id here, never a private constant of its own.
@@ -19,6 +19,9 @@ object NotificationIds {
     /** The in-app update's download and install wait (the github flavor's com.nxredux.mobile.update.AppUpdateService). */
     const val APP_UPDATE = 4104
 
+    /** The one-shot "NX Redux updated to <version>" notice after a self-update (the github flavor's com.nxredux.mobile.update.AppUpdatedReceiver). */
+    const val APP_UPDATED = 4105
+
     /** All of them, for the test that keeps them distinct. */
-    val all: List<Int> = listOf(SCRAPE, RA_DOWNLOAD, DEVICE_SYNC, APP_UPDATE)
+    val all: List<Int> = listOf(SCRAPE, RA_DOWNLOAD, DEVICE_SYNC, APP_UPDATE, APP_UPDATED)
 }

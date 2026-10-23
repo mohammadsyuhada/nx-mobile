@@ -8,4 +8,7 @@ object AppUpdates {
     fun get(context: Context): UpdateController? = null
 
     fun current(): UpdateController? = null
+
+    @Suppress("UNUSED_PARAMETER")
+    fun onAppOpened(context: Context) = Unit
 }

@@ -14,5 +14,14 @@
         <receiver
             android:name="com.nxredux.mobile.update.UpdateInstallReceiver"
             android:exported="false" />
+        <!-- After a self-update Android kills the app without reopening it. MY_PACKAGE_REPLACED is a protected broadcast
+             sent only to the replaced package, so exporting the receiver lets the system reach it and nothing else. -->
+        <receiver
+            android:name="com.nxredux.mobile.update.AppUpdatedReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

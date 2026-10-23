@@ -616,6 +616,7 @@ class MainActivity : ComponentActivity(), FolderPicker {
 
     override fun onStart() {
         super.onStart()
+        AppUpdates.onAppOpened(this)   // the "updated" notice, if a self-update left one
         if (handOverToHome()) return   // made home (role dialog, Android's settings) while this drawer instance ran
         inputManager?.registerInputDeviceListener(inputDeviceListener, null)
         // API 26-28: back from Android's home settings without picking this app, the HOME alias goes off again.

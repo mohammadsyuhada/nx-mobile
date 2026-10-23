@@ -21,4 +21,7 @@ object AppUpdates {
     }
 
     fun current(): UpdateController? = instance
+
+    /** The app is in front: the "updated" notice ([AppUpdatedReceiver]) has done its job. */
+    fun onAppOpened(context: Context) = AppUpdatedReceiver.cancelNotice(context)
 }

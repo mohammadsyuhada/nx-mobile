@@ -14,6 +14,10 @@ import com.nxredux.mobile.NotificationIds
 class AppUpdateService : KeepAliveService<String>() {
     companion object {
         private const val TITLE = "NX Redux update"
+        /** Shared with [AppUpdatedReceiver]'s notice, which may post before this service ever made the channel. */
+        const val CHANNEL_ID = "app-update"
+        const val CHANNEL_NAME = "App update"
+        const val CHANNEL_DESCRIPTION = "Shows an app update download"
         private val state = KeepAlive(AppUpdateService::class.java, "NxUpdateService", "update")
 
         /** The controller side ([UpdatePlatform.keepAlive]): start / update on [active], stop otherwise. Any thread. */
@@ -22,7 +26,7 @@ class AppUpdateService : KeepAliveService<String>() {
 
     override val keepAlive get() = state
     override val notificationId = NotificationIds.APP_UPDATE
-    override val channel = Channel("app-update", "App update", "Shows an app update download")
+    override val channel = Channel(CHANNEL_ID, CHANNEL_NAME, CHANNEL_DESCRIPTION)
     override val actions = listOf(Action("Cancel", "com.nxredux.mobile.update.CANCEL", 1) { AppUpdates.current()?.cancel() })
 
     /** Stop the download or the wait (as Cancel) and the service. */
