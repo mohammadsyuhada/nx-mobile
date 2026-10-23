@@ -1,0 +1,39 @@
+# license: modifies PPSSPP (https://github.com/hrydgard/ppsspp), GPL-2.0-or-later (LICENSE.TXT); this patch is distributed under the same license.
+# retro_cheat_set kept the cheat file's "_S <id>" header as a cheat slot and wrote it back as
+# "_C_S <id>", one more each call, so cheat N landed in cheat N-1's slot: after a reset and
+# cheats 0..N-1, only the last one was left. Only "_C0"/"_C1" pieces are cheats now, at their index.
+diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
+--- a/libretro/libretro.cpp
++++ b/libretro/libretro.cpp
+@@ -1877,7 +1877,19 @@
+       fclose(inFile);
+    }
+    std::string existing_cheats=ReplaceAll(cheat_content, std::string("\n_C"), std::string("|"));
+-   SplitString(existing_cheats, '|', cheats);
++   std::vector<std::string> pieces;
++   SplitString(existing_cheats, '|', pieces);
++   // nx-redux: only "_C<0|1> ..." pieces are cheats. The first piece is the header
++   // ("_S <id>", or CreateCheatFile's BOM), and keeping it as a cheat wrote it back
++   // as "_C_S <id>" and shifted every slot, so each cheat replaced the one before.
++   // Their trailing newlines go too: the write adds one, so each rewrite grew them by a line.
++   for (size_t i = 1; i < pieces.size(); i++) {
++      std::string &piece = pieces[i];
++      while (!piece.empty() && (piece.back() == '\n' || piece.back() == '\r'))
++         piece.pop_back();
++      if (!piece.empty() && (piece[0] == '0' || piece[0] == '1'))
++         cheats.push_back(piece);
++   }
+ 
+    // Generate Cheat String
+    std::stringstream cheat("");
+@@ -1901,8 +1913,8 @@
+    }
+ 
+    // Add or Replace the Cheat
+-   if (index + 1 < cheats.size()) {
+-      cheats[index + 1]=cheat.str();
++   if (index < cheats.size()) {
++      cheats[index]=cheat.str();
+    } else {
+       cheats.push_back(cheat.str());
+    }

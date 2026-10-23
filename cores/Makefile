@@ -179,7 +179,8 @@ ppsspp_LICENSE = LICENSE.TXT ffmpeg/LICENSE.md
 # patches/ppsspp.patch keeps a thread's own sigaltstack in the exception handler: upstream
 # restores the boot loader thread's stack on the unload thread, which kills the app later (see the patch).
 # patches/ppsspp/*.patch (nx-redux's numbered patches) applies after it: 0008 makes FixPathCase skip the "PSP/" that
-# STRIP_PSP removes, so saves work on case-sensitive storage (Saves/PSP is the memory stick).
+# STRIP_PSP removes, so saves work on case-sensitive storage (Saves/PSP is the memory stick). 0011 keeps every cheat
+# retro_cheat_set is given: it took the cheat file's header for a slot, so each cheat replaced the one before.
 ppsspp_KIND = cmake
 ppsspp_BUILD_PATH = .
 ppsspp_CMAKE_TARGET = ppsspp_libretro
