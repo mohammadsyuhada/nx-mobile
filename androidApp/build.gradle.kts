@@ -60,7 +60,7 @@ val releaseStoreFile: String = secret("ANDROID_KEYSTORE_FILE", "release.storeFil
 
 // The in-app updater's feed (BuildConfig.UPDATE_FEED): the latest GitHub release. Only a debug build can point elsewhere,
 // -PnxUpdateFeed=<url> (a local server for testing the update flow); a release build always asks GitHub.
-val githubUpdateFeed = "https://api.github.com/repos/mohammadsyuhada/nx-mobile/releases/latest"
+val githubUpdateFeed = "https://api.github.com/repos/nx-redux/nx-mobile/releases/latest"
 
 android {
     namespace = "com.nxredux.mobile"

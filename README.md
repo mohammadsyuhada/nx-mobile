@@ -10,7 +10,7 @@ NX Redux for Android phones, tablets and Android handhelds. The same pick-up-and
 - Android 8.0 or later, on a 64-bit ARM (arm64) device.
 - Your own games and, for the consoles that need them, BIOS files. The app ships none.
 
-Download the APK from [Releases](https://github.com/mohammadsyuhada/nx-mobile/releases) and see [Getting Started](https://nxredux.com/mobile/getting-started/).
+Download the APK from [Releases](https://github.com/nx-redux/nx-mobile/releases) and see [Getting Started](https://nxredux.com/mobile/getting-started/).
 
 ## What's in it
 
