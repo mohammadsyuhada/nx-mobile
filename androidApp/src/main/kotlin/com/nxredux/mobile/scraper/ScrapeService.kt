@@ -33,6 +33,9 @@ class ScrapeService : KeepAliveService<String>() {
 
         /** The [ScrapeRunner] side: start / update on [active], stop otherwise. Any thread. */
         fun update(context: Context, active: Boolean, text: String?) = state.update(context, active, text)
+
+        /** A fetch is keeping the service alive (the updater's install gate). Main thread only. */
+        val active: Boolean get() = state.active
     }
 
     override val keepAlive get() = state

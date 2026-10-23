@@ -20,4 +20,7 @@ object CheatDbService {
 
     /** Re-reads the manifest when a controller exists (after [CheatsRoot] moved it into the home folder). */
     fun refreshIfStarted() { instance?.refresh() }
+
+    /** The cheat database is checking, downloading, installing or removing (the updater's install gate). Main thread only. */
+    fun busy(): Boolean = instance?.busy == true
 }

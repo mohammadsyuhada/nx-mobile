@@ -14,6 +14,11 @@ on:
           - patch
           - minor
           - major
+      summary:
+        description: "first paragraph of the release notes"
+        required: false
+        type: string
+        default: ""
 
 # Read-only by default; build (attestation) and release (tag, release) get only what they need. Third-party actions
 # are pinned to commit SHAs: the build job holds the signing keystore.
@@ -238,7 +243,7 @@ jobs:
           echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
       - name: Test
-        run: ./gradlew :shared:testAndroidHostTest :libretrodroid:testDebugUnitTest :androidApp:testDebugUnitTest
+        run: ./gradlew :shared:testAndroidHostTest :libretrodroid:testDebugUnitTest :androidApp:testGithubDebugUnitTest :androidApp:compilePlayReleaseKotlin
 
       - name: Build
         env:
@@ -250,11 +255,11 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew :androidApp:assembleRelease -PnxVersionName="${BUILD_TAG#v}"
+        run: ./gradlew :androidApp:assembleGithubRelease -PnxVersionName="${BUILD_TAG#v}"
 
       - name: Package
         run: |
-          APK=androidApp/build/outputs/apk/release/androidApp-release.apk
+          APK=androidApp/build/outputs/apk/github/release/androidApp-github-release.apk
           test -f "$APK" || { echo "no signed APK at $APK" >&2; exit 1; }
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK"
           # The APK is zipaligned (zipalign -P needs build-tools 35+). With useLegacyPackaging every .so is stored deflated,
@@ -322,6 +327,7 @@ jobs:
           tag_name: ${{ needs.prepare.outputs.next-tag }}
           make_latest: "true"
           body: |
+            ${{ inputs.summary }}
 
             Side-load NXReduxMobile-${{ needs.prepare.outputs.next-tag }}.apk on an arm64 Android 8.0+ phone (allow installs from unknown sources for your browser or file manager). Updates install over the previous release.
             If you have any questions, please open an issue in the repository.

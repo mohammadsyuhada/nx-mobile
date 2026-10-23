@@ -84,6 +84,7 @@ import com.nxredux.mobile.storage.AndroidRomsSources
 import com.nxredux.mobile.storage.SafTree
 import com.nxredux.mobile.sync.DeviceSyncs
 import com.nxredux.mobile.tools.CheatDbService
+import com.nxredux.mobile.update.AppUpdates
 import com.nxredux.mobile.ui.App
 import com.nxredux.mobile.ui.MenuTopScreen
 import com.nxredux.mobile.ui.AppDeps
@@ -372,6 +373,7 @@ class MainActivity : ComponentActivity(), FolderPicker {
                 padEditor = { request -> padLayoutEditor.launch(PadLayoutActivity.intent(this, request)) },
                 saveTransfer = saveTransfer,
                 deviceSync = DeviceSyncs.get(this),
+                updater = AppUpdates.get(this),
                 chdSectors = LibchdrSectors(contentResolver),
                 allFilesAccess = allFiles,
                 notificationAccess = notificationAccess,
@@ -614,6 +616,7 @@ class MainActivity : ComponentActivity(), FolderPicker {
 
     override fun onStart() {
         super.onStart()
+        AppUpdates.onAppOpened(this)   // the "updated" notice, if a self-update left one
         if (handOverToHome()) return   // made home (role dialog, Android's settings) while this drawer instance ran
         inputManager?.registerInputDeviceListener(inputDeviceListener, null)
         // API 26-28: back from Android's home settings without picking this app, the HOME alias goes off again.
@@ -690,6 +693,7 @@ class MainActivity : ComponentActivity(), FolderPicker {
         artworkHost?.let { ArtworkService.detach(it) }; artworkHost = null
         if (DeviceSyncs.onNeedNotificationPermission === syncNotifications) DeviceSyncs.onNeedNotificationPermission = null
         UsbCables.get(this).let { c -> if (c.askConsent === usbConsent) c.askConsent = {} }
+        if (::state.isInitialized) state.releaseUpdater()   // the updater outlives this activity; a newer instance's hook stays
         scope.cancel(); super.onDestroy()
     }
 

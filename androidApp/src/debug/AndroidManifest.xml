@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Debug builds only: the adb test hooks (NxTestReceiver). Exported so `adb shell am broadcast -n` reaches it. -->
+<!-- Debug builds only: the adb test hooks (NxTestReceiver), exported so `adb shell am broadcast -n` reaches it; and
+     cleartext to localhost, for testing the updater against a local feed (-PnxUpdateFeed). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application>
+    <application android:networkSecurityConfig="@xml/network_security_config">
         <receiver
             android:name="com.nxredux.mobile.test.NxTestReceiver"
             android:exported="true" />

@@ -8,10 +8,8 @@ This module is a fork of [LibretroDroid](https://github.com/Swordfish90/Libretro
 [Lemuroid](https://github.com/Swordfish90/Lemuroid). The runner core, its renderers, audio, input, save states and
 the Kotlin `GLRetroView` API are his work; nx-mobile builds on top of them.
 
-The fork started at upstream commit `8835c30` (after release `0.14.0`) and does not track upstream after that. Its
-development history, including every upstream commit with its original author, is kept in
-[mohammadsyuhada/nx-libretrodroid](https://github.com/mohammadsyuhada/nx-libretrodroid). Upstream copyright headers
-are kept unchanged in the source. Like LibretroDroid, it is licensed under the GPL-3.0.
+The fork started at upstream commit `8835c30` (after release `0.14.0`) and does not track upstream after that. It
+now lives only in this repository. Upstream copyright headers are kept unchanged in the source. Like LibretroDroid, it is licensed under the GPL-3.0.
 
 Third-party code, as git submodules under `src/main/cpp/`: [Oboe](https://github.com/google/oboe) (Apache-2.0),
 [libretro-common](https://github.com/libretro/libretro-common) (MIT), [rcheevos](https://github.com/RetroAchievements/rcheevos)

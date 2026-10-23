@@ -33,6 +33,9 @@ class RaDownloadService : KeepAliveService<RaState.Prefetching>() {
 
         /** Start / update while [state] is a download, stop otherwise. Any thread. */
         fun update(context: Context, state: RaState.Prefetching?) = this.state.update(context, state != null, state)
+
+        /** A download is keeping the service alive (the updater's install gate). Main thread only. */
+        val active: Boolean get() = state.active
     }
 
     override val keepAlive get() = state
