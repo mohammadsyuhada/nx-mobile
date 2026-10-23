@@ -47,7 +47,7 @@ internal val NxModalScrimColor = Color(0xB3000000)
  * a footer that follows [LocalFooterMode]: tappable key hints when a pad or controller exists, real buttons otherwise
  * (never for a MENU). A tap on the scrim sends B (A for INFO), unless [scrimDismisses] is false (it then only blocks
  * the page below). Every hint or button tap is delivered through [onButton], exactly as a pad press would be.
- * A card taller than the room scrolls by touch; with [scrollSteps] (the host's d-pad presses for it, -1 up and +1 down)
+ * A card taller than the room scrolls, its bottom edge fading while there is more ([nxScrollFade]); with [scrollSteps] (the host's d-pad presses for it, -1 up and +1 down)
  * the key hints also lead with a d-pad Scroll hint while it overflows, whose tap steps down (back to the top at the end).
  */
 @Composable
@@ -86,7 +86,7 @@ fun NxModal(
                 .padding(start = 8.dp, top = 8.dp, end = 8.dp, bottom = if (footer is ModalFooter.None) 8.dp else 0.dp),
         ) {
             // The card scrolls and the footer stays pinned, so a landscape keyboard leaving ~125dp still shows the buttons.
-            Column(Modifier.weight(1f, fill = false).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(NxModalCardColor).verticalScroll(scroll).padding(16.dp)) {
+            Column(Modifier.weight(1f, fill = false).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(NxModalCardColor).nxScrollFade(scroll).verticalScroll(scroll).padding(16.dp)) {
                 if (caption != null) {
                     Text(caption, color = colors.hint, fontFamily = LocalNxFont.current, fontWeight = FontWeight.SemiBold, fontSize = NxTextSizes.modalSmall * nxTextScale(), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(8.dp))
