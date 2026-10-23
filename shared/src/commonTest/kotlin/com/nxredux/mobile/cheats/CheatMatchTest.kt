@@ -90,8 +90,53 @@ class CheatMatchTest {
     @Test fun fewer_extra_qualifiers_win_then_the_smallest_key() {
         val files = listOf("Tetris (World) (Rev 1).cht", "Tetris (World).cht", "Tetris (Japan).cht")
         assertEquals(listOf("Tetris (World).cht"), CheatMatch.select("Tetris", "Tetris (World).gb", files))
-        // Same overlap, same extras: the lexically smaller key ("japan" < "world") wins.
-        assertEquals(listOf("Tetris (Japan).cht"), CheatMatch.select("Tetris", "Tetris.gb", listOf("Tetris (World).cht", "Tetris (Japan).cht")))
+        // Same overlap, same extras, no preferred region: the lexically smaller key ("france" < "japan") wins.
+        assertEquals(listOf("Tetris (France).cht"), CheatMatch.select("Tetris", "Tetris.gb", listOf("Tetris (Japan).cht", "Tetris (France).cht")))
+    }
+
+    @Test fun a_region_less_rom_takes_usa_then_world_then_europe() {
+        assertEquals(listOf("Tetris (World).cht"), CheatMatch.select("Tetris", "Tetris.gb", listOf("Tetris (World).cht", "Tetris (Japan).cht")))
+        val files = listOf("Game (Europe).cht", "Game (Japan).cht", "Game (USA).cht", "Game (World).cht")
+        assertEquals(listOf("Game (USA).cht"), CheatMatch.select("Game", "Game.md", files))
+        assertEquals(listOf("Game (Europe).cht"), CheatMatch.select("Game", "Game.md", listOf("Game (Japan).cht", "Game (Europe).cht")))
+        // The ROM's own region still comes first.
+        assertEquals(listOf("Game (Japan).cht"), CheatMatch.select("Game", "Game (Japan).md", files))
+    }
+
+    @Test fun a_source_only_file_loses_to_a_regional_one_for_a_region_less_rom() {
+        // The database's `(Rumbles)` packs have no region, so they used to win as "no extra qualifiers".
+        val files = listOf(
+            "Contra III - The Alien Wars (USA) (Action Replay).cht", "Contra III - The Alien Wars (USA).cht",
+            "Contra Iii - The Alien Wars (Rumbles).cht",
+        )
+        assertEquals(
+            listOf("Contra III - The Alien Wars (USA).cht", "Contra III - The Alien Wars (USA) (Action Replay).cht"),
+            CheatMatch.select("Contra III - The Alien Wars", "Contra III - The Alien Wars.sfc", files),
+        )
+        // Alone, it still loads; a plain region-less file still takes it in.
+        val rumbles = listOf("Comix Zone (Rumbles).cht")
+        assertEquals(rumbles, CheatMatch.select("Comix Zone", "Comix Zone.md", rumbles))
+        assertEquals(
+            listOf("Comix Zone.cht", "Comix Zone (Rumbles).cht"),
+            CheatMatch.select("Comix Zone", "Comix Zone.md", listOf("Comix Zone (USA).cht", "Comix Zone (Rumbles).cht", "Comix Zone.cht")),
+        )
+        // A ROM with a region keeps its region's sourced file over another region's plain one.
+        val jp = listOf("Game (Japan) (Action Replay).cht", "Game (USA).cht")
+        assertEquals(listOf("Game (Japan) (Action Replay).cht"), CheatMatch.select("Game", "Game (Japan).md", jp))
+    }
+
+    @Test fun stems_that_differ_only_in_spacing_or_punctuation_match_when_none_is_exact() {
+        // Dreamcast: the ROM set and the database spell names differently.
+        val dc = listOf("Soul Calibur.cht", "Soul Fighter.cht", "Marvel Vs. Capcom 2.cht", "Marvel Vs. Capcom.cht")
+        assertEquals(listOf("Soul Calibur.cht"), CheatMatch.select("Soulcalibur", "Soulcalibur (USA).chd", dc))
+        assertEquals(listOf("Marvel Vs. Capcom 2.cht"), CheatMatch.select("Marvel vs Capcom 2", "Marvel vs Capcom 2.chd", dc))
+        assertEquals(listOf("Chu Chu Rocket.cht"), CheatMatch.select("ChuChu Rocket", "ChuChu Rocket.chd", listOf("Chu Chu Rocket.cht")))
+        assertEquals(listOf("Quake III Arena.cht"), CheatMatch.select("Quake III - Arena", "Quake III - Arena.chd", listOf("Quake III Arena.cht")))
+        // An exact stem wins: the loose one is only a fallback.
+        val mm = listOf("MegaMan X (USA).cht", "Mega Man X (Japan).cht")
+        assertEquals(listOf("Mega Man X (Japan).cht"), CheatMatch.select("Mega Man X", "Mega Man X (USA).sfc", mm))
+        // Letters and digits still have to agree.
+        assertEquals(emptyList(), CheatMatch.select("Marvel vs Capcom", "Marvel vs Capcom 2.chd", listOf("Marvel Vs. Capcom 2.cht")))
     }
 
     @Test fun group_key_tie_break_matches_the_c_code() {
