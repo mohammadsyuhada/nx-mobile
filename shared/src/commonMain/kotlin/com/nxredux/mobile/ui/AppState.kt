@@ -1919,6 +1919,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (firstSetup || deps.settings.onboardingDone != false || deps.settings.onboardingStep != FOLDER_STEPS) return false
         val home = home() ?: return false
         firstSetup = true
+        if (deps.settings.treeRef == null && home == deps.homes?.media) mediaHomeTaken = true   // a restart on the media home: no pick behind it
         showHomePage(home)
         return true
     }

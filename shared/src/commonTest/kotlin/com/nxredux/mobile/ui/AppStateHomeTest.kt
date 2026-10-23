@@ -318,4 +318,25 @@ class AppStateHomeTest {
         st.load()
         assertEquals("Your home folder can't be found. Using Android/media/com.nxredux.mobile.dev/ until it's back. Saves made there stay there.", st.notice.value)
     }
+
+    @Test fun aRestartOnTheMediaHomeStillSkipsThePicker() = runTest {
+        for (games in listOf(true, false)) {
+            val source: RomsSource = if (games) Listing(media.value) else FakeRomsSource(mapOf(media.value to emptyList()))
+            val (first, settings) = noAccessSetup(source)
+            first.skipAllFiles()                                   // the folder steps are under way, then the app closes
+            // A new process: the same settings and folder, a fresh AppState.
+            val access = FakeAllFilesAccess(declared = true, isGranted = false)
+            val st = state(settings, source, Homes(media, media), Picker(), access)
+            val seen = screens(st)
+            st.load()
+            if (games) assertEquals(Recents.HOME, assertIs<Screen.FolderSummary>(st.screen.value).extraId)
+            else assertIs<Screen.AddFirstExtra>(st.screen.value)
+            assertEquals(gamesNote, st.setupNote())
+            st.onButton(NxButton.B)
+            assertIs<Screen.PermissionsStep>(st.screen.value)
+            st.skipAllFiles()
+            if (games) assertIs<Screen.FolderSummary>(st.screen.value) else assertIs<Screen.AddFirstExtra>(st.screen.value)
+            assertTrue(seen.none { it is Screen.PickFolder }, "games=$games")
+        }
+    }
 }
