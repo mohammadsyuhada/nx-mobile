@@ -87,7 +87,8 @@ class StorageUpgradeTest {
         override fun launch(session: GameSession, onStarted: () -> Unit) = onStarted()
     }
     private class Picker : FolderPicker {
-        override fun pickHome() {}
+        var homePicks = 0
+        override fun pickHome() { homePicks++ }
         override fun pickExtra() {}
         override fun forget(ref: ContentRef) {}
     }
@@ -98,7 +99,10 @@ class StorageUpgradeTest {
     }
 
     /** Records every call in order; [moves] false fails the move; [gone]: the old home is gone; [unreadable]: adoption throws. */
-    private class Platform(var done: Boolean = false, var moves: Boolean = true, val gone: Boolean = false, val unreadable: Boolean = false) : StorageUpgradePlatform {
+    private class Platform(
+        var done: Boolean = false, var moves: Boolean = true, val gone: Boolean = false, val unreadable: Boolean = false,
+        var waiting: Boolean = false, val stuck: Boolean = false,
+    ) : StorageUpgradePlatform {
         val calls = ArrayList<String>()
         override fun isDone() = done
         override suspend fun adoptPickerHome(old: ContentRef, into: ContentRef?): ExtraFolder? {
@@ -109,6 +113,13 @@ class StorageUpgradeTest {
         }
         override suspend fun moveInto(home: ContentRef): Boolean { calls += "move ${home.value}"; return moves }
         override fun markDone() { calls += "mark"; done = true }
+        override fun markIfEmpty() { calls += "markIfEmpty"; done = true }
+        override fun startQuietMove() { calls += "quiet" }
+        override fun quietMoveStuck() = stuck
+        override fun isWaiting() = waiting
+        override fun setWaiting() { calls += "wait"; waiting = true }
+        override suspend fun restoreHomeKeys(extraId: String): Boolean { calls += "restore $extraId"; return true }
+        override suspend fun copySaves(from: ContentRef, to: ContentRef): Boolean { calls += "copy ${from.value} to ${to.value}"; return true }
     }
 
     private val media = FileRefs.of("/storage/emulated/0/Android/media/com.nxredux.mobile.dev")
@@ -123,13 +134,14 @@ class StorageUpgradeTest {
         }.toMap(),
     )
 
-    private class Rig(val state: AppState, val settings: MemorySettings, val access: FakeAllFilesAccess, val platform: Platform, val seen: List<Screen>)
+    private class Rig(val state: AppState, val settings: MemorySettings, val access: FakeAllFilesAccess, val platform: Platform, val seen: List<Screen>, val picker: Picker)
 
     private fun TestScope.rig(saved: ContentRef?, granted: Boolean = false, dirs: Set<String> = emptySet(), platform: Platform = Platform(), settings: MemorySettings = MemorySettings(saved)): Rig {
         val access = FakeAllFilesAccess(declared = true, isGranted = granted)
+        val picker = Picker()
         val state = AppState(
             AppDeps(
-                settings, source, Runner(), Picker(), compute = UnconfinedTestDispatcher(testScheduler), allFilesAccess = access,
+                settings, source, Runner(), picker, compute = UnconfinedTestDispatcher(testScheduler), allFilesAccess = access,
                 localFiles = FakeLocalFiles(dirs = dirs.toList()), homes = Homes(settings, access, dirs + FileRefs.path(media), media),
                 storageUpgrade = platform,
             ),
@@ -137,7 +149,7 @@ class StorageUpgradeTest {
         )
         val seen = ArrayList<Screen>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { state.screen.collect { seen += it } }
-        return Rig(state, settings, access, platform, seen)
+        return Rig(state, settings, access, platform, seen, picker)
     }
 
     private fun AppState.choose(label: String) {
@@ -204,7 +216,7 @@ class StorageUpgradeTest {
         val r = rig(fileHome, granted = true, dirs = setOf(FileRefs.path(fileHome)))
         r.state.load()
         assertTrue(r.seen.none { it is Screen.StorageUpgrade })
-        assertEquals(emptyList(), r.platform.calls)
+        assertEquals(listOf("quiet"), r.platform.calls)            // the load starts the background move
         assertIs<Screen.Systems>(r.state.screen.value)
     }
 
@@ -221,7 +233,7 @@ class StorageUpgradeTest {
         assertEquals(OnboardingStep.DONE, assertIs<Screen.Onboarding>(r.state.screen.value).step)
         r.state.onButton(NxButton.A)                               // Start
         assertEquals(true, settings.onboardingDone)
-        assertEquals(listOf("mark"), r.platform.calls)
+        assertEquals(listOf("markIfEmpty"), r.platform.calls)       // marked only when nothing waits to move
     }
 
     // A failed move marks nothing: the data stays private, the page says so, and the screen comes back on the next start.
@@ -267,5 +279,109 @@ class StorageUpgradeTest {
         assertTrue(r.state.back())
         assertEquals(Stage.EXPLAIN, assertIs<Screen.StorageUpgrade>(r.state.screen.value).stage)
         assertEquals(emptyList(), r.platform.calls)
+    }
+
+    // A file home with access off is no Case B: one EXPLAIN; Not now moves nothing to the media home and marks nothing.
+    @Test fun fileHomeWithoutAccessNotNowWaits() = runTest {
+        val r = rig(fileHome, dirs = setOf(FileRefs.path(fileHome)))
+        r.state.load()
+        assertEquals(Stage.EXPLAIN, assertIs<Screen.StorageUpgrade>(r.state.screen.value).stage)
+        r.state.choose("Not now")
+        assertEquals(listOf("wait", "quiet"), r.platform.calls)    // no adopt, no move, no mark; the quiet move waits for access
+        assertEquals(fileHome, r.settings.treeRef)
+        assertIs<Screen.Systems>(r.state.screen.value)
+        r.state.load()
+        assertEquals(1, r.seen.count { it is Screen.StorageUpgrade })   // once
+    }
+
+    @Test fun fileHomeWithoutAccessAllowMovesIntoIt() = runTest {
+        val r = rig(fileHome, dirs = setOf(FileRefs.path(fileHome)))
+        r.state.load()
+        r.state.choose("Allow")
+        assertEquals(1, r.access.opened)
+        r.access.isGranted = true
+        r.state.onAllFilesAccessChanged()
+        assertEquals(listOf("move ${fileHome.value}", "mark"), r.platform.calls)
+        assertEquals(fileHome, r.settings.treeRef)
+        assertIs<Screen.Systems>(r.state.screen.value)
+    }
+
+    // After a failed decline the old home's Roms is an extra (converted to its path): picking the old home takes it back.
+    @Test fun pickingTheOldHomeTakesBackItsAdoptedExtra() = runTest {
+        val settings = MemorySettings(null).apply { extraFolders = listOf(ExtraFolder("Roms-old", FileRefs.of(FileRefs.path(fileHome) + "/Roms"))) }
+        val r = rig(null, granted = true, settings = settings)
+        r.state.load()
+        r.state.choose("Allow")
+        assertEquals(Stage.PICK, assertIs<Screen.StorageUpgrade>(r.state.screen.value).stage)
+        r.state.storageUpgradePicked(fileHome)
+        assertEquals(listOf("restore Roms-old", "move ${fileHome.value}", "mark"), r.platform.calls)
+        assertEquals(emptyList(), r.settings.extraFolders)
+        assertEquals(fileHome, r.settings.treeRef)
+    }
+
+    // Until the data has moved, the Saves note and the library notice say the saves are still in the app.
+    @Test fun savesNoteSaysInsideTheAppUntilMoved() = runTest {
+        val r = rig(fileHome, granted = true, dirs = setOf(FileRefs.path(fileHome)))
+        r.state.load()
+        r.state.openSettings(SettingsSection.SAVES)
+        assertEquals("Saves are still stored inside the app until your home folder is available.", assertIs<Screen.Settings>(r.state.screen.value).banner)
+        r.platform.done = true
+        r.state.openSettings(SettingsSection.SAVES)
+        assertEquals("Saves are in your home folder.", assertIs<Screen.Settings>(r.state.screen.value).banner)
+    }
+
+    @Test fun accessOffNoticeSaysInsideTheAppUntilMoved() = runTest {
+        val r = rig(fileHome, dirs = setOf(FileRefs.path(fileHome)), platform = Platform(waiting = true))
+        r.state.load()
+        assertEquals(
+            "All files access is off. Using Android/media/com.nxredux.mobile.dev/ until it's back on. Saves are still stored inside the app until your home folder is available.",
+            r.state.notice.value,
+        )
+    }
+
+    @Test fun aStuckQuietMoveIsNoticed() = runTest {
+        val r = rig(fileHome, granted = true, dirs = setOf(FileRefs.path(fileHome)), platform = Platform(stuck = true))
+        r.state.load()
+        assertEquals("Saves couldn't move to your home folder. They're still inside the app.", r.state.notice.value)
+    }
+
+    // Without access no picker home is ever saved: the Home folder row asks for All files access instead.
+    @Test fun pickHomeWithoutAccessAsksForAccess() = runTest {
+        val r = rig(null, platform = Platform(done = true))
+        r.state.pickHome()
+        assertEquals(0, r.picker.homePicks)
+        assertEquals(1, r.access.opened)
+    }
+
+    // A home change in Settings offers to copy the saves; Copy copies them, Keep separate doesn't.
+    @Test fun aHomeChangeOffersToCopyTheSaves() = runTest {
+        val r = rig(fileHome, granted = true, dirs = setOf(FileRefs.path(fileHome), FileRefs.path(other)), platform = Platform(done = true))
+        r.state.load()
+        r.state.setHome(other)
+        val offer = assertIs<Screen.CopySaves>(r.state.screen.value)
+        assertEquals(listOf("Copy", "Keep separate"), copySavesRows(offer))
+        r.state.select(0); r.state.onButton(NxButton.A)
+        assertEquals(listOf("copy ${fileHome.value} to ${other.value}"), r.platform.calls)
+        assertEquals(other, r.settings.treeRef)
+    }
+
+    @Test fun keepSeparateCopiesNothing() = runTest {
+        val r = rig(fileHome, granted = true, dirs = setOf(FileRefs.path(fileHome), FileRefs.path(other)), platform = Platform(done = true))
+        r.state.load()
+        r.state.setHome(other)
+        assertIs<Screen.CopySaves>(r.state.screen.value)
+        r.state.select(1); r.state.onButton(NxButton.A)
+        assertEquals(emptyList(), r.platform.calls)
+        assertTrue(r.state.screen.value !is Screen.CopySaves)
+    }
+
+    // From the media home (access just granted), picking a folder offers to copy the media home's saves into it.
+    @Test fun aPickFromTheMediaHomeOffersToCopy() = runTest {
+        val r = rig(null, granted = true, dirs = setOf(FileRefs.path(other)), platform = Platform(done = true))
+        r.state.load()
+        r.state.setHome(other)
+        assertIs<Screen.CopySaves>(r.state.screen.value)
+        r.state.select(0); r.state.onButton(NxButton.A)
+        assertEquals(listOf("copy ${media.value} to ${other.value}"), r.platform.calls)
     }
 }

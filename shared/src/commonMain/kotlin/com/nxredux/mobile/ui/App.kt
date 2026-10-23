@@ -409,6 +409,7 @@ internal fun PageContent(state: AppState, page: Screen, pageSelection: State<Lis
             Screen.PickFolder -> WithIndex(selection) { val (t, b) = remember(s) { state.setupChrome() }; PickFolderScreen(t, b, it, state::select, state::setupStepRow, state::onButton, systemPicker = !state.filePickerOn()) }
             is Screen.Onboarding -> WithIndex(selection) { OnboardingScreen(s, it, state::select, state::onboardingRow, onHint = state::onButton, onDraftUser = state::onboardingDraftUser, onDraftPassword = state::onboardingDraftPassword) }
             is Screen.StorageUpgrade -> WithIndex(selection) { StorageUpgradeScreen(s, it, state::select, state::storageUpgradeRow, state::onButton) }
+            is Screen.CopySaves -> WithIndex(selection) { CopySavesScreen(s, it, state::select, state::copySavesRow, state::onButton) }
             Screen.AddFirstExtra -> WithIndex(selection) { val (t, b) = remember(s) { state.setupChrome() }; AddFirstExtraScreen(t, b, it, state::select, state::setupStepRow, state::onButton, note = remember(s) { state.setupNote() }) }
             is Screen.FolderSummary -> WithIndex(selection) { val (t, _) = remember(s) { state.setupChrome() }; FolderSummaryScreen(s, t, it, state::select, state::setupStepRow, state::onButton, note = remember(s) { state.setupNote() }) }
             is Screen.AndroidGamesStep -> WithIndex(selection) { val (t, b) = remember(s) { state.setupChrome() }; AndroidGamesStepScreen(s.ask, t, b, it, state::select, state::setupStepRow, state::onButton) }

@@ -91,6 +91,18 @@ fun StorageUpgradeScreen(screen: Screen.StorageUpgrade, selected: Int, onSelect:
     SetupStepScreen("Storage", headline, listOf(line), storageUpgradeRows(screen), canGoBack = false, selected, onSelect, onRow, onHint)
 }
 
+/** A home change in Settings ([Screen.CopySaves]): copy the old home's saves into the new one, or keep them separate. */
+@Composable
+fun CopySavesScreen(screen: Screen.CopySaves, selected: Int, onSelect: (Int) -> Unit, onRow: (Int) -> Unit, onHint: (NxButton) -> Unit) {
+    val (headline, line) = when {
+        screen.error != null -> "Saves not copied" to screen.error
+        screen.busy -> "Copying your saves" to "Copying saves, states and settings into the new folder…"
+        else -> "Copy your saves to the new folder?" to
+            "Saves, states and settings in the old folder stay there. Copy puts them in the new folder too; where both have a file, the newer one is kept and the other saved beside it."
+    }
+    SetupStepScreen("Storage", headline, listOf(line), if (screen.busy) emptyList() else copySavesRows(screen), canGoBack = !screen.busy, selected, onSelect, onRow, onHint)
+}
+
 /** First setup, after the home pick: offer an existing ROMs folder as an extra source (scanned in place). [note]: a line above it ([AppState.setupNote]). */
 @Composable
 fun AddFirstExtraScreen(title: String, canGoBack: Boolean, selected: Int, onSelect: (Int) -> Unit, onRow: (Int) -> Unit, onHint: (NxButton) -> Unit, note: String? = null) =

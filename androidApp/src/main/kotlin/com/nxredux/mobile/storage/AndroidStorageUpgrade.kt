@@ -28,6 +28,37 @@ class AndroidStorageUpgrade(context: Context) : StorageUpgradePlatform {
 
     override fun markDone() = DataRoot.markDone(app)
 
+    /** Walks the private root (a new install's: a few files). */
+    override fun markIfEmpty() = DataRoot.markIfEmpty(app)
+
+    override fun startQuietMove() { Thread({ DataRoot.startIfDue(app) }, "data-move-start").start() }
+
+    override fun quietMoveStuck(): Boolean = DataRoot.moveStuck(app)
+
+    override fun isWaiting(): Boolean = File(app.noBackupFilesDir, WAITING).exists()
+
+    override fun setWaiting() {
+        runCatching { File(app.noBackupFilesDir, WAITING).createNewFile() }.onFailure { NxLog.w(TAG, "cannot note the wait", it) }
+    }
+
+    override suspend fun restoreHomeKeys(extraId: String): Boolean = withContext(Dispatchers.IO) {
+        if (!GameTimeService.renamePaths(app) { GameKeys.toHome(it, extraId) }) return@withContext false
+        restoreKeys(DataRoot.private(app), extraId)
+        NxLog.i(TAG, "the extra $extraId is the home's Roms again")
+        true
+    }
+
+    override suspend fun copySaves(from: ContentRef, to: ContentRef): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val copied = DataRoot.copyHome(File(FileRefs.path(from)), File(FileRefs.path(to)))
+            NxLog.i(TAG, "copied $copied files from ${FileRefs.path(from)} into ${FileRefs.path(to)}")
+            true
+        } catch (e: Exception) {
+            NxLog.w(TAG, "copying the saves into ${FileRefs.path(to)} failed", e)
+            false
+        }
+    }
+
     /** [DataRoot.moveNow] into [home] (a file ref); any failure (a copy, a file changed mid-move) is false: nothing marked. */
     override suspend fun moveInto(home: ContentRef): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -47,7 +78,12 @@ class AndroidStorageUpgrade(context: Context) : StorageUpgradePlatform {
         // Gone for good: no grant left, or the folder deleted. Nothing to adopt, so the upgrade goes on without it.
         if (app.contentResolver.persistedUriPermissions.none { it.uri == tree && it.isReadPermission }) return@withContext null
         if (source.isOffline(old)) throw IOException("the old home's storage is not mounted")
-        if (!saf.rootExists(tree)) return@withContext null
+        // No answer from the provider is no proof the folder is gone: it waits for a later start.
+        when (saf.rootFound(tree)) {
+            null -> throw IOException("the old home's provider did not answer")
+            false -> return@withContext null
+            true -> Unit
+        }
         val roms = saf.child(tree, ROMS)?.takeIf { it.isDirectory }?.uri ?: saf.ensureDir(tree, ROMS)
             ?: throw IOException("the old home has no Roms folder")
         val ref = ContentRef(DocumentsContract.buildDocumentUriUsingTree(tree, saf.docIdOf(roms)).toString())
@@ -96,6 +132,8 @@ class AndroidStorageUpgrade(context: Context) : StorageUpgradePlatform {
         private const val ROMS = "Roms"
         private const val BIOS = "Bios"
         private const val COLLECTIONS = "Collections"
+        /** In no-backup storage: a file home's upgrader without access said Not now (the data waits in the app). */
+        private const val WAITING = "storage-move-waiting"
 
         /**
          * Rewrites the game keys of the old home's games (`/Roms/...`) to the extra [extraId]'s in [private]'s recents,
@@ -109,6 +147,19 @@ class AndroidStorageUpgrade(context: Context) : StorageUpgradePlatform {
                 if (!f.isFile) continue
                 val text = f.readText()
                 val next = GameKeys.rewriteLines(text, extraId)
+                if (next == text) continue
+                val mtime = f.lastModified()
+                f.writeAtomically(next.encodeToByteArray())
+                f.setLastModified(mtime)
+            }
+        }
+
+        /** [rewriteKeys] the other way: the extra [extraId]'s keys in [private]'s recents, shortcuts and hidden list back to home keys. */
+        internal fun restoreKeys(private: File, extraId: String) {
+            for (f in listOf(NxPaths.RECENTS, NxPaths.SHORTCUTS, NxPaths.HIDDEN).map { File(private, it) }) {
+                if (!f.isFile) continue
+                val text = f.readText()
+                val next = GameKeys.rewriteLinesToHome(text, extraId)
                 if (next == text) continue
                 val mtime = f.lastModified()
                 f.writeAtomically(next.encodeToByteArray())

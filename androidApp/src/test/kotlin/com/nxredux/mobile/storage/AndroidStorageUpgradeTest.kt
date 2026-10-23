@@ -55,4 +55,17 @@ class AndroidStorageUpgradeTest {
         assertEquals("/Roms/Game Boy (GB)/Kept.gb\n", own.readText())
         assertEquals(1_000_000L, File(private, NxPaths.RECENTS).lastModified())   // the move's clash rule still sees the real time
     }
+
+    // The old home picked again after a failed decline: its adopted extra's keys become home keys again.
+    @Test fun keysRestoredWhenTheOldHomeIsPickedBack() {
+        val private = File(base, "sd")
+        write(private, NxPaths.RECENTS, "/Extra/Roms-1/Game Boy (GB)/Tetris.gb\tTetris\n/Extra/loose-1/Zelda.gba\n")
+        write(private, NxPaths.HIDDEN, "/Extra/Roms-1/Game Boy (GB)/Bad.gb\n")
+
+        AndroidStorageUpgrade.restoreKeys(private, "Roms-1")
+
+        assertEquals("/Roms/Game Boy (GB)/Tetris.gb\tTetris\n/Extra/loose-1/Zelda.gba\n", File(private, NxPaths.RECENTS).readText())
+        assertEquals("/Roms/Game Boy (GB)/Bad.gb\n", File(private, NxPaths.HIDDEN).readText())
+        assertEquals(1_000_000L, File(private, NxPaths.RECENTS).lastModified())
+    }
 }
