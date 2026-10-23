@@ -1,6 +1,6 @@
 # NX Redux Mobile
 
-NX Redux for Android phones, tablets and Android handhelds. The same pick-up-and-play retro launcher as the [NX Redux](https://github.com/mohammadsyuhada/nx-redux) handheld firmware: pick up, pick a game, play. The app uses the handheld's `Roms/`, `Bios/` and `Collections/` folders, so one library works on both, and [Device Sync](https://nxredux.com/mobile/device-sync/) carries games, saves and save states between a phone and an NX Redux handheld.
+NX Redux for Android phones, tablets and Android handhelds. The same pick-up-and-play retro launcher as the [NX Redux](https://github.com/nx-redux/nx-handheld) handheld firmware: pick up, pick a game, play. The app uses the handheld's `Roms/`, `Bios/` and `Collections/` folders, so one library works on both, and [Device Sync](https://nxredux.com/mobile/device-sync/) carries games, saves and save states between a phone and an NX Redux handheld.
 
 📖 **User documentation: [nxredux.com/mobile](https://nxredux.com/mobile/getting-started/)**: setup, guides for every feature, each emulator, and the settings, illustrated with screenshots from the app.
 
@@ -10,7 +10,7 @@ NX Redux for Android phones, tablets and Android handhelds. The same pick-up-and
 - Android 8.0 or later, on a 64-bit ARM (arm64) device.
 - Your own games and, for the consoles that need them, BIOS files. The app ships none.
 
-Download the APK from [Releases](https://github.com/mohammadsyuhada/nx-mobile/releases) and see [Getting Started](https://nxredux.com/mobile/getting-started/).
+Download the APK from [Releases](https://github.com/nx-redux/nx-mobile/releases) and see [Getting Started](https://nxredux.com/mobile/getting-started/).
 
 ## What's in it
 

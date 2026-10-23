@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The github flavor's in-app updater: it downloads the APK of the latest release and hands it to PackageInstaller. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- API 31+: lets the installer of record update its own app without the confirm screen (USER_ACTION_NOT_REQUIRED). -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+
+    <application>
+        <!-- Keeps an update's download alive off screen. -->
+        <service
+            android:name="com.nxredux.mobile.update.AppUpdateService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+        <!-- PackageInstaller's session status (an explicit PendingIntent): the confirm screen, a cancel or a failure. -->
+        <receiver
+            android:name="com.nxredux.mobile.update.UpdateInstallReceiver"
+            android:exported="false" />
+        <!-- The install wait notice's Cancel (an explicit PendingIntent). -->
+        <receiver
+            android:name="com.nxredux.mobile.update.UpdateWaitCancelReceiver"
+            android:exported="false" />
+        <!-- After a self-update Android kills the app without reopening it. MY_PACKAGE_REPLACED is a protected broadcast
+             sent only to the replaced package, so exporting the receiver lets the system reach it and nothing else. -->
+        <receiver
+            android:name="com.nxredux.mobile.update.AppUpdatedReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

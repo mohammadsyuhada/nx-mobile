@@ -1,5 +1,7 @@
 package com.nxredux.mobile.ui
 
+import com.nxredux.mobile.update.UpdateState
+
 /**
  * What Settings -> About shows that never changes while the app runs (the host fills it in). [commit]: the build's short
  * git commit, `-dirty` when its tree had uncommitted changes; [commitDate]: that commit's ISO-8601 committer date ("" when
@@ -49,6 +51,30 @@ internal fun aboutCopyText(info: AppInfo, gpu: String?): String {
     val first = "$APP_NAME ${rows[0].second} ${info.commit}"
     return (listOf(first) + rows.drop(2).map { (label, value) -> "$label: $value" }).joinToString("\n")
 }
+
+/** About's last row, the updater's state: what A does, or what it waits on (a Waiting install shows its reason). */
+internal fun appUpdateLabel(state: UpdateState): String = when (state) {
+    UpdateState.Idle -> CHECK_LABEL
+    UpdateState.Checking -> "Checking for updates…"
+    is UpdateState.UpToDate -> "Up to date (${state.version})"
+    is UpdateState.Available -> "Update to ${state.release.version}"
+    is UpdateState.Downloading -> "Downloading ${if (state.total > 0) (state.done * 100 / state.total).coerceIn(0, 100) else 0}%"
+    is UpdateState.Waiting -> state.reason
+    is UpdateState.Installing -> "Installing…"
+    is UpdateState.Failed -> state.text
+}
+
+/**
+ * The A hint for About's update row, from its [label] ([appUpdateLabel]): Check before a check found a release (a failed
+ * check included), Update once one did (a failed download included); null while a check, download or install runs.
+ */
+internal fun appUpdateHint(label: String): String? = when {
+    label == CHECK_LABEL || label.startsWith("Up to date (") || label == "Couldn't reach GitHub" -> "Check"
+    label.startsWith("Update to ") || label == "Update failed" -> "Update"
+    else -> null
+}
+
+private const val CHECK_LABEL = "Check for updates"
 
 /**
  * Epoch ms of an ISO-8601 date-time with an offset (`2026-10-01T12:34:56+08:00`, `…Z`), as `git log --format=%cI` prints

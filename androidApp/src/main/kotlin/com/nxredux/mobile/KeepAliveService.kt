@@ -53,6 +53,9 @@ class KeepAlive<P>(private val service: Class<out KeepAliveService<P>>, internal
     internal var starting = false
     internal var running: KeepAliveService<P>? = null
 
+    /** A job wants the service (its last [update] was active). Main thread only. */
+    val active: Boolean get() = wanted
+
     /** The job's side: start / update on [active] (the notification shows [progress]), stop otherwise. Any thread. */
     fun update(context: Context, active: Boolean, progress: P?) {
         val app = context.applicationContext

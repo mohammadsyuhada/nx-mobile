@@ -73,13 +73,14 @@ internal fun SettingsRemoveDialog(onHint: ((NxButton) -> Unit)?) {
 
 /**
  * The hint bar for the row at [selected]: no A on a read-only row (About's info rows, or a page of only those), "A Copy"
- * on About's Copy device info, "A Select" elsewhere.
+ * on About's Copy device info, "A Check" or "A Update" on its update row (none while busy), "A Select" elsewhere.
  */
 internal fun settingsHints(rows: List<SettingsRow>, selected: Int): List<Hint> {
     val back = Hint(NxButton.B, "Back")
     val kind = rows.getOrNull(selected)?.kind
     return when {
         kind == SettingsKind.COPY_INFO -> listOf(back, Hint(NxButton.A, "Copy"))
+        kind == SettingsKind.APP_UPDATE -> listOfNotNull(back, appUpdateHint(rows[selected].label)?.let { Hint(NxButton.A, it) })
         kind == SettingsKind.INFO || rows.all { it.kind == SettingsKind.INFO } -> listOf(back)
         else -> listOf(back, Hint(NxButton.A, "Select"))
     }

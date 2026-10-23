@@ -56,7 +56,8 @@ internal fun SettingsSplitScreen(state: AppState, s: Screen, selection: State<Li
                 WithIndex(selection) { i ->
                     s.sections.getOrNull(i)?.let { section ->
                         val gpu by state.gpu.collectAsState()   // About's GPU row lands after its query
-                        val preview = remember(s, section, gpu) { state.settingsPreview(section) }
+                        val update by state.updateLabel.collectAsState()   // and its update row follows the updater
+                        val preview = remember(s, section, gpu, update) { state.settingsPreview(section) }
                         SettingsScreen(
                             preview, -1,
                             onSelect = state::settingsPreviewTap, onOpen = state::settingsPreviewTap,

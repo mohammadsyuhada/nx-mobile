@@ -3,6 +3,7 @@ package com.nxredux.mobile.ui.nx
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,15 +23,20 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 
 internal val NxModalPanelColor = Color(0xFF121212)
 internal val NxModalCardColor = Color(0xFF1E1E1E)
@@ -41,18 +47,31 @@ internal val NxModalScrimColor = Color(0xB3000000)
  * a footer that follows [LocalFooterMode]: tappable key hints when a pad or controller exists, real buttons otherwise
  * (never for a MENU). A tap on the scrim sends B (A for INFO), unless [scrimDismisses] is false (it then only blocks
  * the page below). Every hint or button tap is delivered through [onButton], exactly as a pad press would be.
+ * A card taller than the room scrolls, its edges fading while there is more that way ([nxScrollFade]); with [scrollSteps] (the host's d-pad presses for it, -1 up and +1 down)
+ * the key hints also lead with a d-pad Scroll hint while it overflows, whose tap steps down (back to the top at the end).
  */
 @Composable
 fun NxModal(
     caption: String?, kind: ModalKind, onButton: (NxButton) -> Unit,
     confirmLabel: String = "OK", cancelLabel: String = "Cancel", scrimDismisses: Boolean = true,
     maxWidth: Dp = 420.dp,
+    scrollSteps: Flow<Int>? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = LocalNxColors.current
-    val footer = modalFooter(kind, LocalFooterMode.current, confirmLabel, cancelLabel)
+    val scroll = rememberScrollState()
+    val base = modalFooter(kind, LocalFooterMode.current, confirmLabel, cancelLabel)
+    val footer = if (scrollSteps != null && base is ModalFooter.Hints && scroll.maxValue > 0) ModalFooter.Hints(listOf(Hint(NxButton.DOWN, "Scroll")) + base.hints) else base
     val dismiss = if (kind == ModalKind.INFO) NxButton.A else NxButton.B
     val padVisible = LocalPadBelow.current
+    val stepPx = with(LocalDensity.current) { SCROLL_STEP.toPx() }
+    LaunchedEffect(scrollSteps) { scrollSteps?.collect { scroll.animateScrollBy(it * stepPx) } }
+    val tapScope = rememberCoroutineScope()
+    // The Scroll hint's tap is the modal's own: a host maps every button but B to confirm.
+    val onFooter: (NxButton) -> Unit = { b ->
+        if (b == NxButton.DOWN) tapScope.launch { if (scroll.canScrollForward) scroll.animateScrollBy(stepPx) else scroll.animateScrollTo(0) }
+        else onButton(b)
+    }
     // Landscape (no pad): the screen slot is the whole window, so imePadding lifts the panel exactly above the keyboard.
     // Portrait: the keyboard lands mostly on the pad band, so no IME padding (the card scrolls if it is ever covered).
     // A tap gesture, not clickable: no full-screen ripple, and the scrim is not focusable or clicked by a hardware Enter.
@@ -62,22 +81,26 @@ fun NxModal(
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            Modifier.padding(horizontal = 24.dp).widthIn(max = maxWidth).fillMaxWidth().background(NxModalPanelColor, RoundedCornerShape(24.dp))
+            // 24dp from every screen edge: a tall card (long notes in landscape) stops short of the top and bottom too.
+            Modifier.padding(24.dp).widthIn(max = maxWidth).fillMaxWidth().background(NxModalPanelColor, RoundedCornerShape(24.dp))
                 .pointerInput(Unit) { detectTapGestures { } }   // taps inside stay inside
                 .padding(start = 8.dp, top = 8.dp, end = 8.dp, bottom = if (footer is ModalFooter.None) 8.dp else 0.dp),
         ) {
             // The card scrolls and the footer stays pinned, so a landscape keyboard leaving ~125dp still shows the buttons.
-            Column(Modifier.weight(1f, fill = false).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(NxModalCardColor).verticalScroll(rememberScrollState()).padding(16.dp)) {
+            Column(Modifier.weight(1f, fill = false).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(NxModalCardColor).nxScrollFade(scroll).verticalScroll(scroll).padding(16.dp)) {
                 if (caption != null) {
                     Text(caption, color = colors.hint, fontFamily = LocalNxFont.current, fontWeight = FontWeight.SemiBold, fontSize = NxTextSizes.modalSmall * nxTextScale(), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(8.dp))
                 }
                 content()
             }
-            NxModalFooter(footer, onButton)
+            NxModalFooter(footer, onFooter)
         }
     }
 }
+
+/** How far one d-pad press scrolls a modal's card: about three lines of dialog text. */
+private val SCROLL_STEP = 72.dp
 
 /** The footer strip on the panel below the card: bare key hints (start-aligned) or pill buttons (end-aligned); nothing for [ModalFooter.None]. */
 @Composable
