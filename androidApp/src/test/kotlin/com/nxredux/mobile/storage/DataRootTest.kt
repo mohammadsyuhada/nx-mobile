@@ -53,9 +53,14 @@ class DataRootTest {
         write(private, NxPaths.GAME_TIME_DB, "db", mtime = 1000L)
         write(private, NxPaths.GAME_TIME_DB + "-wal", "wal", mtime = 1000L)
 
-        DataRoot.moveAll(private, home) {
-            write(private, ".userdata/android/hidden.txt", "a\nb", mtime = 3000L)   // a store still on the private root
-            write(private, NxPaths.GAME_TIME_DB + "-wal", "wal2", mtime = 3000L)
+        try {
+            DataRoot.moveAll(private, home) {
+                write(private, ".userdata/android/hidden.txt", "a\nb", mtime = 3000L)   // a store still on the private root
+                write(private, NxPaths.GAME_TIME_DB + "-wal", "wal2", mtime = 3000L)
+            }
+            fail("an incomplete move must be reported, so the marker stays unset")
+        } catch (e: DataRoot.IncompleteMove) {
+            assertEquals(2, e.kept.size)
         }
 
         assertEquals("a\nb", File(private, ".userdata/android/hidden.txt").readText())
@@ -63,6 +68,15 @@ class DataRootTest {
         assertEquals("wal2", File(private, NxPaths.GAME_TIME_DB + "-wal").readText())
         assertFalse(File(private, "Saves/GBA/a.srm").exists())                // the rest moved
         assertEquals("a", File(home, ".userdata/android/hidden.txt").readText())
+
+        // The next move settles them by the clash rule: the newer private files win, the first copies become backups.
+        DataRoot.moveAll(private, home)
+
+        assertEquals(emptySet<String>(), files(private))
+        assertEquals("a\nb", File(home, ".userdata/android/hidden.txt").readText())
+        assertEquals("a", File(home, ".userdata/android/hidden.txt.bak-${DataRoot.backupStamp(1000L)}").readText())
+        assertEquals("db", File(home, NxPaths.GAME_TIME_DB).readText())
+        assertEquals("wal2", File(home, NxPaths.GAME_TIME_DB + "-wal").readText())
     }
 
     @Test fun leavesCachesAndCredentials() {

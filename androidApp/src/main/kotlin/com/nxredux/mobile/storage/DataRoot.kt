@@ -94,7 +94,9 @@ object DataRoot {
 
     /**
      * Moves the private data into [target] now (the upgrade screen, which then calls [markDone]), after a background move
-     * still running. Blocks. Returns the files moved; throws when a copy fails, the private data then left whole.
+     * still running. Blocks. Returns the files moved. Throws an [IOException] when the move is not complete: a copy
+     * failed (the private data then left whole), or a file changed while it moved and stays private ([IncompleteMove]);
+     * either way the caller must not call [markDone].
      */
     fun moveNow(context: Context, target: File): Int {
         move?.await()
@@ -162,8 +164,10 @@ object DataRoot {
      * keeps the newer file (by modified time) under the name and the older one beside it as `<name>.bak-<yyyyMMdd-HHmmss>`
      * (its own time; `-2`, `-3`… when taken; [now] when it has none). A database moves with its `-wal`, `-shm` and
      * `-journal` files as one set. Everything is copied before anything private is deleted, and a failed copy throws
-     * with nothing deleted. A private file that changed after its copy (a store still writing the private root) is kept
-     * and logged, with the rest of its set. Emptied private folders are removed. Returns the files copied into [home].
+     * with nothing deleted. A private file that changed after its copy (a store still writing the private root) is kept,
+     * with the rest of its set, and the move is incomplete: after deleting what did move it throws [IncompleteMove], so
+     * no caller sets the marker and the next move settles that set by the clash rule. Emptied private folders are
+     * removed. Returns the files copied into [home].
      * [beforeDelete] runs between the copies and the deletes (tests).
      */
     internal fun moveAll(private: File, home: File, now: Long = System.currentTimeMillis(), beforeDelete: () -> Unit = {}): Int {
@@ -184,17 +188,19 @@ object DataRoot {
         }
         moved += CheatsRoot.moveFromPrivate(private, home)
         beforeDelete()
-        val gone = copied.flatMap { (from, before) ->
-            if (from.map(::Snapshot) == before) from
-            else emptyList<File>().also { NxLog.w(TAG, "kept ${from.first().path}: it changed while it moved") }
-        }
+        val (gone, kept) = copied.partition { (from, before) -> from.map(::Snapshot) == before }
+            .let { (same, changed) -> same.flatMap { it.first } to changed.map { it.first.first() } }
         gone.forEach { it.delete() }
         gone.mapNotNull { it.parentFile }.distinct().forEach { dir ->
             var d: File? = dir
             while (d != null && d != private && d.delete()) d = d.parentFile   // only empty ones go
         }
+        if (kept.isNotEmpty()) throw IncompleteMove(kept)
         return moved
     }
+
+    /** [moveAll] kept [kept] private (each changed while it moved): the move is not done, so the marker stays unset. */
+    internal class IncompleteMove(val kept: List<File>) : IOException("changed while moving: ${kept.joinToString { it.path }}")
 
     /** What says a file was written since: its length and modified time. */
     private data class Snapshot(val length: Long, val modified: Long) {
