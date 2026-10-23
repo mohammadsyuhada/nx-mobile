@@ -679,6 +679,7 @@ class MainActivity : ComponentActivity(), FolderPicker {
         inputManager?.unregisterInputDeviceListener(inputDeviceListener)   // a no-op when onStart handed over before registering
         if (::router.isInitialized) { releaseHat(); router.releaseAll() }
         frameRateBoost.reset()
+        if (::state.isInitialized) state.onBackground()   // fetched art still waiting to be written goes out now
         super.onStop()
     }
 

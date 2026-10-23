@@ -10646,6 +10646,22 @@ class AppStateTest {
         assertTrue(settings.showNewShelf && settings.showNotStartedShelf)
     }
 
+    // Reset to defaults rebuilds Home as the single rows do: the shelf hidden by its row comes back on Home, not only in the setting.
+    @Test fun reset_to_defaults_rebuilds_home_with_the_shelves_back() = runTest {
+        val settings = MemorySettings(ContentRef("Home"))
+        val state = state(settings)
+        state.load(); advanceUntilIdle()
+        state.onHomeLayout(FOLD); advanceUntilIdle()
+        state.openSettings(SettingsSection.LAYOUT_HOME)
+        fun rows() = assertIs<Screen.Settings>(state.screen.value).rows
+        state.select(rows().indexOfFirst { it.shelf == HomeShelf.NOT_STARTED }); state.onButton(NxButton.RIGHT); advanceUntilIdle()
+        assertEquals(emptyList(), state.homeView.value.shelves)
+        state.onButton(NxButton.B)                                       // Layouts
+        state.select(rows().indexOfFirst { it.kind == SettingsKind.RESET_DEFAULTS }); state.onButton(NxButton.A); advanceUntilIdle()
+        assertTrue(settings.showNotStartedShelf)
+        assertEquals(listOf(HomeShelf.NOT_STARTED to 3), state.homeView.value.shelves)   // Home rebuilt with it
+    }
+
     @Test fun the_shelf_rows_show_only_with_the_home_tab() = runTest {
         val settings = MemorySettings(ContentRef("Home")).apply { showHomeTab = false }
         val state = state(settings)

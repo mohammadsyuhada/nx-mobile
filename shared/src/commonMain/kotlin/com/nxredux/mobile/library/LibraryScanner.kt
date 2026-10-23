@@ -152,7 +152,9 @@ class LibraryScanner(
                 }
                 continue
             }
-            if (files.isEmpty()) previous?.let { hiddenRootCheck(extra, it) }
+            // Only a root that listed nothing can be a hidden one: an extra whose games moved away but whose folders stay
+            // lists those folders, so it is a really empty extra (the listing is cached, so this costs no read).
+            if (files.isEmpty() && previous != null && reads.list(extra.ref).isEmpty()) hiddenRootCheck(extra, previous)
             scanned += extra
             for (f in files) {
                 val ix = IndexedFile(f.entry, f.folder, extra.id, f.relativeDir, f.lookupFolder, f.lookupDir)
@@ -211,8 +213,8 @@ class LibraryScanner(
     }
 
     /**
-     * An extra that listed nothing while [previous] had games in it: its root may be hidden by the provider (a tree root
-     * has no parent to check). One previous game's first path segment is looked up by name; still there means the listing
+     * An extra whose root listed nothing at all while [previous] had games in it: its root may be hidden by the provider (a
+     * tree root has no parent to check). One previous game's first path segment is looked up by name; still there means the listing
      * lied, so the scan fails with [ListingUnavailable] and the caller keeps the old index.
      */
     private suspend fun hiddenRootCheck(extra: ExtraFolder, previous: LibraryIndex) {

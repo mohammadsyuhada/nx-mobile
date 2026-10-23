@@ -396,6 +396,31 @@ class LibraryScannerTest {
         assertFailsWith<ListingUnavailable> { scanner.scan(home, listOf(x), emptyMap(), previous) }
     }
 
+    @Test fun an_extra_root_that_suddenly_lists_empty_while_its_subfolder_games_are_there_fails_the_scan() = runTest {
+        val x = ExtraFolder("x", ContentRef("sd/X"))
+        val src = FakeRomsSource(mapOf("Home" to listOf("Roms"), "Home/Roms" to emptyList(), "sd/X" to listOf("GBA"), "sd/X/GBA" to listOf("Kirby.gba")))
+        val scanner = LibraryScanner(src, Sidecars(src, MemorySidecarStore()) { home })
+        val previous = scanner.scan(home, listOf(x), emptyMap())
+        assertTrue(previous.systems.flatMap { it.games }.any { it.source == "x" && it.file == "Kirby.gba" })
+        src.listingFault = ListingFault.EMPTY
+        assertFailsWith<ListingUnavailable> { scanner.scan(home, listOf(x), emptyMap(), previous) }
+    }
+
+    @Test fun an_extra_whose_games_moved_away_but_whose_folders_stay_scans_as_empty() = runTest {
+        // Move into Roms carries the files off and leaves GBA/ and SNES/ behind: the root lists, so the provider hides nothing.
+        val x = ExtraFolder("x", ContentRef("sd/X"))
+        val before = FakeRomsSource(mapOf(
+            "Home" to listOf("Roms"), "Home/Roms" to emptyList(),
+            "sd/X" to listOf("GBA", "SNES"), "sd/X/GBA" to listOf("Kirby.gba"), "sd/X/SNES" to listOf("Mario.sfc"),
+        ))
+        val previous = LibraryScanner(before, Sidecars(before, MemorySidecarStore()) { home }).scan(home, listOf(x), emptyMap())
+        assertEquals(2, previous.systems.flatMap { it.games }.count { it.source == "x" })
+        val after = FakeRomsSource(mapOf("Home" to listOf("Roms"), "Home/Roms" to emptyList(), "sd/X" to listOf("GBA", "SNES"), "sd/X/GBA" to emptyList(), "sd/X/SNES" to emptyList()))
+        val index = LibraryScanner(after, Sidecars(after, MemorySidecarStore()) { home }).scan(home, listOf(x), emptyMap(), previous)
+        assertEquals(listOf(IndexedExtra("x", "sd/X")), index.extras)
+        assertTrue(index.systems.flatMap { it.games }.none { it.source == "x" })
+    }
+
     @Test fun a_really_empty_extra_stays_empty() = runTest {
         val x = ExtraFolder("x", ContentRef("sd/X"))
         val before = FakeRomsSource(mapOf("Home" to listOf("Roms"), "Home/Roms" to emptyList(), "sd/X" to listOf("Tetris.gb")))

@@ -504,6 +504,13 @@ private const val DETAIL_RA_REST_MS = 500L
 private const val MINIMAL_GAME_CLEAR_MS = 10_000L
 
 /**
+ * Art results are written and shown once they stop coming for [ART_QUIET_MS], or every [ART_MAX_WAIT_MS] while they keep
+ * coming (a long fetch still saves and shows its art as it goes); a fetch's or Reset's end writes them at once.
+ */
+private const val ART_QUIET_MS = 1_500L
+private const val ART_MAX_WAIT_MS = 15_000L
+
+/**
  * A Minimal page's row being opened ([AppState.minimalOpening]): the page it is on ([page]: a tab's [MenuCategory], a game
  * list's [ListSource]; only that page draws it) and the row's [index]. [band]: a launch, its band growing over the screen;
  * false for a folder whose list is Minimal too, which only fades the other names before it morphs in.
@@ -692,7 +699,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private val _notice = MutableStateFlow<String?>(null)
     val notice: StateFlow<String?> = _notice.asStateFlow()   // one line, dismissed by the next button or by itself after three seconds
     private var noticeJob: Job? = null   // the pending auto-clear of the notice
-    private var romsPending = false          // ROMs arrived while Device Sync was open: the library rescans when the tool is left
+    private var romsPending = false          // ROMs arrived off a plain Systems page: the library rescans when one shows again
     private var noticeSticky = false     // the notice is a transfer's progress: it stays until the result replaces it
     private var systemsCache: List<SystemFolder> = emptyList()
     /** The last search confirmed this run (START's prompt opens on it); not saved. */
@@ -1086,6 +1093,12 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 }
             }
             scope.launch { c.romsArrived.collect { val s = _screen.value; if (s is Screen.Systems && s.menu == null && s.search == null) rescan() else { romsPending = true; libraryDirty = true } } }
+            // Pending ROMs scan as soon as a plain Systems page shows again, however the user got there: B on the tool,
+            // Home, Back from a list the sync ended under, the end of a Loading the sync ended during. B on the tool and
+            // leaving setup's sync step take them first themselves.
+            scope.launch {
+                _screen.collect { s -> if (romsPending && s is Screen.Systems && s.menu == null && s.search == null) { romsPending = false; rescan() } }
+            }
         }
     }
 
@@ -1112,6 +1125,103 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private val indexLock = Mutex()             // every index read, write and in-memory swap
     private var library: LibraryIndex? = null   // the library as last scanned, read or moved
     private var lateMountHere: List<String> = emptyList()   // [LibraryIndex.lateMount] of this AppState's last scan (a stored one is stale)
+
+    // Art results applied to [library] but not yet written ([artUnsaved]) or shown ([artUnshown]); [artSeq] counts them so
+    // [artFlushJob] knows they stopped coming. All under [indexLock].
+    private var artUnsaved = false
+    private var artUnshown = false
+    private var artSeq = 0L
+    private var artFlushJob: Job? = null
+
+    /**
+     * What follows an index change ([mutateIndex]): the playable cache always; then the collection counts, the menu's rows
+     * and the open list (its highlighted game kept) as asked. [ui]: on [uiContext], for a caller off it.
+     */
+    private data class IndexRefresh(val counts: Boolean = false, val rows: Boolean = false, val openList: Boolean = false, val ui: Boolean = false)
+
+    /**
+     * The one way the library index changes. Under [indexLock], [change] gets the index in memory (null when there is none)
+     * and returns the next one; null or the same instance is no change, and nothing else runs. A new one becomes [library]
+     * and is written ([persist]) before the lock is let go, which writes any art results still waiting too. [persistNow]
+     * false (art results only) leaves the write and the refresh to [flushArt]: a fetch of thousands of games would
+     * otherwise rewrite the whole index and rebuild the menu once per game. Then, unless [refresh] is null, the steps it
+     * asks ([afterIndexChange]). Returns the new index, or null for no change.
+     */
+    private suspend fun mutateIndex(
+        refresh: IndexRefresh?,
+        persistNow: Boolean = true,
+        change: suspend (LibraryIndex?) -> LibraryIndex?,
+    ): LibraryIndex? {
+        val next = indexLock.withLock {
+            val current = library
+            change(current)?.takeIf { it !== current }?.also {
+                library = it
+                if (persistNow) {
+                    persist(it)
+                    artUnsaved = false   // the whole index went out, the art in it with it
+                } else {
+                    artUnsaved = true; artUnshown = true; artSeq++
+                }
+            }
+        } ?: return null
+        refresh?.let { afterIndexChange(next, it) }
+        return next
+    }
+
+    private suspend fun afterIndexChange(index: LibraryIndex, r: IndexRefresh) {
+        suspend fun steps() {
+            systemsCache = index.playableSystems(hiddenPaths.toSet())
+            if (r.counts) invalidateCollectionCounts()
+            if (r.rows) rebuildMainRows()
+            if (r.openList) refreshOpenList(select = (_screen.value as? Screen.Games)?.entries?.getOrNull(_selection.value.index)?.game?.path)
+        }
+        if (r.ui) withContext(uiContext) { steps() } else steps()
+    }
+
+    /**
+     * After an art result ([mutateIndex] with persistNow false): one [flushArt] once results stop coming for [ART_QUIET_MS]
+     * (at most [ART_MAX_WAIT_MS] after the first), whatever thread the result came on. A result that lands during the
+     * flush goes round again; the job lets go of [artFlushJob] under the lock only with nothing left, so no result is
+     * left without a flush coming.
+     */
+    private suspend fun scheduleArtFlush() {
+        indexLock.withLock {
+            if (artFlushJob?.isActive == true) return@withLock
+            artFlushJob = scope.launch {
+                do {
+                    var waited = 0L
+                    while (waited < ART_MAX_WAIT_MS) {
+                        val seen = indexLock.withLock { artSeq }
+                        delay(ART_QUIET_MS)
+                        waited += ART_QUIET_MS
+                        if (indexLock.withLock { artSeq } == seen) break
+                    }
+                    flushArt()
+                } while (indexLock.withLock { artUnshown.also { if (!it) artFlushJob = null } })
+            }
+        }
+    }
+
+    /**
+     * Writes the index when art results are waiting, then rebuilds the playable cache, the menu's rows and the open list
+     * once for all of them. [library] is the truth: art waiting since a scan or another change wrote the whole index is not
+     * written again, and a result that came in meanwhile is in it. Run by the debounce, by a fetch's or Reset's end
+     * ([ArtworkHost.flushArt]) and when the app goes to the background.
+     */
+    private suspend fun flushArt() {
+        val shown = indexLock.withLock {
+            val ix = library
+            if (artUnsaved && ix != null) persist(ix)
+            artUnsaved = false
+            ix?.takeIf { artUnshown }.also { artUnshown = false }
+        } ?: return
+        afterIndexChange(shown, IndexRefresh(rows = true, openList = true, ui = true))
+    }
+
+    /** The app left the foreground: art results still waiting are written now, not left to a debounce a kill would lose. */
+    fun onBackground() {
+        scope.launch { flushArt() }
+    }
 
     /**
      * The home pick, or first, once, the All files access step: only where the permission is declared and not granted,
@@ -2640,16 +2750,13 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             }
             ensureSkeleton(root)
             val dropped = ArrayList<ExtraFolder>()
-            val fresh = indexLock.withLock {
-                val previous = library ?: readStoredIndex()   // which extras were offline: one just mounted gets a retry
-                val scanned = stamped(scanner.scan(root, deps.settings.extraFolders, deps.settings.defaultTags, previous) { extra, e ->
+            // Systems is shown from it below, which sets the playable cache: no refresh here.
+            val fresh = mutateIndex(refresh = null) { current ->
+                val previous = current ?: readStoredIndex()   // which extras were offline: one just mounted gets a retry
+                stamped(scanner.scan(root, deps.settings.extraFolders, deps.settings.defaultTags, previous) { extra, e ->
                     if (isGone(e)) dropped += extra
-                }, previous)
-                library = scanned
-                lateMountHere = scanned.lateMount
-                persist(scanned)
-                scanned
-            }
+                }, previous).also { lateMountHere = it.lateMount }
+            }!!   // a scan is always a new index
             // An offline extra is kept (settings and grant) with no games; the next start or return to the library finds it back.
             // One mounted but not listing yet (lateMount) only needs a moment, not the card.
             val awayExtra = deps.settings.extraFolders.firstOrNull { it.id in fresh.offline }
@@ -3705,6 +3812,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             s.gameListLayoutOptions = true
             s.gameListAchievementsPanel = true
             s.switcherLayout = SwitcherLayout.DEFAULT
+            // As the single rows do: Home's rows follow its style and shelves; a hidden tab row gives up the d-pad.
+            rebuildHomeTab()
+            dropHiddenTabFocus()
         } else if (section == SettingsSection.CONTROLS) {
             s.padVibration = PadVibration.DEFAULT
             s.gameRumble = GameRumble.DEFAULT
@@ -3963,14 +4073,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val root = deps.settings.treeRef ?: return
         scope.launch {   // background re-index without Loading; Back then reads it (the lock orders the two)
             runCatching {
-                indexLock.withLock {
-                    val previous = library ?: readStoredIndex()
-                    val fresh = stamped(scanner.scan(root, deps.settings.extraFolders, deps.settings.defaultTags, previous), previous)
-                    library = fresh
-                    lateMountHere = fresh.lateMount
-                    persist(fresh)
-                    systemsCache = fresh.playableSystems(hiddenPaths.toSet())
-                    invalidateCollectionCounts()
+                mutateIndex(IndexRefresh(counts = true)) { current ->
+                    val previous = current ?: readStoredIndex()
+                    stamped(scanner.scan(root, deps.settings.extraFolders, deps.settings.defaultTags, previous), previous).also { lateMountHere = it.lateMount }
                 }
                 libraryDirty = false   // the index is this re-index's
                 refreshCollectionNames()
@@ -5617,22 +5722,22 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         override suspend fun libraryGames(): List<LibraryGameRef> = artworkGamesWithTitles(withHidden = false)
         override suspend fun allLibraryGames(): List<LibraryGameRef> = artworkGamesWithTitles(withHidden = true)
 
-        /** Under [indexLock] only the index update and its write; the refresh runs after, never calling the controller. */
+        /**
+         * Under [indexLock] only the in-memory update: the write and the refresh are batched ([flushArt]: after a pause in
+         * the results, and at the job's end), never calling the controller.
+         */
         override suspend fun applyArt(gamePath: String, art: ArtRefs) {
             val ref = GamePath.split(gamePath) ?: return
-            val updated = indexLock.withLock {
-                val current = library ?: return@withLock null
-                val game = current.systems.firstNotNullOfOrNull { s ->
+            mutateIndex(refresh = null, persistNow = false) { current ->
+                val game = current?.systems?.firstNotNullOfOrNull { s ->
                     s.games.firstOrNull { it.source == ref.sourceId && it.dir == ref.relativeDir && it.file == ref.fileName }
-                } ?: return@withLock null
-                current.setArt(game, art).takeIf { it !== current }?.also { library = it; persist(it) }
+                } ?: return@mutateIndex null
+                current.setArt(game, art)
             } ?: return
-            withContext(uiContext) {
-                systemsCache = updated.playableSystems(hiddenPaths.toSet())
-                rebuildMainRows()
-                refreshOpenList(select = (_screen.value as? Screen.Games)?.entries?.getOrNull(_selection.value.index)?.game?.path)
-            }
+            scheduleArtFlush()
         }
+
+        override suspend fun flushArt() = this@AppState.flushArt()
 
         /** The art store has the new screenshot: the console is rebuilt from it, on the UI's thread. */
         override suspend fun refreshAndroidConsole() = withContext(uiContext) { applyAndroidConsole() }
@@ -5657,16 +5762,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val from = library ?: return
         artCheck = scope.launch {
             val art = try { scanner.readArt(from) } catch (e: CancellationException) { throw e } catch (e: Throwable) { return@launch }
-            val updated = indexLock.withLock {
-                val current = library?.takeIf { it === from } ?: return@withLock null
-                current.withArt(art).takeIf { it !== current }?.also { library = it; persist(it) }
-            } ?: return@launch
-            withContext(uiContext) {
-                systemsCache = updated.playableSystems(hiddenPaths.toSet())
-                rebuildMainRows()
-                refreshOpenList(select = (_screen.value as? Screen.Games)?.entries?.getOrNull(_selection.value.index)?.game?.path)
-                artworkScreens?.libraryChanged()
-            }
+            mutateIndex(IndexRefresh(rows = true, openList = true, ui = true)) { current -> current?.takeIf { it === from }?.withArt(art) } ?: return@launch
+            withContext(uiContext) { artworkScreens?.libraryChanged() }
         }
     }
 
@@ -5831,12 +5928,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
 
     /** Rename Rom's index step: renames [game] in memory and on disk, then the playable cache; false on a stale list (no change). */
     private suspend fun renameInIndex(game: GameEntry, name: String): Boolean {
-        val renamed = indexLock.withLock {
-            val current = library ?: return@withLock null
-            current.rename(game, name).takeIf { it !== current }?.also { library = it; persist(it) }
-        } ?: return false
-        systemsCache = renamed.playableSystems(hiddenPaths.toSet())
-        return true
+        return mutateIndex(IndexRefresh()) { current -> current?.rename(game, name) } != null
     }
 
     /**
@@ -5868,17 +5960,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * the open list, so persisting it would keep the old tag).
      */
     private suspend fun moveInIndex(game: GameEntry, from: SystemFolder, toTag: String): Boolean {
-        val moved = indexLock.withLock {
-            val current = library ?: return@withLock null
-            current.move(game, from, toTag).takeIf { it !== current }?.also {
-                library = it
-                persist(it)
-            }
-        } ?: return false
-        systemsCache = moved.playableSystems(hiddenPaths.toSet())
+        // The counts: the game's path moved with its tag.
+        mutateIndex(IndexRefresh(counts = true, rows = true)) { current -> current?.move(game, from, toTag) } ?: return false
         libraryDirty = true
-        invalidateCollectionCounts()   // the game's path moved with its tag
-        rebuildMainRows()
         return true
     }
 

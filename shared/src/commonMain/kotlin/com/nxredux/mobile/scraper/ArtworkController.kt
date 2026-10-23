@@ -129,6 +129,14 @@ class ArtworkController(
         job = scope.launch(work) { runLoop(start) }
     }
 
+    /**
+     * The host's batched art results written and shown ([ArtworkHost.flushArt]) at a run's end, however it ends; a host
+     * failure there is not the run's.
+     */
+    private suspend fun flushArt() = withContext(NonCancellable) {
+        try { host.flushArt() } catch (e: CancellationException) { throw e } catch (_: Throwable) {}
+    }
+
     /** Runs the engine, chaining onto games appended meanwhile; publishes the end, and stops keep-alive, exactly once. */
     private suspend fun runLoop(first: ScrapeState) {
         var start = first
@@ -159,6 +167,8 @@ class ArtworkController(
             withContext(NonCancellable) {
                 lock.withLock { finishLocked(_state.value.inFlightToWaiting().copy(phase = JobPhase.PAUSED, pauseReason = reason)) }
             }
+        } finally {
+            flushArt()   // done, paused or cancelled: the art fetched so far reaches the index file and the menu
         }
     }
 
@@ -276,6 +286,7 @@ class ArtworkController(
                 result = if (item.status == ItemStatus.WAITING) FetchResult(ItemStatus.ERROR, stopReason(end)) else FetchResult(item.status, item.reason)
             } finally {
                 withContext(NonCancellable) { lock.withLock { single = null } }
+                flushArt()   // the one game's art shows now, not after the host's batching pause
             }
         }
         result ?: awaitJobItem(gamePath)
@@ -393,6 +404,7 @@ class ArtworkController(
             // The Android games console's screenshots are app-private, outside the log: Android's scope or All deletes them.
             val androidDeleted = if (up == null || ANDROID_CONSOLE_TAG in up) engine.deleteAndroidArt() else 0
             for ((g, was) in before) host.applyArt(g.gamePath, ScrapeEngine.indexArt(g, was, engine.artOnDisk(g)))
+            flushArt()   // one index write and one refresh for every game reset
             ResetResult(deleted + androidDeleted, paused)
         }
     }

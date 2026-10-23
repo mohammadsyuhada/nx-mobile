@@ -10,8 +10,10 @@ interface ArtworkHost {
     suspend fun libraryGames(): List<LibraryGameRef>
     /** As [libraryGames] with the hidden games too (Reset clears their art as well). */
     suspend fun allLibraryGames(): List<LibraryGameRef>
-    /** AppState: indexLock + setArt + persist + refresh. */
+    /** AppState: indexLock + setArt in memory; the write and the refresh are batched until [flushArt]. */
     suspend fun applyArt(gamePath: String, art: ArtRefs)
+    /** Writes and shows the [applyArt] results still waiting: called when a fetch, a single fetch or a Reset ends. */
+    suspend fun flushArt() {}
     /** An Android game's screenshot was stored: the Android games console is rebuilt so its entries show it. */
     suspend fun refreshAndroidConsole() {}
     /**
