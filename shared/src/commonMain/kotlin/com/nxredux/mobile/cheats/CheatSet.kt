@@ -30,6 +30,9 @@ data class CheatSet(val entries: List<CheatEntry>, val expected: String) {
     /** The enabled RAM patches, in order: the frontend applies them every frame, the core never sees them. */
     fun enabledPatches(): List<MemoryPatch> = entries.filter { it.enabled }.mapNotNull { it.mem }
 
+    /** True when any cheat is on, a code or a RAM patch: what decides whether the core gets them. */
+    fun hasEnabled(): Boolean = enabledCodes().isNotEmpty() || enabledPatches().isNotEmpty()
+
     /** Every entry enabled iff its normalised info is in [saved]; the file's `cheatN_enable` seeds are ignored. */
     fun withSaved(saved: List<String>): CheatSet {
         val on = saved.map(::normalise).toSet()

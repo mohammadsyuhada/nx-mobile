@@ -946,8 +946,8 @@ void LibretroDroid::applyMemoryCheats() {
             CheatMem_addRegion(&cheatMem, core->retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM),
                                core->retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM));
         if (!cheatMemLogged) {
-            if (!cheatMem.count) LOGW("cheats: the core exposes no system RAM, RAM cheats can't apply");
             if (dropped) LOGW("cheats: %u system RAM region(s) past the first %d are left out", dropped, CHEAT_MEM_MAX_REGIONS);
+            if (!cheatMem.count) LOGW("cheats: the core exposes no system RAM, RAM cheats can't apply");
             else LOGI("cheats: RAM cheats apply to %d region(s), %zu bytes (%s)", cheatMem.count, cheatMem.total,
                       fromMap ? "memory map" : "RETRO_MEMORY_SYSTEM_RAM");
             cheatMemLogged = true;

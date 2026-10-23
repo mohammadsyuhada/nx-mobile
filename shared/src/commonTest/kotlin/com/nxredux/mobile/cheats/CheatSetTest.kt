@@ -7,6 +7,14 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class CheatSetTest {
+    @Test fun has_enabled_counts_codes_and_ram_patches() {
+        val code = CheatEntry("A", "01", "A", true)
+        val ram = CheatEntry("B", "", "B", true, MemoryPatch(address = 1, value = 2))
+        assertEquals(false, CheatSet(listOf(code.copy(enabled = false), ram.copy(enabled = false)), "x").hasEnabled())
+        assertEquals(true, CheatSet(listOf(code), "x").hasEnabled())
+        assertEquals(true, CheatSet(listOf(ram), "x").hasEnabled())
+    }
+
     private val set = CheatSet(
         listOf(
             CheatEntry("Infinite Lives", "01", "Infinite Lives", enabled = false),

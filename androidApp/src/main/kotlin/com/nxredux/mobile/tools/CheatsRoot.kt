@@ -10,6 +10,7 @@ import com.nxredux.mobile.storage.FileRefs
 import com.swordfish.libretrodroid.NxLog
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
 
 /**
  * Where `Cheats/<TAG>/` and the Cheat Database manifest live: the home folder when it is a file path with All files
@@ -19,78 +20,103 @@ import java.io.IOException
 object CheatsRoot {
     private const val TAG = "CheatsRoot"
     private const val CHEATS = "Cheats"
+    /** In no-backup storage: present once private cheats were moved into the home folder (or there were none). */
+    private const val MOVED_MARKER = "cheats-moved-to-home"
 
-    private val moveLock = Any()
-    /** The home this process already moved private cheats into (what is left there conflicts with the home's files). */
-    @Volatile private var settled: String? = null
-    @Volatile private var moving = false
+    private val lock = Any()
+    @Volatile private var move: CountDownLatch? = null
+    @Volatile private var moveFailed = false
 
     /**
-     * The root to read and write cheats in. While cheats an earlier version kept privately still have to move to the home
-     * folder, that is private storage, whose set is whole until the move's last step; the move starts in the background
-     * the first time it is needed (at process start, or once All files access or a file-path home is set).
+     * The root to read and write cheats in. Until cheats an earlier version kept privately are in the home folder, that is
+     * private storage, whose set stays whole until the move's last step; the move starts in the background the first time
+     * it is needed (at process start, or once All files access or a file-path home is set) and happens once.
      */
     fun of(context: Context): File {
         val private = NxStorage.root(context)
         val home = pick(AndroidAppSettings(context).treeRef, AndroidAllFilesAccess.isGranted(), private)
-        if (home == private) { settled = null; return home }   // access off: what is installed meanwhile moves later
-        if (settled == home.path) return home
-        if (!hasCheats(private)) { settled = home.path; return home }
-        startMove(context.applicationContext)
+        val marker = File(context.noBackupFilesDir, MOVED_MARKER)
+        if (home == private) {
+            if (marker.exists()) marker.delete()   // access off: what is installed meanwhile moves when it is back on
+            return home
+        }
+        if (marker.exists()) return home
+        if (!hasCheats(private)) { markMoved(marker); return home }
+        if (!moveFailed) startMove(context.applicationContext)
         return private
+    }
+
+    /** [of] once a move it needs has finished: one root for a whole install. Blocks, so never on the main thread. */
+    fun settled(context: Context): File {
+        of(context)
+        move?.await()
+        return of(context)
     }
 
     /** [home] when it is a file ref, [granted] and an existing folder; [private] otherwise. */
     fun pick(home: ContentRef?, granted: Boolean, private: File): File =
         home?.takeIf { granted && FileRefs.isFile(it) }?.let { File(FileRefs.path(it)) }?.takeIf { it.isDirectory } ?: private
 
-    /** Blocks until a running move is done, so an install never writes where the move is copying. Not on the main thread. */
-    fun awaitMove() { synchronized(moveLock) {} }
-
     private fun startMove(app: Context) {
-        synchronized(this) { if (moving) return; moving = true }
+        val done = synchronized(lock) {
+            if (move != null) return
+            CountDownLatch(1).also { move = it }
+        }
         Thread({
             try {
-                synchronized(moveLock) {
-                    val private = NxStorage.root(app)
-                    val home = pick(AndroidAppSettings(app).treeRef, AndroidAllFilesAccess.isGranted(), private)
-                    if (home != private) {
-                        val moved = moveFromPrivate(private, home)
-                        if (moved > 0) NxLog.i(TAG, "moved $moved cheat files into ${home.path}")
-                        settled = home.path
-                    }
+                val private = NxStorage.root(app)
+                val home = pick(AndroidAppSettings(app).treeRef, AndroidAllFilesAccess.isGranted(), private)
+                if (home != private) {
+                    val moved = moveFromPrivate(private, home)
+                    if (moved > 0) NxLog.i(TAG, "moved $moved cheat files into ${home.path}")
+                    markMoved(File(app.noBackupFilesDir, MOVED_MARKER))
                 }
-                CheatDbService.refreshIfStarted()
             } catch (e: Exception) {
+                moveFailed = true   // not retried in this process: cheats stay private until the next start
                 NxLog.w(TAG, "moving cheats into the home folder failed", e)
             } finally {
-                moving = false
+                synchronized(lock) { move = null }
+                done.countDown()
             }
+            CheatDbService.refreshIfStarted()
         }, "cheats-move").start()
+    }
+
+    private fun markMoved(marker: File) {
+        runCatching { marker.parentFile?.mkdirs(); marker.createNewFile() }.onFailure { NxLog.w(TAG, "cannot mark the move done", it) }
     }
 
     private fun hasCheats(private: File) = File(private, CHEATS).isDirectory || File(private, CheatDbManifest.PATH).isFile
 
     /**
      * Moves [private]'s `Cheats/` files and the manifest into [home], never over a file there: a private copy identical
-     * to the home's is dropped, a different one stays where it was. Everything is copied before anything is deleted, the
-     * manifest last, so either root holds a whole set throughout. Emptied private folders are removed. Returns the files
-     * moved.
+     * to the home's is dropped, a different one stays where it was. When [home] has a database of its own, the private
+     * one (the files its manifest lists, and the manifest) is deleted instead, so no manifest names files it doesn't
+     * have. Everything is copied before anything is deleted, the manifest last. Emptied private folders are removed.
+     * Returns the files moved.
      */
     fun moveFromPrivate(private: File, home: File): Int {
         if (private.canonicalFile == home.canonicalFile) return 0
         val cheats = File(private, CHEATS)
         val manifest = File(private, CheatDbManifest.PATH)
-        val files = cheats.walkTopDown().filter { it.isFile }.toList() + listOf(manifest).filter { it.isFile }
+        val homeHasDatabase = File(home, CheatDbManifest.PATH).isFile
+        val download: Set<String> = if (homeHasDatabase && manifest.isFile) {
+            runCatching { CheatDbManifest.parse(manifest.readText())?.files.orEmpty().toSet() }.getOrDefault(emptySet())
+        } else emptySet()
         var moved = 0
-        val gone = files.filter { f ->
-            when (copy(f, File(home, f.relativeTo(private).path))) {
+        val gone = cheats.walkTopDown().filter { it.isFile }.toList().filter { f ->
+            val rel = f.relativeTo(private).path
+            if (rel in download) return@filter true   // the home's own database replaces it
+            when (copy(f, File(home, rel))) {
                 Copy.COPIED -> { moved++; true }
                 Copy.SAME -> true
                 Copy.KEPT -> false
             }
         }
+        val manifestGoes = manifest.isFile && (homeHasDatabase ||
+            when (copy(manifest, File(home, CheatDbManifest.PATH))) { Copy.COPIED -> { moved++; true }; Copy.SAME -> true; Copy.KEPT -> false })
         gone.forEach { it.delete() }
+        if (manifestGoes) manifest.delete()
         cheats.walkBottomUp().filter { it.isDirectory }.forEach { it.delete() }   // only empty ones go
         manifest.parentFile?.delete()
         return moved

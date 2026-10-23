@@ -13,7 +13,8 @@ import com.swordfish.libretrodroid.NxLog
 class NxApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        CheatsRoot.of(this)   // starts moving older private cheats into the home folder, in the background
+        // Starts moving older private cheats into the home folder; off the main thread, as it reads storage.
+        Thread({ CheatsRoot.of(this) }, "cheats-root").start()
         // Off is both flags' default: only On needs setting, so a launcher-only start never loads the native library.
         if (!AndroidAppSettings(this).debugLog) return
         try {

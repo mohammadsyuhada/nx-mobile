@@ -59,7 +59,25 @@ class CheatsRootTest {
         assertEquals("home manifest", File(home, CheatDbManifest.PATH).readText())
         assertFalse(File(private, "Cheats/GB/Same.cht").exists())                        // an identical copy is dropped
         assertEquals("private", File(private, "Cheats/GB/Mine.cht").readText())          // a different one is kept
-        assertEquals("private manifest", File(private, CheatDbManifest.PATH).readText())
+        assertFalse(File(private, CheatDbManifest.PATH).exists())                         // the home has its own database
+    }
+
+    @Test fun overAHomeDatabaseOnlyTheUsersOwnFilesMove() {
+        val db = CheatDbManifest("stamp", 1L, listOf("Cheats/GB/Tetris (World).cht", "Cheats/GB/Gone.cht"), listOf("GB"))
+        write(private, CheatDbManifest.PATH, db.render())
+        write(private, "Cheats/GB/Tetris (World).cht", "old download")
+        write(private, "Cheats/GB/Gone.cht", "old download")
+        write(private, "Cheats/GB/Mine.cht", "mine")
+        write(home, CheatDbManifest.PATH, "home manifest")
+        write(home, "Cheats/GB/Tetris (World).cht", "new download")
+
+        assertEquals(1, CheatsRoot.moveFromPrivate(private, home))
+
+        assertEquals("mine", File(home, "Cheats/GB/Mine.cht").readText())
+        assertFalse(File(home, "Cheats/GB/Gone.cht").exists())   // a download file the home's manifest doesn't list stays out
+        assertEquals("new download", File(home, "Cheats/GB/Tetris (World).cht").readText())
+        assertFalse(File(private, "Cheats").exists())             // the old download goes: the home has its own
+        assertFalse(File(private, CheatDbManifest.PATH).exists())
     }
 
     @Test fun theHomeItselfIsNeverMovedIntoItself() {

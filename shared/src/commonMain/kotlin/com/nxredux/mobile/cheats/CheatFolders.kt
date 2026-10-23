@@ -32,8 +32,8 @@ object CheatFolders {
      */
     val PARTNERS: Map<String, String> = mapOf("GB" to "GBC", "SGB" to "GBC", "GBC" to "GB")
 
-    /** [tag]'s console's tag (its first, as `Roms/` names the console's folder); an unknown tag stays as it is. */
-    fun console(tag: String): String = CoreRegistry.consoleOf(tag)?.tags?.first() ?: CoreRegistry.baseTag(tag)
+    /** [tag]'s console's tag, the one `Roms/` names the console's folder by ([CoreRegistry.consoleTag]). */
+    fun console(tag: String): String = CoreRegistry.consoleTag(tag)
 
     /** The tags whose folders [tag]'s games can read (the database installs these along with [tag]). */
     fun targets(tag: String): Set<String> =

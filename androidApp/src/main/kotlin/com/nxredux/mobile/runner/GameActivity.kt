@@ -1666,7 +1666,7 @@ class GameActivity : ComponentActivity() {
             // Cheats sit on top of the resumed state, as minarch applies them after load.
             cheatsLoad?.join()
             refreshDolphinCheats()
-            if (cheatSet.enabledCodes().isNotEmpty() || cheatSet.enabledPatches().isNotEmpty()) applyCheats(view)
+            if (cheatSet.hasEnabled()) applyCheats(view)
             achievements?.startSession()
         }
         // A refused game: the core's own reason (flycast names the NAOMI/Atomiswave BIOS or ROM file it could not find).
@@ -4494,7 +4494,7 @@ class GameActivity : ComponentActivity() {
             val job = load().also { cheatsLoad = it }
             lifecycleScope.launch {
                 job.join()
-                if (!quitting && (cheatSet.enabledCodes().isNotEmpty() || cheatSet.enabledPatches().isNotEmpty())) retroView?.let(::applyCheats)
+                if (!quitting && cheatSet.hasEnabled()) retroView?.let(::applyCheats)
             }
         }
         refreshDiscs()
