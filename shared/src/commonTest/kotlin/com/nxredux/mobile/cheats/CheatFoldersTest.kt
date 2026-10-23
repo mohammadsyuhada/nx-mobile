@@ -10,7 +10,7 @@ class CheatFoldersTest {
         assertEquals(listOf("MD"), CheatFolders.tagsFor("MD", "Sonic.md"))
         assertEquals(listOf("MD"), CheatFolders.tagsFor("MD", "Sonic.bin"))   // bin is any system's
         assertEquals(listOf("GBA"), CheatFolders.tagsFor("gba", "Golden Sun.gba"))
-        assertEquals(listOf("PSX"), CheatFolders.tagsFor("PSX", "Vagrant Story.chd"))
+        assertEquals(listOf("PS"), CheatFolders.tagsFor("PS", "Vagrant Story.chd"))
     }
 
     @Test fun a_routed_game_reads_only_its_system() {
@@ -30,17 +30,27 @@ class CheatFoldersTest {
         assertEquals("Cheats/GBC", CheatFolders.primary("GB", "Pokemon - Yellow.gbc"))
     }
 
-    @Test fun gpgx_reads_its_own_folder_then_the_system() {
-        assertEquals(listOf("GPGX", "GG"), CheatFolders.tagsFor("GPGX", "Aladdin (Japan).gg"))
-        assertEquals(listOf("GPGX", "SMS"), CheatFolders.tagsFor("GPGX", "Alex Kidd.sms"))
-        assertEquals(listOf("GPGX", "SEGACD"), CheatFolders.tagsFor("GPGX", "Lunar.m3u"))
-        assertEquals(listOf("GPGX", "MD"), CheatFolders.tagsFor("GPGX", "Aladdin (Japan).md"))
-        assertEquals(listOf("GPGX", "MD"), CheatFolders.tagsFor("GPGX", "noext"))
+    @Test fun a_second_cores_tag_reads_its_consoles_folder() {   // one folder per console, as in Roms/
+        assertEquals(listOf("GBA"), CheatFolders.tagsFor("MGBA", "Golden Sun.gba"))
+        assertEquals(listOf("SFC"), CheatFolders.tagsFor("SUPA", "Chrono Trigger.sfc"))
+        assertEquals(listOf("PS"), CheatFolders.tagsFor("PSX", "Vagrant Story.chd"))
+        assertEquals(listOf("MD"), CheatFolders.tagsFor("GPGX", "Aladdin (Japan).md"))
+        assertEquals(listOf("MD"), CheatFolders.tagsFor("GPGX", "noext"))
+        assertEquals(listOf("SMS"), CheatFolders.tagsFor("GPGX_SMS", "Alex Kidd.sms"))
+        assertEquals(listOf("SGB"), CheatFolders.tagsFor("SGB", "Tetris.gb").take(1))   // its own console, its own folder
+    }
+
+    @Test fun other_sega_systems_in_a_genesis_folder_read_their_own() {
+        assertEquals(listOf("GG"), CheatFolders.tagsFor("GPGX", "Aladdin (Japan).gg"))
+        assertEquals(listOf("SMS"), CheatFolders.tagsFor("GPGX", "Alex Kidd.sms"))
+        assertEquals(listOf("SG1000"), CheatFolders.tagsFor("MD", "Flicky.sg"))
+        assertEquals(listOf("SEGACD"), CheatFolders.tagsFor("GPGX", "Lunar.m3u"))
     }
 
     @Test fun primary_names_the_database_folder() {
         assertEquals("Cheats/GG", CheatFolders.primary("GPGX", "x.gg"))
         assertEquals("Cheats/MD", CheatFolders.primary("GPGX", "x.md"))
+        assertEquals("Cheats/GBA", CheatFolders.primary("MGBA", "x.gba"))
         assertEquals("Cheats/SEGACD", CheatFolders.primary("MD", "x.cue"))
         assertEquals("Cheats/PSP", CheatFolders.primary("PSP", "x.iso"))
     }
