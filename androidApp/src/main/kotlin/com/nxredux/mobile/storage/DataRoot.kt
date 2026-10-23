@@ -253,22 +253,28 @@ object DataRoot {
      * throws with nothing deleted. A private set that changed after its copy (a store still writing the private root) is
      * copied again, over this move's own copy, up to [PASSES] times; still changing, nothing at all is deleted and
      * [IncompleteMove] is thrown, so no caller sets the marker and the next move drops the identical copies and settles
-     * that set by the clash rule. Emptied private folders are removed. Returns the files copied into [home].
+     * that set by the clash rule. The private root is walked again after every pass: a file created mid-move is copied in
+     * the next pass, and one still appearing (or new just before the deletes) leaves the move incomplete, nothing
+     * deleted. Emptied private folders are removed. Returns the files copied into [home].
      * [beforeDelete] runs after each pass of copies, [onCopy] on each staged copy before its time is set (tests).
      */
     internal fun moveAll(private: File, home: File, now: Long = System.currentTimeMillis(), beforeDelete: () -> Unit = {}, onCopy: (File) -> Unit = {}): Int {
         if (private.canonicalFile == home.canonicalFile) return 0
         dropStaged(private)
         HOME_DIRS.forEach { dropStaged(File(home, it)) }
-        val moving = private.walkTopDown().filter { it.isFile }.map { it.relativeTo(private).invariantSeparatorsPath }
-            .filter { StorageLayout.kind(it) == StorageLayout.Kind.MOVE }.toSet()
-        // A sidecar whose database moves too goes with it.
-        val sets = moving.filterNot { rel -> DB_SIDECARS.any { rel.endsWith(it) && rel.removeSuffix(it) in moving } }
+        // The sets in the private root now: a sidecar whose database moves too goes with it. Walked again after every
+        // pass, so a file a store creates mid-move (a first config, the first hidden list) moves too.
+        fun walk(): Set<String> {
+            val moving = private.walkTopDown().filter { it.isFile && !it.name.endsWith(STAGED) }.map { it.relativeTo(private).invariantSeparatorsPath }
+                .filter { StorageLayout.kind(it) == StorageLayout.Kind.MOVE }.toSet()
+            return moving.filterNot { rel -> DB_SIDECARS.any { rel.endsWith(it) && rel.removeSuffix(it) in moving } }.toSet()
+        }
+        val sets = LinkedHashSet(walk())
         fun members(root: File, rel: String) = (listOf(rel) + DB_SIDECARS.map { rel + it }).map { File(root, it) }
         fun snapshots(rel: String) = members(private, rel).filter { it.isFile }.associate { it.name to Snapshot(it) }
         val counts = HashMap<String, Int>()
         val ours = HashSet<File>()   // home files this move put under their names: a copy again goes over them
-        var pending = sets
+        var pending: Collection<String> = sets.toList()
         var pass = 0
         while (true) {
             val before = HashMap<String, Map<String, Snapshot>>()
@@ -279,12 +285,16 @@ object DataRoot {
                 counts[rel] = moveSet(from, to, private, home, now, ours, onCopy)
             }
             beforeDelete()
-            val changed = pending.filter { snapshots(it) != before[it] }
+            val created = walk() - sets
+            val changed = pending.filter { snapshots(it) != before[it] } + created
             if (changed.isEmpty()) break
             if (++pass >= PASSES) throw IncompleteMove(changed.map { File(private, it) })
+            sets += created
             pending = changed
         }
         val moved = counts.values.sum() + CheatsRoot.moveFromPrivate(private, home)
+        // Once more just before the deletes: a file created since the last pass leaves the move incomplete, nothing deleted.
+        (walk() - sets).takeIf { it.isNotEmpty() }?.let { late -> throw IncompleteMove(late.map { File(private, it) }) }
         val gone = sets.flatMap { members(private, it) }.filter { it.isFile }
         gone.forEach { if (!it.delete()) NxLog.w(TAG, "cannot delete the moved ${it.path}") }
         gone.mapNotNull { it.parentFile }.distinct().forEach { dir ->

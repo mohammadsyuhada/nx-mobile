@@ -51,8 +51,9 @@ interface StorageUpgradePlatform {
     suspend fun restoreHomeKeys(extraId: String): Boolean
 
     /**
-     * Copies the data (saves, states, settings, cheats) of the home [from] into the home [to] by the move's clash rule
-     * (newer wins, the other kept as a backup in [to]); nothing in [from] is deleted. False when a copy failed.
+     * Copies the data of the home [from] (its `Saves/` and `.userdata/`: saves, states, settings, game time, recents) into
+     * the home [to] by the move's clash rule (newer wins, the other kept as a backup in [to]); `Cheats/`, ROMs, BIOS and
+     * collections are not copied, and nothing in [from] is deleted. False when a copy failed.
      */
     suspend fun copySaves(from: ContentRef, to: ContentRef): Boolean
 }

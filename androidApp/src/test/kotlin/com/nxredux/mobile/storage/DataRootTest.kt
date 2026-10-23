@@ -61,6 +61,36 @@ class DataRootTest {
         assertEquals(setOf("Saves/GBA/a.srm", ".userdata/android/hidden.txt"), files(home))
     }
 
+    // A store on the private root may create a file mid-move (a core's first options, the first hidden list): it moves too.
+    @Test fun aFileCreatedDuringTheMoveIsMovedToo() {
+        write(private, "Saves/GBA/a.srm", "save", mtime = 1000L)
+        var passes = 0
+
+        DataRoot.moveAll(private, home, beforeDelete = {
+            if (passes++ == 0) {
+                write(private, ".userdata/android/GBA-mgba/minarch.cfg", "cfg", mtime = 2000L)
+                write(private, ".userdata/shared/.ra/cache.json", "ra", mtime = 2000L)
+            }
+        })
+
+        assertEquals(emptySet<String>(), files(private))
+        assertEquals("cfg", File(home, ".userdata/android/GBA-mgba/minarch.cfg").readText())
+        assertEquals("ra", File(home, ".userdata/shared/.ra/cache.json").readText())
+        assertEquals("save", File(home, "Saves/GBA/a.srm").readText())
+    }
+
+    @Test fun filesStillAppearingDeleteNothing() {
+        write(private, "Saves/GBA/a.srm", "save", mtime = 1000L)
+        var n = 0
+        try {
+            DataRoot.moveAll(private, home, beforeDelete = { n++; write(private, "Saves/GBA/new$n.srm", "x", mtime = 2000L) })
+            fail("an incomplete move must be reported")
+        } catch (_: DataRoot.IncompleteMove) {
+        }
+        assertEquals("save", File(private, "Saves/GBA/a.srm").readText())
+        assertTrue(File(private, "Saves/GBA/new$n.srm").isFile)
+    }
+
     @Test fun aFileStillChangingDeletesNothing() {
         write(private, "Saves/GBA/a.srm", "save", mtime = 1000L)
         write(private, ".userdata/android/hidden.txt", "a", mtime = 1000L)

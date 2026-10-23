@@ -129,9 +129,9 @@ class AndroidSaveTransfer(
     private fun importWork(progress: (String) -> Unit, done: (ImportResult) -> Unit, block: () -> ImportResult) {
         SaveTransferRules.importRefusal(gameScreenAlive(), syncing())?.let { return done(ImportResult.Message(it)) }
         importsRunning.incrementAndGet()
-        DataRoot.useBegin()   // an import writes saves: no data move starts under it
         main.post { progress("Working…") }
         executor.execute {
+            DataRoot.useBegin()   // an import writes saves: no data move starts under it (begun in the task, so always ended)
             val result = try {
                 block()
             } catch (e: Throwable) {
