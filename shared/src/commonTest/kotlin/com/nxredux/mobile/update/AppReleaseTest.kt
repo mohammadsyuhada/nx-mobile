@@ -96,6 +96,18 @@ class AppReleaseTest {
         assertNull(assertNotNull(parseLatestRelease(releaseJson(digest = null), dev = false)).sha256)
     }
 
+    @Test fun a_digest_of_another_algorithm_leaves_the_hash_null() {
+        assertNull(assertNotNull(parseLatestRelease(releaseJson(digest = "sha512:ABC123"), dev = false)).sha256)
+        assertNull(assertNotNull(parseLatestRelease(releaseJson(digest = "ABC123"), dev = false)).sha256)
+    }
+
+    @Test fun a_check_time_in_the_future_counts_as_due() {
+        val now = 10_000_000_000L
+        assertTrue(UpdatePolicy.checkDue(now, lastSuccess = now + 1, lastFailure = 0))
+        assertTrue(UpdatePolicy.checkDue(now, lastSuccess = 0, lastFailure = now + 1))
+        assertFalse(UpdatePolicy.checkDue(now, lastSuccess = now + 1, lastFailure = now - 1))
+    }
+
     @Test fun the_check_runs_daily_and_retries_hourly_after_a_failure() {
         val now = 10_000_000_000L
         assertFalse(UpdatePolicy.checkDue(now, lastSuccess = now - 86_400_000 + 1, lastFailure = 0))

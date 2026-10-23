@@ -6,7 +6,7 @@ import kotlinx.serialization.json.Json
 /**
  * The newest published release, as the updater needs it. [version]: the tag without its `v` ("0.4.0"); [versionCode]: what
  * the build stamps for that tag ([tagVersionCode]); [notes]: the release body's first paragraph, "" when it has none;
- * [sha256]: the APK's lowercase hex digest, null when GitHub gave none.
+ * [sha256]: the APK's lowercase hex digest, null when GitHub gave none (or not a `sha256:` one).
  */
 data class AppRelease(
     val version: String,
@@ -84,7 +84,8 @@ fun readLatestRelease(json: String, dev: Boolean): LatestRelease {
             notes = firstParagraph(dto.body.orEmpty()),
             apkUrl = asset.browser_download_url,
             apkSize = asset.size,
-            sha256 = asset.digest?.removePrefix("sha256:")?.lowercase()?.takeIf { it.isNotEmpty() },
+            // Another algorithm's digest can't be compared: null leaves the check to the APK signature.
+            sha256 = asset.digest?.takeIf { it.startsWith("sha256:") }?.removePrefix("sha256:")?.lowercase()?.takeIf { it.isNotEmpty() },
         ),
     )
 }
@@ -97,9 +98,12 @@ object UpdatePolicy {
     const val CHECK_INTERVAL_MS = 86_400_000L
     const val RETRY_MS = 3_600_000L
 
-    /** A check is due a day after the last success, and an hour after the last failure. Times are epoch millis, 0 for never. */
+    /**
+     * A check is due a day after the last success, and an hour after the last failure. Times are epoch millis, 0 for never;
+     * a stored time in the future (the clock was set back) counts as due, or the check would wait until the clock caught up.
+     */
     fun checkDue(now: Long, lastSuccess: Long, lastFailure: Long): Boolean =
-        now - lastSuccess >= CHECK_INTERVAL_MS && now - lastFailure >= RETRY_MS
+        (lastSuccess > now || now - lastSuccess >= CHECK_INTERVAL_MS) && (lastFailure > now || now - lastFailure >= RETRY_MS)
 
     /** The popup is for a release newer than the install that the user has not silenced ([silenced]: its version). */
     fun shouldPopup(release: AppRelease, installedCode: Long, silenced: String?): Boolean =
