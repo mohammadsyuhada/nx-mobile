@@ -3,7 +3,7 @@ NX Redux link-cable code in this core
 
 This core is built with sio_lockstep.c/.h (the GBA link-cable lockstep state machine) and the glue in
 cores/patches/gpsp/004-sio-lockstep.patch or cores/patches/mgba/001-sio-lockstep.patch, from NX Redux
-(https://github.com/mohammadsyuhada/nx-redux, workspace/all/cores/, main 2f25643b). That code is licensed
+(https://github.com/nx-redux/nx-handheld, workspace/all/cores/, main 2f25643b). That code is licensed
 GPL-2.0-or-later (SPDX lines in sio_lockstep.c and sio_lockstep.h).
 
 gpSP is GPL-2.0, so the built gpSP core stays GPL-2.0. mGBA's own files stay under MPL-2.0 (above); as MPL-2.0 section 3.3

@@ -53,7 +53,7 @@ class UsbIdsTest {
 
     @Test fun aoa_strings_in_protocol_order() {
         assertEquals(
-            listOf("NX Redux", "NX Redux Mobile Link", "NX Redux Mobile cable link", "1", "https://github.com/mohammadsyuhada/nx-mobile", "NXREDUX0001"),
+            listOf("NX Redux", "NX Redux Mobile Link", "NX Redux Mobile cable link", "1", "https://github.com/nx-redux/nx-mobile", "NXREDUX0001"),
             UsbIds.AOA_STRINGS,
         )
     }

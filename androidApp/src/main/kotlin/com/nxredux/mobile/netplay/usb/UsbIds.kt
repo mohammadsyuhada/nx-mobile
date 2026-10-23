@@ -39,7 +39,7 @@ object UsbIds {
     const val MANUFACTURER = "NX Redux"
     const val MODEL = "NX Redux Mobile Link"
     /** AOA string indexes 0..5: manufacturer, model, description, version, URI, serial. */
-    val AOA_STRINGS = listOf(MANUFACTURER, MODEL, "NX Redux Mobile cable link", "1", "https://github.com/mohammadsyuhada/nx-mobile", "NXREDUX0001")
+    val AOA_STRINGS = listOf(MANUFACTURER, MODEL, "NX Redux Mobile cable link", "1", "https://github.com/nx-redux/nx-mobile", "NXREDUX0001")
 
     fun nxlinkInterface(d: UsbDevice): UsbInterface? =
         (0 until d.interfaceCount).map(d::getInterface).firstOrNull { isNxlink(it.interfaceClass, it.interfaceSubclass, it.interfaceProtocol) }

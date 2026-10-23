@@ -1,6 +1,6 @@
 # NX Redux Mobile
 
-NX Redux for Android phones, tablets and Android handhelds. The same pick-up-and-play retro launcher as the [NX Redux](https://github.com/mohammadsyuhada/nx-redux) handheld firmware: pick up, pick a game, play. The app uses the handheld's `Roms/`, `Bios/` and `Collections/` folders, so one library works on both, and [Device Sync](https://nxredux.com/mobile/device-sync/) carries games, saves and save states between a phone and an NX Redux handheld.
+NX Redux for Android phones, tablets and Android handhelds. The same pick-up-and-play retro launcher as the [NX Redux](https://github.com/nx-redux/nx-handheld) handheld firmware: pick up, pick a game, play. The app uses the handheld's `Roms/`, `Bios/` and `Collections/` folders, so one library works on both, and [Device Sync](https://nxredux.com/mobile/device-sync/) carries games, saves and save states between a phone and an NX Redux handheld.
 
 📖 **User documentation: [nxredux.com/mobile](https://nxredux.com/mobile/getting-started/)**: setup, guides for every feature, each emulator, and the settings, illustrated with screenshots from the app.
 
