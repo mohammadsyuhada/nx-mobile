@@ -16,10 +16,11 @@ object CheatDatabase {
     const val NEEDED_FREE_BYTES: Long = 400L shl 20
 
     /**
-     * NX tag → libretro folders, in nx-redux's order. Several tags share a folder (GB/SGB, GBA/MGBA, SFC/SUPA); one tag
-     * can take several (WSC runs both WonderSwan systems, where nx-redux has WS and WSC). PCECD and BS are not tags: they
-     * hold the cheats [CheatFolders] routes PC Engine CD and Satellaview games to. GPGX has no row (its games route to
-     * MD, SMS, GG, SG1000 and SEGACD); nx-redux's MSX row is dropped (no MSX tag here, and libretro split that folder).
+     * NX console tag → libretro folders, in nx-redux's order: one folder per console, as in `Roms/` ([CheatFolders] reads
+     * a second core's tag, MGBA, SUPA, PSX or GPGX, as its console's). GB and SGB share a libretro folder; one tag can take
+     * several (WSC runs both WonderSwan systems, where nx-redux has WS and WSC). PCECD and BS are not tags: they hold the
+     * cheats [CheatFolders] routes PC Engine CD and Satellaview games to. nx-redux's MSX row is dropped (no MSX tag here,
+     * and libretro split that folder).
      */
     val FOLDERS: Map<String, List<String>> = linkedMapOf(
         "FC" to listOf("Nintendo - Nintendo Entertainment System"),
@@ -28,9 +29,7 @@ object CheatDatabase {
         "SGB" to listOf("Nintendo - Game Boy"),
         "GBC" to listOf("Nintendo - Game Boy Color"),
         "GBA" to listOf("Nintendo - Game Boy Advance"),
-        "MGBA" to listOf("Nintendo - Game Boy Advance"),
         "SFC" to listOf("Nintendo - Super Nintendo Entertainment System"),
-        "SUPA" to listOf("Nintendo - Super Nintendo Entertainment System"),
         "BS" to listOf("Nintendo - Satellaview"),
         "VB" to listOf("Nintendo - Virtual Boy"),
         "N64" to listOf("Nintendo - Nintendo 64"),
@@ -43,7 +42,6 @@ object CheatDatabase {
         "SG1000" to listOf("Sega - SG-1000"),
         "DC" to listOf("Sega - Dreamcast"),
         "PS" to listOf("Sony - PlayStation"),
-        "PSX" to listOf("Sony - PlayStation"),
         "PSP" to listOf("Sony - PlayStation Portable"),
         "PCE" to listOf("NEC - PC Engine - TurboGrafx 16"),
         "PCECD" to listOf("NEC - PC Engine CD - TurboGrafx-CD"),

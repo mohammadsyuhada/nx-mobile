@@ -544,6 +544,40 @@ JNIEXPORT void JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_setCheat(
     }
 }
 
+JNIEXPORT void JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_setMemoryCheats(
+    JNIEnv* env,
+    jclass obj,
+    jintArray fields
+) {
+    // nx-mobile: 9 ints per patch, in CheatMemPatch order from address (MemoryPatch.packed()).
+    constexpr jsize PER_PATCH = 9;
+    try {
+        jsize n = fields ? env->GetArrayLength(fields) : 0;
+        std::vector<jint> v(n);
+        if (n) env->GetIntArrayRegion(fields, 0, n, v.data());
+        std::vector<CheatMemPatch> patches;
+        for (jsize i = 0; i + PER_PATCH <= n; i += PER_PATCH) {
+            CheatMemPatch p;
+            CheatMemPatch_init(&p);
+            p.memory = 1;
+            p.address = (unsigned) v[i];
+            p.value = (unsigned) v[i + 1];
+            p.size = (unsigned) v[i + 2];
+            p.type = (unsigned) v[i + 3];
+            p.bit_mask = (unsigned) v[i + 4];
+            p.big_endian = v[i + 5];
+            p.repeat_count = (unsigned) v[i + 6];
+            p.repeat_add_to_value = (unsigned) v[i + 7];
+            p.repeat_add_to_address = (unsigned) v[i + 8];
+            patches.push_back(p);
+        }
+        LibretroDroid::getInstance().setMemoryCheats(std::move(patches));
+    } catch (std::exception &exception) {
+        LOGE("Error in setMemoryCheats: %s", exception.what());
+        JavaUtils::throwRetroException(env, ERROR_CHEAT);
+    }
+}
+
 JNIEXPORT void JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_resetCheat(
     JNIEnv* env,
     jclass obj

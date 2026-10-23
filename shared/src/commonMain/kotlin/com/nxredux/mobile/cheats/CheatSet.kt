@@ -3,8 +3,11 @@ package com.nxredux.mobile.cheats
 import com.nxredux.mobile.options.ConfigSource
 import com.nxredux.mobile.options.FrontendOptions
 
-/** One row of the Cheats page. [info] is the full text A shows (the desc, prefixed with its source when files were merged). */
-data class CheatEntry(val desc: String, val code: String, val info: String, val enabled: Boolean)
+/**
+ * One row of the Cheats page. [info] is the full text A shows (the desc, prefixed with its source when files were merged).
+ * A [mem] entry is a RAM patch the frontend applies ([CheatSet.enabledPatches]); it has no code.
+ */
+data class CheatEntry(val desc: String, val code: String, val info: String, val enabled: Boolean, val mem: MemoryPatch? = null)
 
 /** The cheats resolved for the running game. [expected] is the first file name looked for (shown when nothing matched). */
 data class CheatSet(val entries: List<CheatEntry>, val expected: String) {
@@ -19,7 +22,16 @@ data class CheatSet(val entries: List<CheatEntry>, val expected: String) {
     fun enabledKeys(): List<String> = keys().filterIndexed { i, _ -> entries[i].enabled }
 
     /** What the core receives, in order: index i of the apply loop is the i-th of these (no gaps, PCSX-ReARMed #116). */
-    fun enabledCodes(): List<String> = entries.filter { it.enabled && it.code.isNotEmpty() }.map { it.code }
+    fun enabledCodes(): List<String> = entries.filter { it.enabled && it.mem == null && it.code.isNotEmpty() }.map { it.code }
+
+    /** For a core that ignores codes: only the RAM patches, which the frontend applies whatever the core. */
+    fun ramPatchesOnly(): CheatSet = copy(entries = entries.filter { it.mem != null })
+
+    /** The enabled RAM patches, in order: the frontend applies them every frame, the core never sees them. */
+    fun enabledPatches(): List<MemoryPatch> = entries.filter { it.enabled }.mapNotNull { it.mem }
+
+    /** True when any cheat is on, a code or a RAM patch: what decides whether the core gets them. */
+    fun hasEnabled(): Boolean = enabledCodes().isNotEmpty() || enabledPatches().isNotEmpty()
 
     /** Every entry enabled iff its normalised info is in [saved]; the file's `cheatN_enable` seeds are ignored. */
     fun withSaved(saved: List<String>): CheatSet {

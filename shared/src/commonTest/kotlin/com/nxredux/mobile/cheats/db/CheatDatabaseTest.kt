@@ -6,36 +6,37 @@ import kotlin.test.assertEquals
 
 class CheatDatabaseTest {
     @Test fun the_table_is_the_nx_redux_one() {
-        // nx-redux's 35, WS folded into WSC, MSX dropped, plus PCECD and BS (route targets, not tags)
-        assertEquals(35, CheatDatabase.FOLDERS.size)
+        // nx-redux's 35, WS folded into WSC, MSX dropped, MGBA, SUPA and PSX read their console's folder, plus PCECD and
+        // BS (route targets, not tags)
+        assertEquals(32, CheatDatabase.FOLDERS.size)
         assertEquals(listOf("Nintendo - Game Boy"), CheatDatabase.FOLDERS["GB"])
         assertEquals(listOf("Nintendo - Game Boy"), CheatDatabase.FOLDERS["SGB"])
         assertEquals(listOf("Sony - PlayStation"), CheatDatabase.FOLDERS["PS"])
-        assertEquals(listOf("Sony - PlayStation"), CheatDatabase.FOLDERS["PSX"])
         assertEquals(listOf("Sony - PlayStation Portable"), CheatDatabase.FOLDERS["PSP"])
         assertEquals(listOf("PrBoom"), CheatDatabase.FOLDERS["PRBOOM"])
         assertEquals(listOf("NEC - PC Engine CD - TurboGrafx-CD"), CheatDatabase.FOLDERS["PCECD"])
         assertEquals(listOf("Nintendo - Satellaview"), CheatDatabase.FOLDERS["BS"])
-        for (gone in listOf("WS", "GPGX", "MSX")) assertEquals(null, CheatDatabase.FOLDERS[gone])
+        for (gone in listOf("WS", "GPGX", "MSX", "MGBA", "SUPA", "PSX")) assertEquals(null, CheatDatabase.FOLDERS[gone])
         assertEquals("https://buildbot.libretro.com/assets/frontend/cheats.zip", CheatDatabase.URL)
         assertEquals(400L shl 20, CheatDatabase.NEEDED_FREE_BYTES)
     }
 
     @Test fun folders_for_the_registry_tags_only() {
         val folders = CheatDatabase.foldersFor(CoreRegistry.cheatTags)
-        // Table order, route targets included (BS, PCECD); GPGX routes to the Sega folders; the cores of VB, A2600,
-        // A5200, A7800, LYNX, NGP, NGPC, PKM, P8, DC, 3DS, FBN and COLECO ignore cheats.
+        // Table order, route targets included (BS, PCECD); GPGX routes to the Sega folders. DC, A7800, LYNX, COLECO and
+        // FBN cores ignore codes but take the RAM patches their files hold (nx-redux #261); the cores of VB, A2600, A5200
+        // (no system RAM), NGP, NGPC, PKM, P8 and 3DS ignore cheats.
         assertEquals(
-            listOf("FC", "FDS", "GB", "SGB", "GBC", "GBA", "MGBA", "SFC", "SUPA", "BS", "N64", "NDS", "SMS", "GG", "MD",
-                "32X", "SEGACD", "SG1000", "PS", "PSX", "PSP", "PCE", "PCECD", "WSC", "PRBOOM"),
+            listOf("FC", "FDS", "GB", "SGB", "GBC", "GBA", "SFC", "BS", "N64", "NDS", "SMS", "GG", "MD",
+                "32X", "SEGACD", "SG1000", "DC", "PS", "PSP", "PCE", "PCECD", "A7800", "LYNX", "COLECO", "WSC", "FBN", "PRBOOM"),
             folders.keys.toList(),
         )
     }
 
-    @Test fun gba_and_mgba_share_a_folder() {
-        val folders = CheatDatabase.foldersFor(listOf("GBA", "MGBA"))
-        assertEquals(listOf("Nintendo - Game Boy Advance"), folders["GBA"])
-        assertEquals(folders["GBA"], folders["MGBA"])
+    @Test fun a_second_cores_tag_installs_its_consoles_folder() {
+        assertEquals(listOf("GBA"), CheatDatabase.foldersFor(listOf("MGBA")).keys.toList())
+        assertEquals(listOf("SFC", "BS"), CheatDatabase.foldersFor(listOf("SUPA")).keys.toList())
+        assertEquals(listOf("PS"), CheatDatabase.foldersFor(listOf("PSX")).keys.toList())
     }
 
     @Test fun route_targets_come_with_their_tag() {

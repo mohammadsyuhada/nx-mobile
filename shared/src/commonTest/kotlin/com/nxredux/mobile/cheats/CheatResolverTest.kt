@@ -88,7 +88,10 @@ class CheatResolverTest {
         assertEquals(listOf("US"), us.entries.map { it.desc })
         // Unknown serial (a .chd, or a disc the cheats don't list): the name stages as before.
         val none = CheatResolver.resolve(disk.keys.toList(), "Tekken 6.iso", "Tekken 6", psp, read = { disk[it] }, serial = "ULUS-99999")
-        assertEquals(listOf("Store"), none.entries.map { it.desc })
+        assertEquals(listOf("US"), none.entries.map { it.desc })   // region-less name: [US] before [EU]
+        // A .chd has no serial read: the ROM's region picks its [US] file, not the first name in the folder.
+        val chd = CheatResolver.resolve(disk.keys.toList(), "Tekken 6 (USA).chd", "Tekken 6", psp + "chd", read = { disk[it] })
+        assertEquals(listOf("US"), chd.entries.map { it.desc })
     }
 
     @Test fun nothing_matching_gives_an_empty_set_with_the_expected_name() {
@@ -96,6 +99,19 @@ class CheatResolverTest {
         assertEquals(emptyList(), set.entries)
         assertEquals("Tetris.gb.cht", set.expected)
         assertEquals("Tetris.gb.cht", CheatResolver.resolve(emptyList(), "Tetris.gb", "Tetris", gb, read = { null }).expected)
+    }
+
+    @Test fun a_differently_spelled_database_name_still_resolves() {
+        val disk = mapOf(
+            "Marvel Vs. Capcom 2.cht" to cht("Unlock" to "01"),
+            "Marvel Vs. Capcom.cht" to cht("One" to "02"),
+            "Soul Calibur.cht" to cht("Health" to "03"),
+        )
+        val dc = setOf("chd", "cdi", "gdi")
+        val mvc2 = CheatResolver.resolve(disk.keys.toList(), "Marvel vs Capcom 2.chd", "Marvel vs Capcom 2", dc, read = { disk[it] })
+        assertEquals(listOf("Unlock"), mvc2.entries.map { it.desc })
+        val sc = CheatResolver.resolve(disk.keys.toList(), "Soulcalibur (USA).chd", "Soulcalibur", dc, read = { disk[it] })
+        assertEquals(listOf("Health"), sc.entries.map { it.desc })
     }
 
     @Test fun a_bad_file_in_the_merged_group_is_skipped() {

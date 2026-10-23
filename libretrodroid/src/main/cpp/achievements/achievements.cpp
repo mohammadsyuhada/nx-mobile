@@ -63,6 +63,7 @@ void Achievements::invalidateMemoryRegions() {
 
 void Achievements::setMemoryMap(const struct retro_memory_map* map) {
     invalidateMemoryRegions();
+    mapVersion++;
     descriptors.clear();
     descriptorStrings.clear();
     if (!map || !map->descriptors || map->num_descriptors == 0) { haveMemoryMap = false; return; }

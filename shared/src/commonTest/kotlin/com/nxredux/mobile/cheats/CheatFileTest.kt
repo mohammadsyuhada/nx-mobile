@@ -33,9 +33,12 @@ class CheatFileTest {
         )
     }
 
-    @Test fun count_line_must_come_first_and_be_positive() {
+    @Test fun count_line_can_come_anywhere_and_must_be_positive() {
         assertNull(CheatFile.parse(""))
-        assertNull(CheatFile.parse("cheat0_desc = \"x\"\ncheat0_code = \"y\"\ncheats = 1\n"))
+        assertNull(CheatFile.parse("cheat0_desc = \"x\"\ncheat0_code = \"y\"\n"))
+        // RetroArch's cheat search writes the count last (nx-redux #261).
+        assertEquals(listOf(Cheat("x", "y")), CheatFile.parse("cheat0_desc = \"x\"\ncheat0_code = \"y\"\ncheats = 1\n"))
+        assertEquals(listOf(Cheat("x", "y")), CheatFile.parse("cheats_x = 9\ncheats = 1\ncheat0_desc = \"x\"\ncheat0_code = \"y\"\n"))
         assertNull(CheatFile.parse("cheats = 0\n"))
         assertNull(CheatFile.parse("cheats = abc\n"))
         assertEquals(listOf(Cheat("x", "y")), CheatFile.parse("\n\n  cheats=1\ncheat0_desc = \"x\"\ncheat0_code = \"y\"\n"))
@@ -68,8 +71,8 @@ class CheatFileTest {
             cheat0_desc = "d"
             cheat0_code = "c"
             cheat0_address = 1234
-            cheat0_handler = 1
             cheat0_big_endian = false
+            cheat0_unknown_key = 5
             cheat1_desc = "out of range"
             cheat1_code = "zz"
             cheat7_enable = true
@@ -80,23 +83,36 @@ class CheatFileTest {
     @Test fun a_cheat_without_a_code_is_dropped() {
         val text = "cheats = 3\ncheat0_desc = \"a\"\ncheat0_code = \"1\"\ncheat1_desc = \"no code\"\ncheat2_desc = \"c\"\ncheat2_code = \"3\"\n"
         assertEquals(listOf(Cheat("a", "1"), Cheat("c", "3")), CheatFile.parse(text))
-        // Empty desc or code counts as missing.
-        assertEquals(emptyList(), CheatFile.parse("cheats = 1\ncheat0_desc = \"\"\ncheat0_code = \"1\"\n"))
+        // An empty code counts as missing.
         assertEquals(emptyList(), CheatFile.parse("cheats = 1\ncheat0_desc = \"a\"\ncheat0_code = \"\"\n"))
     }
 
-    @Test fun a_bad_line_is_skipped_not_fatal() {
-        val text = "cheats = 2\ncheat0_desc = \"unterminated\ncheat0_code = \"1\"\ncheat1_desc = \"ok\"\ncheat1_code = \"2\"\n"
-        assertEquals(listOf(Cheat("ok", "2")), CheatFile.parse(text))
-        // A value without quotes is a bad line too.
-        assertEquals(listOf(Cheat("ok", "2")), CheatFile.parse("cheats = 2\ncheat0_desc = bare\ncheat0_code = \"1\"\ncheat1_desc = \"ok\"\ncheat1_code = \"2\"\n"))
+    @Test fun a_cheat_without_a_desc_is_named_by_its_number() {
+        // 135 database files have one (Sonic 3 & Knuckles' cheat 59); the handheld names them too (nx-redux #262).
+        val text = "cheats = 3\ncheat0_desc = \"\"\ncheat0_code = \"1\"\ncheat1_desc = \"b\"\ncheat1_code = \"2\"\ncheat2_code = \"3\"\n"
+        assertEquals(listOf(Cheat("Cheat 1", "1"), Cheat("b", "2"), Cheat("Cheat 3", "3")), CheatFile.parse(text))
+        val ram = "cheats = 1\ncheat0_handler = 1\ncheat0_value = 2\n"
+        assertEquals(listOf(Cheat("Cheat 1", "", mem = MemoryPatch(value = 2))), CheatFile.parse(ram))
     }
 
-    @Test fun a_line_over_510_bytes_is_skipped() {
-        val long = "cheat0_code = \"" + "A".repeat(600) + "\""
-        assertEquals(emptyList(), CheatFile.parse("cheats = 1\ncheat0_desc = \"d\"\n$long\n"))
-        val fits = "cheat0_code = \"" + "A".repeat(490) + "\""
-        assertEquals(490, CheatFile.parse("cheats = 1\ncheat0_desc = \"d\"\n$fits\n")!![0].code.length)
+    @Test fun database_html_entities_are_decoded() {
+        val text = "cheats = 1\ncheat0_desc = \"P1 &amp; P2 &lt;3&gt; &apos;x&apos;&nbsp;Pok&eacute;mon &amp;amp; &bogus;\"\ncheat0_code = \"1\"\n"
+        assertEquals("P1 & P2 <3> 'x' Pokémon &amp; &bogus;", CheatFile.parse(text)!![0].desc)
+    }
+
+    @Test fun a_bad_line_is_skipped_not_fatal() {
+        // The bad desc line is skipped; the cheat keeps its code under its number.
+        val text = "cheats = 2\ncheat0_desc = \"unterminated\ncheat0_code = \"1\"\ncheat1_desc = \"ok\"\ncheat1_code = \"2\"\n"
+        assertEquals(listOf(Cheat("Cheat 1", "1"), Cheat("ok", "2")), CheatFile.parse(text))
+        // A value without quotes is a bad line too.
+        assertEquals(listOf(Cheat("Cheat 1", "1"), Cheat("ok", "2")), CheatFile.parse("cheats = 2\ncheat0_desc = bare\ncheat0_code = \"1\"\ncheat1_desc = \"ok\"\ncheat1_code = \"2\"\n"))
+    }
+
+    @Test fun a_long_code_line_is_read_whole() {
+        // Database codes run to 15,000 chars (PSP); minarch's old 512-byte line buffer dropped them (nx-redux #260).
+        val code = "_L 0x20000000 0x00000000 ".repeat(600).trim()
+        val text = "cheats = 1\ncheat0_desc = \"d\"\ncheat0_code = \"$code\"\n"
+        assertEquals(listOf(Cheat("d", code)), CheatFile.parse(text))
     }
 
     @Test fun duplicate_keys_last_wins_and_code_is_verbatim() {
@@ -107,5 +123,70 @@ class CheatFileTest {
     @Test fun count_is_capped() {
         val text = "cheats = 999999\ncheat0_desc = \"d\"\ncheat0_code = \"c\"\ncheat5000_desc = \"far\"\ncheat5000_code = \"x\"\n"
         assertEquals(listOf(Cheat("d", "c")), CheatFile.parse(text))
+    }
+
+    // RetroArch "handler 1" cheats (nx-redux #261): a RAM patch the frontend applies, no code. The FBNeo shape: quoted
+    // numbers, the count line last.
+    private val ramCheats = """
+        cheat0_desc = "Inf energy P1"
+        cheat0_handler = "1"
+        cheat0_address = "4608"
+        cheat0_value = "0x40"
+        cheat0_memory_search_size = "3"
+        cheat0_cheat_type = "1"
+        cheat0_enable = "true"
+
+        cheat1_desc = "Score"
+        cheat1_handler = 1
+        cheat1_address = 16
+        cheat1_value = 4660
+        cheat1_memory_search_size = 4
+        cheat1_cheat_type = 1
+        cheat1_big_endian = "true"
+        cheat1_address_bit_position = 255
+        cheat1_repeat_count = 3
+        cheat1_repeat_add_to_value = 1
+        cheat1_repeat_add_to_address = 2
+
+        cheat2_desc = "Handler 0 without a code"
+        cheat2_handler = 0
+
+        cheats = "3"
+    """.trimIndent()
+
+    @Test fun ram_patch_cheats_parse_with_the_count_line_last() {
+        assertEquals(
+            listOf(
+                Cheat("Inf energy P1", "", mem = MemoryPatch(address = 4608, value = 0x40, size = 3, type = 1)),
+                Cheat(
+                    "Score", "",
+                    mem = MemoryPatch(
+                        address = 16, value = 4660, size = 4, type = 1, bitMask = 255, bigEndian = true,
+                        repeatCount = 3, repeatAddToValue = 1, repeatAddToAddress = 2,
+                    ),
+                ),
+            ),
+            CheatFile.parse(ramCheats),   // a quoted enable = "true" stays off; a handler-0 cheat with no code is dropped
+        )
+    }
+
+    @Test fun ram_patch_defaults_follow_retroarch() {
+        val text = "cheats = 1\ncheat0_desc = \"d\"\ncheat0_handler = 1\n"
+        assertEquals(MemoryPatch(), CheatFile.parse(text)!![0].mem)
+        assertEquals(1, MemoryPatch().repeatCount)
+        assertEquals(1, MemoryPatch().repeatAddToAddress)
+    }
+
+    @Test fun numbers_read_like_strtoul_base_0() {
+        fun value(v: String) = CheatFile.parse("cheats = 1\ncheat0_desc = \"d\"\ncheat0_handler = 1\ncheat0_value = $v\n")!![0].mem!!.value
+        assertEquals(255L, value("0xFF"))
+        assertEquals(8L, value("010"))                // octal, as RetroArch reads it
+        assertEquals(12L, value("\"12\""))
+        assertEquals(4294967295L, value("4294967295"))
+        assertEquals(0L, value("x1"))                 // not a number: the field keeps its default
+    }
+
+    @Test fun a_code_cheat_has_no_memory_patch() {
+        assertNull(CheatFile.parse("cheats = 1\ncheat0_desc = \"d\"\ncheat0_code = \"01\"\n")!![0].mem)
     }
 }

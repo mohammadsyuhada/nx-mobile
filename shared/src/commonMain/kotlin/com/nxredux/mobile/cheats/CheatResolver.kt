@@ -69,7 +69,7 @@ object CheatResolver {
             val source = CheatMatch.sourceLabel(name)
             cheats.map { c ->
                 val info = if (multi && source.isNotEmpty()) "($source) ${c.desc}" else c.desc
-                CheatEntry(c.desc, c.code, info, c.enabled)
+                CheatEntry(c.desc, c.code, info, c.enabled, c.mem)
             }
         }
     }

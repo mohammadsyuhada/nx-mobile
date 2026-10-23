@@ -159,6 +159,7 @@ import com.nxredux.mobile.storage.AndroidLibraryIndexStore
 import com.nxredux.mobile.storage.AndroidRefs
 import com.nxredux.mobile.storage.AndroidRomsSources
 import com.nxredux.mobile.test.NxTestResults
+import com.nxredux.mobile.tools.CheatsRoot
 import com.swordfish.libretrodroid.GLRetroView
 import com.swordfish.libretrodroid.GLRetroViewData
 import com.swordfish.libretrodroid.LibretroDroid
@@ -1126,7 +1127,8 @@ class GameActivity : ComponentActivity() {
         // Kept for one player: a key held through the load keeps its recorded send.
         if (inputs.count != players) inputs = PortInputs(players)
         rumbles = Array(players) { RumbleMotor(this, gameRumble, phoneFallback = it == 0) }
-        val cheatsOk = descriptor?.cheats ?: true
+        // A core that ignores codes still takes RAM patches (ramCheats).
+        val cheatsOk = descriptor?.let { it.cheats || it.ramCheats } ?: true
         cheatsSupported = np == null && cheatsOk   // netplay: cheats would desync the other device
         // A SAF document URI, or a file ref with All files access: opened only through [refs], never Uri.parse.
         val content = ContentRef(intent.getStringExtra(EXTRA_CONTENT_URI) ?: return fail("No content given"))
@@ -1182,7 +1184,8 @@ class GameActivity : ComponentActivity() {
             val resolvedSet = withContext(Dispatchers.IO) {
                 // PSP cheat files are named by serial ("[ULUS-10466]"), which the disc knows and the file name rarely does.
                 val serial = if (descriptor?.id == "ppsspp" && PspSerial.readable(romFileName)) PspSerialReader.read(refs, content, romFileName) else null
-                Cheats.resolve(sdRoot, tag, romFileName, title, extensions, serial)
+                Cheats.resolve(CheatsRoot.of(this@GameActivity), tag, romFileName, title, extensions, serial)
+                    .let { if (descriptor?.cheats == false) it.ramPatchesOnly() else it }   // its codes would do nothing
             }
             val combined = if (isDolphin) {
                 dolphinBuiltInPath = DolphinCheats.builtInFile(filesDir.absolutePath, CoreRegistry.contentName(tag, dolphinContent.await()))
@@ -1663,7 +1666,7 @@ class GameActivity : ComponentActivity() {
             // Cheats sit on top of the resumed state, as minarch applies them after load.
             cheatsLoad?.join()
             refreshDolphinCheats()
-            if (cheatSet.enabledCodes().isNotEmpty()) applyCheats(view)
+            if (cheatSet.hasEnabled()) applyCheats(view)
             achievements?.startSession()
         }
         // A refused game: the core's own reason (flycast names the NAOMI/Atomiswave BIOS or ROM file it could not find).
@@ -3994,14 +3997,18 @@ class GameActivity : ComponentActivity() {
     /**
      * Sends the enabled cheats to the core on the emulation thread in one job: a reset, then only the enabled
      * ones with contiguous indices (PCSX-ReARMed treats the index as a slot and skips a cheat behind a gap,
-     * libretro issue #116). Caught so a JNI failure never kills the GL thread.
+     * libretro issue #116), and the enabled RAM patches, which replace the last set. Caught so a JNI failure never kills
+     * the GL thread.
      */
     private fun applyCheats(view: GLRetroView) {
         val codes = cheatSet.enabledCodes()
+        // RetroArch RAM patches: the native side writes them before every frame (none outside a netplay session either).
+        val patches = cheatSet.enabledPatches().flatMap { it.packed().asList() }.toIntArray()
         view.queueEvent {
             runCatching {
                 LibretroDroid.resetCheat()
                 codes.forEachIndexed { i, code -> view.setCheat(i, true, code, useEmulationThread = false) }
+                LibretroDroid.setMemoryCheats(patches)
             }.onFailure { NxLog.w("GameActivity", "applying cheats failed", it) }
         }
     }
@@ -4487,7 +4494,7 @@ class GameActivity : ComponentActivity() {
             val job = load().also { cheatsLoad = it }
             lifecycleScope.launch {
                 job.join()
-                if (!quitting && cheatSet.enabledCodes().isNotEmpty()) retroView?.let(::applyCheats)
+                if (!quitting && cheatSet.hasEnabled()) retroView?.let(::applyCheats)
             }
         }
         refreshDiscs()

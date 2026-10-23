@@ -102,6 +102,8 @@ fceumm_BUILD_PATH = .
 # jni/Android.mk defines LOCAL_MODULE := retro -> libs/arm64-v8a/libretro.so
 fceumm_ARTIFACT = libs/$(ABI)/libretro.so
 
+# patches/snes9x/0001 (nx-redux's): retro_cheat_set copies the code to the heap; database codes overflowed its 256-byte
+# stack buffer.
 snes9x_REPO = https://github.com/libretro/snes9x
 snes9x_HASH = fae2fea08f74180759ef540ee94259213f503480
 snes9x_LICENSE = LICENSE
@@ -110,6 +112,8 @@ snes9x_BUILD_PATH = libretro
 # libretro/jni/Android.mk defines LOCAL_MODULE := retro -> libs/arm64-v8a/libretro.so
 snes9x_ARTIFACT = libs/$(ABI)/libretro.so
 
+# patches/genesis_plus_gx/0001: retro_cheat_set heap-copies the code and stops at MAX_CHEATS parts; the 151st part
+# wrote past cheatlist[] and codes over 255 chars were cut.
 genesis_plus_gx_REPO = https://github.com/libretro/Genesis-Plus-GX
 genesis_plus_gx_HASH = c2838c7dc4236fc2fe94e5dbd08b41486067918e
 genesis_plus_gx_LICENSE = LICENSE.txt core/ntsc/license.txt
@@ -136,6 +140,8 @@ mgba_FLAGS = -DBUILD_LIBRETRO=ON -DUSE_SQLITE3=OFF -DNX_SIOLS_DIR=$(CURDIR)/sio_
 mgba_LICENSE_EXTRA = sio_lockstep/NOTICE.txt
 mgba_ARTIFACT = mgba_libretro.so
 
+# patches/mupen64plus_next/0012 (nx-redux's): retro_cheat_set sizes its code arrays to the code; database codes with
+# more than 256 parts overflowed them.
 mupen64plus_next_REPO = https://github.com/libretro/mupen64plus-libretro-nx
 mupen64plus_next_HASH = 6752836de8b224febfd5708444755b77712ac939
 mupen64plus_next_LICENSE = LICENSE GLideN64/LICENSE mupen64plus-core/LICENSES mupen64plus-rsp-hle/LICENSES mupen64plus-rsp-cxd4/COPYING \
@@ -173,7 +179,8 @@ ppsspp_LICENSE = LICENSE.TXT ffmpeg/LICENSE.md
 # patches/ppsspp.patch keeps a thread's own sigaltstack in the exception handler: upstream
 # restores the boot loader thread's stack on the unload thread, which kills the app later (see the patch).
 # patches/ppsspp/*.patch (nx-redux's numbered patches) applies after it: 0008 makes FixPathCase skip the "PSP/" that
-# STRIP_PSP removes, so saves work on case-sensitive storage (Saves/PSP is the memory stick).
+# STRIP_PSP removes, so saves work on case-sensitive storage (Saves/PSP is the memory stick). 0011 keeps every cheat
+# retro_cheat_set is given: it took the cheat file's header for a slot, so each cheat replaced the one before.
 ppsspp_KIND = cmake
 ppsspp_BUILD_PATH = .
 ppsspp_CMAKE_TARGET = ppsspp_libretro
@@ -230,6 +237,7 @@ race_KIND = ndkbuild
 race_BUILD_PATH = .
 race_ARTIFACT = libs/$(ABI)/libretro.so
 
+# patches/mednafen_pce_fast/0001: retro_cheat_set heap-copies the code; 256+ chars overflowed its stack buffer.
 mednafen_pce_fast_REPO = https://github.com/libretro/beetle-pce-fast-libretro
 mednafen_pce_fast_HASH = 52675734da114a19b3705f03906b1455f3d76644
 mednafen_pce_fast_LICENSE = COPYING mednafen/tremor/COPYING
@@ -284,6 +292,8 @@ mednafen_wswan_ARTIFACT = libs/$(ABI)/libretro.so
 # Its jni/Android.mk includes ../Makefile.common (cwd-relative), so ndk-build must run inside jni/.
 mednafen_wswan_FLAGS = -C jni
 
+# patches/mednafen_supafaust/0001: retro_run tries every cheat format on each '+' part and skips one none accepts;
+# the Game Genie decoder threw on anything else, which aborted the app.
 mednafen_supafaust_REPO = https://github.com/libretro/supafaust
 mednafen_supafaust_HASH = e25f66765938d33f9ad5850e8d6cd597e55b7299
 mednafen_supafaust_LICENSE = COPYING
@@ -364,6 +374,8 @@ swanstation_ARTIFACT = swanstation_libretro_android.so
 # 32X only (GPGX runs MD/SMS/GG/SG/SEGACD). jni/Android.mk at the repo root, LOCAL_MODULE := retro. The default
 # recursive submodule init pulls libpicofe, cyclone, emu2413, libchdr and dr_libs, all compiled.
 # patches/picodrive.patch turns the SH2 dynarec on for arm64 (upstream enables it for 32-bit arm only).
+# patches/picodrive/0001 (nx-redux's), after it: retro_cheat_set copies the code to the heap and each part into its
+# 12-byte field with a bound; long database codes and parts overflowed both.
 picodrive_REPO = https://github.com/irixxxx/picodrive
 picodrive_HASH = b0be121b7d58d6ee1ee2809974e62893c80a8264
 picodrive_LICENSE = COPYING

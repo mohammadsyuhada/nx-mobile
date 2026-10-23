@@ -567,6 +567,11 @@ void LibretroDroid::releaseCore() {
     core = nullptr;
     coreInitialized = false;
     gameLoaded = false;
+    // The patches and the RAM they point into belong to that core.
+    memoryCheats.clear();
+    memoryCheatList.clear();
+    cheatMemReady = false;
+    cheatMemLogged = false;
     // After retro_unload_game: the core may point into these until then (also a load that failed).
     gamePath.clear();
     gameFileData.reset();
@@ -662,6 +667,7 @@ void LibretroDroid::step() {
     auto& achievements = Achievements::getInstance();
     for (size_t i = 0; i < frames * speed; i++) {
         currentInput()->advancePointers(frameSeconds);
+        if (!np && !lk && !memoryCheats.empty()) applyMemoryCheats();   // never in netplay or link: the peer's RAM would differ
         core->retro_run();
         gldebug::pollErrors();
         rethrowVideoCallbackError();
@@ -910,6 +916,46 @@ void LibretroDroid::setCheat(unsigned index, bool enabled, const std::string& co
 
     // The code is only read during the call (RetroArch passes a temporary too).
     if (core) core->retro_cheat_set(index, enabled, code.c_str());
+}
+
+void LibretroDroid::setMemoryCheats(std::vector<CheatMemPatch> patches) {
+    std::lock_guard<std::mutex> lock(coreLock);
+
+    memoryCheats = std::move(patches);
+    memoryCheatList.clear();
+    for (const auto& p : memoryCheats) memoryCheatList.push_back(&p);
+}
+
+// RetroArch's choice of RAM: the SYSTEM_RAM regions of the core's memory map in order, or else
+// RETRO_MEMORY_SYSTEM_RAM. The database's addresses are offsets into that.
+void LibretroDroid::applyMemoryCheats() {
+    auto& achievements = Achievements::getInstance();
+    if (!cheatMemReady || cheatMemMapVersion != achievements.memoryMapVersion()) {
+        CheatMem_reset(&cheatMem);
+        bool fromMap = false;
+        unsigned dropped = 0;
+        if (const auto* map = achievements.currentMemoryMap()) {
+            for (unsigned i = 0; i < map->num_descriptors; i++) {
+                const auto& d = map->descriptors[i];
+                if ((d.flags & RETRO_MEMDESC_SYSTEM_RAM) && d.ptr && d.len && !CheatMem_addRegion(&cheatMem, d.ptr, d.len))
+                    dropped++;
+            }
+            fromMap = cheatMem.count > 0;
+        }
+        if (!cheatMem.count && core->retro_get_memory_data && core->retro_get_memory_size)
+            CheatMem_addRegion(&cheatMem, core->retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM),
+                               core->retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM));
+        if (!cheatMemLogged) {
+            if (dropped) LOGW("cheats: %u system RAM region(s) past the first %d are left out", dropped, CHEAT_MEM_MAX_REGIONS);
+            if (!cheatMem.count) LOGW("cheats: the core exposes no system RAM, RAM cheats can't apply");
+            else LOGI("cheats: RAM cheats apply to %d region(s), %zu bytes (%s)", cheatMem.count, cheatMem.total,
+                      fromMap ? "memory map" : "RETRO_MEMORY_SYSTEM_RAM");
+            cheatMemLogged = true;
+        }
+        cheatMemReady = fromMap;   // nx-redux #262: only a memory map's regions stay put
+        cheatMemMapVersion = achievements.memoryMapVersion();
+    }
+    CheatMem_apply(&cheatMem, memoryCheatList.data(), (int) memoryCheatList.size());
 }
 
 bool LibretroDroid::requiresVideoRefresh() const {

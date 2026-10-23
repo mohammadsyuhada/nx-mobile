@@ -158,16 +158,16 @@ object CoreRegistry {
         cheats = false,   // retro_cheat_set is empty
         name = "Beetle VB",
     )
-    private val handy = CoreDescriptor("handy", "libhandy_libretro_android.so", setOf("lnx", "lyx", "o"), biosFiles = listOf("lynxboot.img"), cheats = false, name = "Handy")   // retro_cheat_set is empty
+    private val handy = CoreDescriptor("handy", "libhandy_libretro_android.so", setOf("lnx", "lyx", "o"), biosFiles = listOf("lynxboot.img"), cheats = false, ramCheats = true, name = "Handy")   // retro_cheat_set is empty; the Lynx files are RAM patches
     private val stella2014 = CoreDescriptor("stella2014", "libstella2014_libretro_android.so", setOf("a26", "bin"), players = 2, cheats = false, name = "Stella 2014")   // retro_cheat_set is empty
     private val prosystem = CoreDescriptor(
         "prosystem", "libprosystem_libretro_android.so", setOf("a78", "bin", "cdf"),
         biosFiles = listOf("7800 BIOS (U).rom", "7800 BIOS (E).rom"),   // optional
         players = 2,
-        cheats = false,   // retro_cheat_set is empty
+        cheats = false, ramCheats = true,   // retro_cheat_set is empty; the Atari 7800 files are RAM patches
         name = "ProSystem",
     )
-    private val a5200 = CoreDescriptor("a5200", "liba5200_libretro_android.so", setOf("a52", "bin"), biosFiles = listOf("5200.rom"), players = 2, cheats = false, name = "a5200")   // optional: Altirra OS built in; retro_cheat_set is empty
+    private val a5200 = CoreDescriptor("a5200", "liba5200_libretro_android.so", setOf("a52", "bin"), biosFiles = listOf("5200.rom"), players = 2, cheats = false, name = "a5200")   // optional: Altirra OS built in; retro_cheat_set is empty, and no system RAM for RAM patches
     private val pokemini = CoreDescriptor(
         "pokemini", "libpokemini_libretro_android.so", setOf("min"),
         defaultOptions = mapOf(
@@ -232,7 +232,7 @@ object CoreRegistry {
     private val gearcoleco = CoreDescriptor(
         "gearcoleco", "libgearcoleco_libretro_android.so", setOf("col", "cv", "bin", "rom"),
         biosFiles = listOf("colecovision.rom", "coleco.rom"),
-        cheats = false,
+        cheats = false, ramCheats = true,   // retro_cheat_set is a TODO; the database's ColecoVision files are RAM patches
         players = 2,
         name = "Gearcoleco",
     )
@@ -244,7 +244,7 @@ object CoreRegistry {
         defaultOptions = mapOf("fbneo-vertical-mode" to "disabled"),
         lockedOptions = setOf("fbneo-vertical-mode"),
         // fbneo writes <saves>/fbneo/<set>.fs, .memcard, .save.
-        cheats = false,
+        cheats = false, ramCheats = true,   // retro_cheat_set is empty; the database's FBNeo files are RAM patches
         players = 4,
         name = "FinalBurn Neo",
     )
@@ -288,8 +288,8 @@ object CoreRegistry {
         // Only read by the per-pixel sorting hidden above: dead rows out of game.
         offlineHiddenOptions = setOf("reicast_oit_abuffer_size", "reicast_oit_layers"),
         // retro_cheat_set is empty: libretro's Dreamcast .cht files are RetroArch RAM writes (handler 1, address + value,
-        // no code) that the frontend applies to RETRO_MEMORY_SYSTEM_RAM, which this runner does not do.
-        cheats = false,
+        // no code), which the runner applies to the core's system RAM.
+        cheats = false, ramCheats = true,
         biosSubdir = "dc",
         controllerPort0 = CoreDescriptor.JOYPAD,
         controllerPortCount = 4,
@@ -606,7 +606,7 @@ object CoreRegistry {
         if (baseTag(tag) == "GG") 1 else core?.players ?: 1
 
     /** The [tags] whose core takes cheats ([CoreDescriptor.cheats]): the cheat database installs folders for these only. */
-    val cheatTags: Set<String> = tags.filterTo(LinkedHashSet()) { forTag(it)?.cheats != false }
+    val cheatTags: Set<String> = tags.filterTo(LinkedHashSet()) { forTag(it)?.let { d -> d.cheats || d.ramCheats } != false }
 
     /** [fileName] is an archive the launched [tag]'s core loads as is (fbneo's and flycast's arcade sets), not one to unpack (minarch's rule). */
     fun loadsArchive(tag: String, fileName: String): Boolean =
