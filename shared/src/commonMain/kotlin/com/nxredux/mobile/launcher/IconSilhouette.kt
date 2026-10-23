@@ -30,6 +30,37 @@ object IconSilhouette {
         else -> (a - FAINT) * 255 / (FIRM - FAINT)
     }
 
+    private const val KEY_SHARE = 0.6f // the outer ring's share one colour needs to be the icon's plate ([contrastAlpha])
+    private const val NEAR = 24        // [contrastAlpha]: a colour this close to the plate's (largest channel gap) is plate
+    private const val FAR = 96         // [contrastAlpha]: one this far is wholly logo
+
+    /**
+     * The shape in a whole [size] × [size] icon's [argb] pixels (row by row, the visible square, opaque): what differs
+     * from its plate, the one colour most of its outer ring shows, as alpha for [frame]. For an icon whose logo is
+     * painted on its plate in one layer, with no themed layer. Null when no colour holds most of the ring (a gradient,
+     * a photo): there is no plate to tell the logo from.
+     */
+    fun contrastAlpha(argb: IntArray, size: Int): IntArray? {
+        require(size > 1 && argb.size == size * size)
+        val ring = argb.filterIndexed { i, _ -> i % size == 0 || i % size == size - 1 || i < size || i >= size * (size - 1) }
+        // Quantised to 3 bits a channel, so a plate's dithering or a soft edge still counts as its colour.
+        val (key, count) = ring.groupBy { it and 0xE0E0E0 }.maxByOrNull { it.value.size }!!.let { it.key to it.value.size }
+        if (count < KEY_SHARE * ring.size) return null
+        val plate = ring.filter { it and 0xE0E0E0 == key }
+        val r0 = plate.sumOf { it shr 16 and 0xFF } / plate.size
+        val g0 = plate.sumOf { it shr 8 and 0xFF } / plate.size
+        val b0 = plate.sumOf { it and 0xFF } / plate.size
+        return IntArray(argb.size) { i ->
+            val c = argb[i]
+            val gap = maxOf(kotlin.math.abs((c shr 16 and 0xFF) - r0), kotlin.math.abs((c shr 8 and 0xFF) - g0), kotlin.math.abs((c and 0xFF) - b0))
+            when {
+                gap <= NEAR -> 0
+                gap >= FAR -> 255
+                else -> (gap - NEAR) * 255 / (FAR - NEAR)
+            }
+        }
+    }
+
     /**
      * [alpha] is a [size] × [size] layer's alpha (0-255, [shapeAlpha]'s), row by row, covering the icon's visible
      * square. The frame centred on its shape with the shape at [CONTENT] of it; null when there is no shape or it is

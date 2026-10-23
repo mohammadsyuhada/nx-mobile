@@ -70,4 +70,28 @@ class IconSilhouetteTest {
         assertEquals(255, IconSilhouette.shapeAlpha(160))
         assertEquals(255, IconSilhouette.shapeAlpha(255))
     }
+
+    // A white logo painted on a red plate in one layer: the logo is what differs from the plate.
+    @Test fun aLogoOnAPlateIsWhatDiffersFromIt() {
+        val logo = disc(50f, 50f, 25f)
+        val argb = IntArray(size * size) { i -> if (logo(i % size, i / size)) 0xFFFFFFFF.toInt() else 0xFFD03020.toInt() }
+        val alpha = assertNotNull(IconSilhouette.contrastAlpha(argb, size))
+        assertEquals(0, alpha[0])
+        assertEquals(255, alpha[50 * size + 50])
+        val f = assertNotNull(IconSilhouette.frame(alpha, size))
+        assertEquals(50f / IconSilhouette.CONTENT, f.side)
+    }
+
+    // A plate a little uneven (dithering, a soft vignette) is still one plate.
+    @Test fun aSlightlyUnevenPlateIsStillThePlate() {
+        val argb = IntArray(size * size) { i -> 0xFF000000.toInt() or (0x30 + (i % size) / 10 shl 16) or (0x60 shl 8) or 0x90 }
+        val alpha = assertNotNull(IconSilhouette.contrastAlpha(argb, size))
+        assertNull(IconSilhouette.frame(alpha, size))   // nothing but plate: no shape
+    }
+
+    // A gradient from edge to edge has no one plate colour: no shape can be told from it.
+    @Test fun aGradientHasNoPlate() {
+        val argb = IntArray(size * size) { i -> 0xFF000000.toInt() or ((i % size) * 255 / size shl 16) or ((i / size) * 255 / size) }
+        assertNull(IconSilhouette.contrastAlpha(argb, size))
+    }
 }

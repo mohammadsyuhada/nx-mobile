@@ -12,8 +12,10 @@ import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.drawable.AdaptiveIconDrawable
+import android.graphics.drawable.Drawable
 import android.os.Build
 import android.provider.Settings
+import android.util.DisplayMetrics
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -65,23 +67,22 @@ class AndroidAppLauncher(private val activity: ComponentActivity, private val re
     }
 
     /**
-     * An adaptive icon's themed-icon layer (API 33+), else its foreground without the background, as [ICON_PX] of
-     * white on clear framed by [IconSilhouette]; null for a legacy icon, which has no layer apart from its plate.
+     * The shape in [id]'s icon as its package ships it ([packagedIcon]), as [ICON_PX] of white on clear framed by
+     * [IconSilhouette]: its themed-icon layer (API 33+), else its foreground's own outline, else what stands out from
+     * the plate the icon is painted on. Null for a legacy icon, or one with no shape any of these finds.
      */
     override suspend fun silhouette(id: String): ImageBitmap? = withContext(Dispatchers.IO) {
         val c = component(id) ?: return@withContext null
         runCatching {
-            val icon = launcherIcon(c) as? AdaptiveIconDrawable ?: return@runCatching null
-            val layer = (if (Build.VERSION.SDK_INT >= 33) icon.monochrome else null) ?: icon.foreground ?: return@runCatching null
-            // The layer drawn as the icon draws it: half as large again as the visible square, which shows its middle.
-            val shape = Bitmap.createBitmap(SHAPE_PX, SHAPE_PX, Bitmap.Config.ARGB_8888)
-            layer.setBounds(-SHAPE_PX / 4, -SHAPE_PX / 4, SHAPE_PX + SHAPE_PX / 4, SHAPE_PX + SHAPE_PX / 4)
-            layer.draw(Canvas(shape))
-            // The shape alone, white: the tile tints it like a glyph.
-            val pixels = IntArray(SHAPE_PX * SHAPE_PX).also { shape.getPixels(it, 0, SHAPE_PX, 0, 0, SHAPE_PX, SHAPE_PX) }
-            val alpha = IntArray(pixels.size) { IconSilhouette.shapeAlpha(pixels[it] ushr 24) }
-            shape.setPixels(IntArray(pixels.size) { (alpha[it] shl 24) or 0xFFFFFF }, 0, SHAPE_PX, 0, 0, SHAPE_PX, SHAPE_PX)
-            val frame = IconSilhouette.frame(alpha, SHAPE_PX) ?: return@runCatching null
+            val icon = (packagedIcon(c) ?: launcherIcon(c)) as? AdaptiveIconDrawable ?: return@runCatching null
+            // Each tried only when the one before has no shape: drawing a layer is the cost here.
+            val shapes = sequence {
+                if (Build.VERSION.SDK_INT >= 33) icon.monochrome?.let { yield(alphaOf(layerPixels(it))) }
+                icon.foreground?.let { yield(alphaOf(layerPixels(it))) }
+                IconSilhouette.contrastAlpha(layerPixels(icon.background, icon.foreground), SHAPE_PX)?.let { yield(it) }
+            }
+            val (alpha, frame) = shapes.firstNotNullOfOrNull { a -> IconSilhouette.frame(a, SHAPE_PX)?.let { a to it } } ?: return@runCatching null
+            val shape = Bitmap.createBitmap(IntArray(alpha.size) { (alpha[it] shl 24) or 0xFFFFFF }, SHAPE_PX, SHAPE_PX, Bitmap.Config.ARGB_8888)
             val out = Bitmap.createBitmap(ICON_PX, ICON_PX, Bitmap.Config.ARGB_8888)
             val k = ICON_PX / frame.side
             val fit = Matrix().apply { setTranslate(-frame.x, -frame.y); postScale(k, k) }
@@ -90,6 +91,30 @@ class AndroidAppLauncher(private val activity: ComponentActivity, private val re
             out.asImageBitmap()
         }.getOrNull()
     }
+
+    private fun alphaOf(pixels: IntArray) = IntArray(pixels.size) { IconSilhouette.shapeAlpha(pixels[it] ushr 24) }
+
+    /**
+     * [layers] drawn in turn as an adaptive icon draws them, half as large again as the visible square, which shows
+     * their middle: that square's [SHAPE_PX] pixels.
+     */
+    private fun layerPixels(vararg layers: Drawable?): IntArray {
+        val bitmap = Bitmap.createBitmap(SHAPE_PX, SHAPE_PX, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        for (layer in layers) layer?.run { setBounds(-SHAPE_PX / 4, -SHAPE_PX / 4, SHAPE_PX + SHAPE_PX / 4, SHAPE_PX + SHAPE_PX / 4); draw(canvas) }
+        return IntArray(SHAPE_PX * SHAPE_PX).also { bitmap.getPixels(it, 0, SHAPE_PX, 0, 0, SHAPE_PX, SHAPE_PX); bitmap.recycle() }
+    }
+
+    /**
+     * [c]'s icon as its own package ships it, read from its resources: PackageManager's may be one the system or an
+     * icon pack drew over it (One UI hands every icon back as a flat bitmap), with no layers left to find a shape in.
+     * Null when it cannot be read.
+     */
+    private fun packagedIcon(c: ComponentName): Drawable? = runCatching {
+        val info = pm.getActivityInfo(c, 0)
+        val res = info.iconResource.takeIf { it != 0 } ?: info.applicationInfo.icon.takeIf { it != 0 } ?: return@runCatching null
+        pm.getResourcesForApplication(info.applicationInfo).getDrawableForDensity(res, DisplayMetrics.DENSITY_XXXHIGH, null)
+    }.getOrNull()
 
     private fun launcherIcon(c: ComponentName) = runCatching { pm.getActivityIcon(c) }.getOrElse { pm.getApplicationIcon(c.packageName) }
 
