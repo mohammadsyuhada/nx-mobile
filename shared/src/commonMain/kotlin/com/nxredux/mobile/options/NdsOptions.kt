@@ -1,5 +1,7 @@
 package com.nxredux.mobile.options
 
+import com.nxredux.mobile.settings.stepFrom
+
 /** A DS setting's stored [value] and what the menu and hotkey labels show. */
 interface NdsChoice {
     val value: String
@@ -167,12 +169,12 @@ object NdsOptions {
     ): Pair<String, String> {
         if (landscape) {
             val all = NdsLandscapeLayout.entries
-            val next = all[(all.indexOf(NdsSettings.parse(values).landscape) + delta).mod(all.size)]
+            val next = all.stepFrom(NdsSettings.parse(values).landscape, delta)
             return LAYOUT_LANDSCAPE to next.value
         }
         val all = CONCRETE_PORTRAIT
         val showing = NdsSettings.parse(values).portraitLayout(controllerMode, areaWidth, areaHeight)
-        val next = all[(all.indexOf(showing) + delta).mod(all.size)]
+        val next = all.stepFrom(showing, delta)
         return (if (controllerMode) LAYOUT_PORTRAIT_CONTROLLER else LAYOUT_PORTRAIT) to next.value
     }
 
@@ -181,7 +183,7 @@ object NdsOptions {
 
     /** SELECT + Up/Down: the inset corner [delta] steps clockwise (wrapping) to set; saved even when PiP is not showing. */
     fun cycleCorner(values: Map<String, String>, delta: Int): Pair<String, String> {
-        val next = CLOCKWISE[(CLOCKWISE.indexOf(NdsSettings.parse(values).corner) + delta).mod(CLOCKWISE.size)]
+        val next = CLOCKWISE.stepFrom(NdsSettings.parse(values).corner, delta)
         return PIP_CORNER to next.value
     }
 

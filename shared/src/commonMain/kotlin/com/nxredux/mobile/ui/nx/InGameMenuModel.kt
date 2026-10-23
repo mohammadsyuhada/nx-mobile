@@ -15,6 +15,7 @@ import com.nxredux.mobile.options.CoreOptionFilter
 import com.nxredux.mobile.options.FrontendOption
 import com.nxredux.mobile.options.FrontendOptions
 import com.nxredux.mobile.options.ShaderOptions
+import com.nxredux.mobile.settings.stepFrom
 import com.nxredux.mobile.shaders.ShaderParam
 
 enum class MenuAction { CONTINUE, QUIT, SAVE_AND_QUIT, QUIT_ONLY, LEAVE_NETPLAY, SAVE_FOR_CONSOLE, SAVE_FOR_GAME, RESTORE_DEFAULTS, RESET_SHADER_PARAMS }
@@ -681,7 +682,7 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
     private fun stepTab(delta: Int) {
         val tabs = panelTabs()
         if (tabs.size < 2) return
-        val next = tabs[(tabs.indexOf(panelTab()) + delta).mod(tabs.size)]
+        val next = tabs.stepFrom(panelTab(), delta)
         val focus = when (state.panelFocus) {
             is PanelFocus.Item -> if (panelItemCount(next) > 0) PanelFocus.Item(0) else PanelFocus.Tabs
             else -> state.panelFocus

@@ -1,6 +1,7 @@
 package com.nxredux.mobile.options
 
 import com.nxredux.mobile.runner.N3dsNewControls
+import com.nxredux.mobile.settings.stepFrom
 
 /**
  * Nintendo 3DS (Azahar) screen controls. Unlike the DS, the core draws both screens itself: the layout is Azahar's own
@@ -92,8 +93,7 @@ object N3dsOptions {
 
     /** SELECT + Left/Right: the row in use, as key to the layout [delta] steps from its value, wrapping. */
     fun cycleLayout(values: Map<String, String>, landscape: Boolean, controllerMode: Boolean, delta: Int): Pair<String, String> {
-        val i = LAYOUT_CYCLE.indexOf(layoutFor(values, landscape, controllerMode))
-        return layoutKey(landscape, controllerMode) to LAYOUT_CYCLE[(i + delta).mod(LAYOUT_CYCLE.size)]
+        return layoutKey(landscape, controllerMode) to LAYOUT_CYCLE.stepFrom(layoutFor(values, landscape, controllerMode), delta)
     }
 
     /** What the hotkey's notice shows for a layout value. */

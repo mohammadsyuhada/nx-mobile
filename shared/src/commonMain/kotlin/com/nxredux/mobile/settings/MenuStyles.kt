@@ -41,7 +41,7 @@ object MenuStyles {
 
     /** The main menu style [step] places from [now] (one of [MAIN_MENU_STYLES], as [styleOf] gives), wrapping. */
     fun cycleMainMenu(now: MenuStyle, step: Int): MenuStyle =
-        MAIN_MENU_STYLES[(MAIN_MENU_STYLES.indexOf(now) + step).mod(MAIN_MENU_STYLES.size)]
+        MAIN_MENU_STYLES.stepFrom(now, step)
 
     fun encode(styles: Map<MenuCategory, MenuStyle>): String =
         MenuCategory.entries.mapNotNull { c -> styles[c]?.let { "${c.name}=${it.name}" } }.joinToString("\n")

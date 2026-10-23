@@ -109,6 +109,7 @@ import com.nxredux.mobile.settings.PadTheme
 import com.nxredux.mobile.settings.PadVibration
 import com.nxredux.mobile.settings.GameRumble
 import com.nxredux.mobile.settings.VerticalListAlignment
+import com.nxredux.mobile.settings.stepFrom
 import com.nxredux.mobile.settings.ExtraFolder
 import com.nxredux.mobile.settings.FolderPicker
 import com.nxredux.mobile.settings.Sources
@@ -549,6 +550,14 @@ internal val ONBOARDING_LAYOUT_STEPS = setOf(
 internal val ONBOARDING_TAB_STEPS = mapOf(
     OnboardingStep.TAB_HOME to MenuCategory.HOME, OnboardingStep.TAB_CONSOLES to MenuCategory.CONSOLES,
     OnboardingStep.TAB_COLLECTIONS to MenuCategory.COLLECTIONS, OnboardingStep.TAB_TOOLS to MenuCategory.TOOLS,
+)
+/** Onboarding's value pages and the Settings value each row steps, top to bottom (Continue below them). */
+private val ONBOARDING_VALUE_KINDS = mapOf(
+    OnboardingStep.TEXT_SIZE to listOf(SettingsKind.TEXT_SIZE),
+    OnboardingStep.SAVE_FORMATS to listOf(SettingsKind.SAVE_FORMAT, SettingsKind.STATE_FORMAT, SettingsKind.EXTRACTED_NAME),
+    OnboardingStep.PAD to listOf(SettingsKind.MENU_PAD, SettingsKind.PAD_THEME),
+    OnboardingStep.TITLE to listOf(SettingsKind.PAGE_TITLE, SettingsKind.BUTTON_HINTS),
+    OnboardingStep.ACCENT to listOf(SettingsKind.ACCENT, SettingsKind.SECONDARY_ACCENT),
 )
 
 /** "None" / "1 game" / "<n> games": the Launcher page's "Android games" count. */
@@ -1907,54 +1916,17 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** The row a step opens on: the first (a layout page's layout row, a value page's first value). */
     private fun onboardingCurrentRow(): Int = 0
 
-    /** LEFT / RIGHT (A steps forward) on a save-format row: the value steps, the row stays. */
-    private fun stepOnboardingFormat(row: Int, by: Int) {
-        when (row) {
-            0 -> deps.settings.saveFormat = deps.settings.saveFormat.step(by)
-            1 -> deps.settings.stateFormat = deps.settings.stateFormat.step(by)
-            2 -> deps.settings.useExtractedFileName = !deps.settings.useExtractedFileName
-            else -> return
-        }
-        showOnboarding(row)
-    }
-
     /**
-     * A customise page's value row, flipped in place: PAD's [row] 0 shows / hides the pad and 1 steps its theme ([by] -1:
-     * the one before); TITLE's row 0 shows / hides the page title, 1 the button hints; ACCENT's row 0 steps the accent, 1 the
-     * secondary accent. Applied at once and the page republished on that row, so the real pad (or the preview picture, or the
-     * colours) changes and the step count follows ([App] reads them per screen).
+     * A value page's row [row] stepped by [by] (-1: the one before; A steps forward), in place: SAVE_FORMATS' save
+     * format, state format and extracted name; TEXT_SIZE's size; ACCENT's accent and secondary accent; TITLE's page
+     * title and button hints (Show / Hide); PAD's pad (shown / hidden) and theme ([ONBOARDING_VALUE_KINDS]). The same
+     * settings Settings steps ([settingValue]), applied at once and the page republished on that row, so the real pad
+     * (or the preview picture, or the colours, or the text size) changes and the step count follows ([App] reads them
+     * per screen). A row past the page's values, or another [step], does nothing.
      */
-    private fun flipOnboardingValue(row: Int, by: Int) {
-        if (onboarding.step == OnboardingStep.TEXT_SIZE) {   // Large / Small: App re-reads it with the page
-            if (row != 0) return
-            deps.settings.optionTextSize = deps.settings.optionTextSize.step(by)
-            return showOnboarding(row)
-        }
-        if (onboarding.step == OnboardingStep.ACCENT) {
-            when (row) {
-                0 -> deps.settings.accent = deps.settings.accent.step(by)
-                1 -> deps.settings.secondaryAccent = deps.settings.secondaryAccent.step(by)
-                else -> return
-            }
-            return showOnboarding(row)
-        }
-        if (onboarding.step == OnboardingStep.TITLE) {   // the page title's and the button hints' Show / Hide
-            when (row) {
-                0 -> deps.settings.menuPageTitle = !deps.settings.menuPageTitle
-                1 -> deps.settings.menuButtonHints = !deps.settings.menuButtonHints
-                else -> return
-            }
-            return showOnboarding(row)
-        }
-        if (onboarding.step != OnboardingStep.PAD) return
-        when (row) {
-            0 -> deps.settings.menuPad = !deps.settings.menuPad
-            1 -> {
-                val all = PadTheme.entries
-                deps.settings.padTheme = all[(deps.settings.padTheme.ordinal + by + all.size) % all.size]
-            }
-            else -> return
-        }
+    private fun stepOnboardingValue(step: OnboardingStep?, row: Int, by: Int) {
+        val kind = ONBOARDING_VALUE_KINDS[step]?.getOrNull(row) ?: return
+        settingValue(SettingsRow(kind, ""))?.step(by)   // a bare row: none of these needs a tab, console or hint
         showOnboarding(row)
     }
 
@@ -2122,7 +2094,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val s = _screen.value as? Screen.Onboarding ?: return
         when (s.step) {
             OnboardingStep.WELCOME -> { onboarding.startTextSize(); showOnboarding() }
-            OnboardingStep.TEXT_SIZE -> if (index < s.rows.lastIndex) flipOnboardingValue(index, 1)
+            OnboardingStep.TEXT_SIZE -> if (index < s.rows.lastIndex) stepOnboardingValue(onboarding.step, index, 1)
                 else if (deps.builtInSecondScreen()) { onboarding.startBottomScreen(); showOnboarding() }   // the bottom screen question, then the folders
                 else startFolderSteps()
             OnboardingStep.BOTTOM_SCREEN -> {
@@ -2133,7 +2105,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 onboarding.context = onboarding.context.copy(handheld = index == 0)
                 onboardingNext()
             }
-            OnboardingStep.SAVE_FORMATS -> if (index < 3) stepOnboardingFormat(index, 1) else onboardingNext()
+            OnboardingStep.SAVE_FORMATS -> if (index < 3) stepOnboardingValue(OnboardingStep.SAVE_FORMATS, index, 1) else onboardingNext()
             OnboardingStep.IMPORT_SAVES -> when {
                 onboardingImporting != null -> Unit   // the rows wait for the running import
                 onboardingImported is ImportResult.Done -> if (index == s.rows.lastIndex) onboardingNext()   // a skipped file: inert
@@ -2141,8 +2113,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 else -> onboardingNext()
             }
             OnboardingStep.CUSTOMISE -> { onboarding.context = onboarding.context.copy(customise = index == 0); onboardingNext() }
-            OnboardingStep.PAD -> if (index < s.rows.lastIndex) flipOnboardingValue(index, 1) else onboardingNext()
-            OnboardingStep.TITLE, OnboardingStep.ACCENT -> if (index < s.rows.lastIndex) flipOnboardingValue(index, 1) else onboardingNext()
+            OnboardingStep.PAD -> if (index < s.rows.lastIndex) stepOnboardingValue(onboarding.step, index, 1) else onboardingNext()
+            OnboardingStep.TITLE, OnboardingStep.ACCENT -> if (index < s.rows.lastIndex) stepOnboardingValue(onboarding.step, index, 1) else onboardingNext()
             OnboardingStep.TAB_HOME, OnboardingStep.TAB_CONSOLES, OnboardingStep.TAB_COLLECTIONS, OnboardingStep.TAB_TOOLS,
             OnboardingStep.GAME_LISTS -> if (index < s.rows.lastIndex) stepOnboardingLayoutRow(index, 1) else onboardingNext()
             OnboardingStep.ARTWORK -> { if (index == 0) artworkScreens?.fetchInBackground(); onboardingNext() }
@@ -2209,17 +2181,17 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         return LayoutShot.Tab(c, style, stats = c != MenuCategory.HOME || deps.settings.menuHomeStats, vertical = vertical, art = consoleShotArt(c))
     }
 
-    /** A layout page's value row [row] stepped by [by]: the layout, or the option on that row, in place (the picture follows). */
+    /**
+     * A layout page's value row [row] stepped by [by]: the layout ([stepOnboardingLayout]), or the option on that row in
+     * place, the same setting Settings steps ([settingValue], through a bare row carrying the page's tab), so the
+     * picture follows.
+     */
     private fun stepOnboardingLayoutRow(row: Int, by: Int) {
         val step = onboarding.step ?: return
-        val s = deps.settings
-        when (onboardingLayoutKinds(step).getOrNull(row)) {
+        when (val kind = onboardingLayoutKinds(step).getOrNull(row) ?: return) {
+            // The layout is onboarding's own: it resets the orientation (and alignment) with it, from its own list.
             SettingsKind.MENU_STYLE, SettingsKind.GAME_LIST_STYLE -> return stepOnboardingLayout(by)
-            SettingsKind.HOME_STATS -> s.menuHomeStats = !s.menuHomeStats
-            SettingsKind.MENU_ORIENTATION -> ONBOARDING_TAB_STEPS[step]?.let { c -> s.menuOrientations = s.menuOrientations + (c to MenuStyles.flip(MenuStyles.orientationOf(s.menuOrientations, c))) }
-            SettingsKind.GAME_LIST_ORIENTATION -> s.gameListOrientation = MenuStyles.flip(s.gameListOrientation)
-            SettingsKind.GAME_LIST_VERTICAL_ALIGNMENT -> s.gameListVerticalAlignment = s.gameListVerticalAlignment.let { if (it == VerticalListAlignment.LEFT) VerticalListAlignment.RIGHT else VerticalListAlignment.LEFT }
-            else -> return
+            else -> settingValue(SettingsRow(kind, "", category = ONBOARDING_TAB_STEPS[step]))?.step(by)
         }
         showOnboarding(row)
     }
@@ -2229,8 +2201,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val step = onboarding.step ?: return
         val category = ONBOARDING_TAB_STEPS[step]
         if (category == null) {
-            val all = ONBOARDING_GAME_LIST_STYLES
-            deps.settings.gameListStyle = all[(all.indexOf(deps.settings.gameListStyle) + by).mod(all.size)]
+            deps.settings.gameListStyle = ONBOARDING_GAME_LIST_STYLES.stepFrom(deps.settings.gameListStyle, by)
             deps.settings.gameListOrientation = MenuStyles.DEFAULT_ORIENTATION
             deps.settings.gameListVerticalAlignment = VerticalListAlignment.DEFAULT
         } else {
@@ -2574,8 +2545,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             NxButton.UP -> _selection.value = _selection.value.up(wrap = true)
             NxButton.DOWN -> _selection.value = _selection.value.down(wrap = true)
             NxButton.LEFT, NxButton.RIGHT -> when (s.step) {
-                OnboardingStep.SAVE_FORMATS -> stepOnboardingFormat(_selection.value.index, if (button == NxButton.LEFT) -1 else 1)
-                OnboardingStep.PAD, OnboardingStep.TITLE, OnboardingStep.ACCENT, OnboardingStep.TEXT_SIZE -> if (_selection.value.index < s.rows.lastIndex) flipOnboardingValue(_selection.value.index, if (button == NxButton.LEFT) -1 else 1)
+                OnboardingStep.SAVE_FORMATS -> stepOnboardingValue(OnboardingStep.SAVE_FORMATS, _selection.value.index, if (button == NxButton.LEFT) -1 else 1)
+                OnboardingStep.PAD, OnboardingStep.TITLE, OnboardingStep.ACCENT, OnboardingStep.TEXT_SIZE -> if (_selection.value.index < s.rows.lastIndex) stepOnboardingValue(onboarding.step, _selection.value.index, if (button == NxButton.LEFT) -1 else 1)
                 in ONBOARDING_LAYOUT_STEPS -> if (_selection.value.index < s.rows.lastIndex) stepOnboardingLayoutRow(_selection.value.index, if (button == NxButton.LEFT) -1 else 1)
                 else -> Unit
             }
@@ -3189,38 +3160,21 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     }
 
     /**
-     * Settings' value row [row] as a touch chooser: its values in the order it steps through them, a pick stepping it
-     * there through its own function (so every side effect follows). False for a row of two values (a tap flips it) or
-     * none.
+     * Settings' value row [row] as a touch chooser: its values in the order it steps through them ([settingValue]), a
+     * pick stepping it there. False for a row of two values (a tap flips it), one without a chooser, or none.
      */
-    private fun openSettingChooser(row: SettingsRow): Boolean {
-        val s = deps.settings
-        fun <T> pick(all: List<T>, now: T, label: (T) -> String, step: (Int) -> Unit) =
-            openChooser(row.label, all.map(label), all.indexOf(now)) { i -> step(i - all.indexOf(now)) }
-        return when (row.kind) {
-            SettingsKind.PAD_THEME -> pick(PadTheme.entries, s.padTheme, ::padThemeLabel, ::cyclePadTheme)
-            SettingsKind.ACCENT -> pick(AccentPreset.entries, s.accent, { it.label }, ::cycleAccent)
-            SettingsKind.SECONDARY_ACCENT -> pick(SecondaryAccent.entries, s.secondaryAccent, { it.label }, ::cycleSecondaryAccent)
-            SettingsKind.SAVE_FORMAT -> pick(SaveFormat.entries, s.saveFormat, { it.label }, ::cycleSaveFormat)
-            SettingsKind.STATE_FORMAT -> pick(StateFormat.entries, s.stateFormat, { it.label }, ::cycleStateFormat)
-            SettingsKind.BOTTOM_SCREEN -> pick(BottomScreen.entries, s.bottomScreen, ::bottomScreenLabel, ::cycleBottomScreen)
-            SettingsKind.MENU_STYLE -> row.category?.let { c -> pick(MenuStyles.MAIN_MENU_STYLES, MenuStyles.styleOf(s.menuStyles, c), ::menuStyleLabel) { cycleMenuStyle(c, it) } } ?: false
-            SettingsKind.GAME_LIST_STYLE -> pick(MenuStyles.GAME_LIST_STYLES, s.gameListStyle, ::menuStyleLabel, ::cycleGameListStyle)
-            SettingsKind.CONTROLLER_ART -> pick(ConsoleArt.entries, s.consoleArt, { it.label }, ::cycleConsoleArt)
-            SettingsKind.LIST_ART -> pick(GameListArt.entries, s.gameListArt, { it.label }, ::cycleGameListArt)
-            SettingsKind.BACKDROP_ART -> pick(BackdropArt.entries, s.backdropArt, { it.label }, ::cycleBackdropArt)
-            SettingsKind.PAD_VIBRATION -> pick(PadVibration.entries, s.padVibration, { it.label }, ::cyclePadVibration)
-            SettingsKind.GAME_RUMBLE -> pick(GameRumble.entries, s.gameRumble, { it.label }, ::cycleGameRumble)
-            SettingsKind.PAD_LAYOUT_CONSOLE -> {
-                val keys = listOf(PadLayouts.SHARED_KEY) + padLayoutConsoles().map { it.id }
-                pick(keys, padLayoutConsole.takeIf { it in keys } ?: keys.first(), { k -> if (k == PadLayouts.SHARED_KEY) "Shared" else CoreRegistry.consoles.firstOrNull { it.id == k }?.displayName ?: k }, ::cyclePadLayoutConsole)
-            }
-            SettingsKind.DEFAULT_TAG -> {
-                val console = row.consoleId?.let { id -> CoreRegistry.consoles.firstOrNull { it.id == id } } ?: return false
-                pick(console.tags, console.defaultTagFor(s.defaultTags[console.id]), CoreRegistry::emulatorLabel) { cycleDefaultTag(console.id, it) }
-            }
-            else -> false
-        }
+    private fun openSettingChooser(row: SettingsRow): Boolean =
+        settingValue(row)?.let { v -> openValueChooser(row.label, v) { settingValue(row) } } ?: false
+
+    /**
+     * [v]'s values as a chooser titled [title], on the current one. A pick steps the setting there from its value then,
+     * [again] reading it afresh, through [SettingValue.change] (so every side effect follows, even when it is unchanged).
+     * False when [v] has no chooser labels or fewer than three values.
+     */
+    private fun <T> openValueChooser(title: String, v: SettingValue<T>, again: () -> SettingValue<*>?): Boolean {
+        val label = v.label ?: return false
+        val now = v.values.indexOf(v.current)
+        return openChooser(title, v.values.map(label), now) { i -> again()?.change(i - now) }
     }
 
     fun openSettingsMenu() {
@@ -3342,11 +3296,14 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         systemsCache.filter { !it.unassigned && it.gameCount > 0 }.mapNotNull { CoreRegistry.consoleOf(it.tag) }
             .distinctBy { it.id }.sortedBy { it.displayName.lowercase() }
 
+    /** The Pad layout page's console [key] by name: Shared, a console's name, or the key itself for an unknown one. */
+    private fun padLayoutConsoleName(key: String): String =
+        if (key == PadLayouts.SHARED_KEY) "Shared" else CoreRegistry.consoles.firstOrNull { it.id == key }?.displayName ?: key
+
     private fun padLayoutRows(): List<SettingsRow> {
         val all = deps.settings.padLayouts
         val key = padLayoutConsole
-        val consoleName = if (key == PadLayouts.SHARED_KEY) "Shared" else CoreRegistry.consoles.firstOrNull { it.id == key }?.displayName ?: key
-        return listOf(SettingsRow(SettingsKind.PAD_LAYOUT_CONSOLE, "Console", consoleName)) +
+        return listOf(SettingsRow(SettingsKind.PAD_LAYOUT_CONSOLE, "Console", padLayoutConsoleName(key))) +
             PadShape.entries.map { shape ->
                 val own = PadLayouts.own(all, key, PadSlot(shape, _padScreen.value))
                 val value = when {
@@ -3357,13 +3314,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 SettingsRow(SettingsKind.PAD_LAYOUT_SHAPE, shape.label, value, padShape = shape)
             } +
             SettingsRow(SettingsKind.PAD_LAYOUT_RESET, "Reset console")
-    }
-
-    private fun cyclePadLayoutConsole(step: Int) {
-        val keys = listOf(PadLayouts.SHARED_KEY) + padLayoutConsoles().map { it.id }
-        val i = keys.indexOf(padLayoutConsole).coerceAtLeast(0)
-        padLayoutConsole = keys[(i + step).mod(keys.size)]
-        refreshSettings()
     }
 
     /** An editor is opening or open: a second quick A / tap does not stack another over it (its Save would win). */
@@ -3567,49 +3517,109 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** Emulators -> Default emulators, built from [systemsCache] (no SAF call): [defaultEmulatorRows]. */
     private fun defaultEmulatorRows(): List<SettingsRow> = defaultEmulatorRows(systemsCache, deps.settings.defaultTags)
 
-    private fun cyclePadTheme(step: Int = 1) {
-        val themes = PadTheme.entries
-        deps.settings.padTheme = themes[(themes.indexOf(deps.settings.padTheme) + step).mod(themes.size)]
-        refreshSettings()
-    }
-
-    /** A main menu tab cycles List, Grid, Carousel and Minimal ([MenuStyles.MAIN_MENU_STYLES]); Backdrop is a game-list style only. */
-    private fun cycleMenuStyle(category: MenuCategory, step: Int) {
-        val now = MenuStyles.styleOf(deps.settings.menuStyles, category)
-        deps.settings.menuStyles = deps.settings.menuStyles + (category to MenuStyles.cycleMainMenu(now, step))
-        if (category == MenuCategory.HOME) rebuildHomeTab()
-        refreshSettings()
-    }
-
-    private fun cycleGameListStyle(step: Int) {
-        val styles = MenuStyles.GAME_LIST_STYLES
-        deps.settings.gameListStyle = styles[(styles.indexOf(deps.settings.gameListStyle) + step).mod(styles.size)]
-        refreshSettings()
-    }
-
-    /** A tab's Orientation row: two values, so every press flips it. */
-    private fun flipMenuOrientation(category: MenuCategory) {
-        val now = MenuStyles.orientationOf(deps.settings.menuOrientations, category)
-        deps.settings.menuOrientations = deps.settings.menuOrientations + (category to MenuStyles.flip(now))
-        refreshSettings()
-    }
-
-    private fun flipGameListOrientation() {
-        deps.settings.gameListOrientation = MenuStyles.flip(deps.settings.gameListOrientation)
-        refreshSettings()
-    }
-
-    /** Layouts → Vertical alignment: two values, so every press flips it. */
-    private fun flipGameListVerticalAlignment() {
-        deps.settings.gameListVerticalAlignment =
-            if (deps.settings.gameListVerticalAlignment == VerticalListAlignment.LEFT) VerticalListAlignment.RIGHT else VerticalListAlignment.LEFT
-        refreshSettings()
-    }
-
-    /** Layouts → Consoles background: steps through Controller, Background and None (LEFT back, RIGHT and A forward), wrapping. */
-    private fun cycleConsoleArt(step: Int) {
-        deps.settings.consoleArt = deps.settings.consoleArt.step(step)
-        refreshSettings()
+    /**
+     * Settings' value row [row] as a [SettingValue]: every setting LEFT / RIGHT (NX Redux ITEM_CYCLE), A and the touch
+     * chooser step, in one table, so each is written once. A change republishes the page (App re-reads the theme,
+     * accent, scale and pad with it); an arm with more to do says so in its `after`. Null for a row that is not a value
+     * row, or has nothing to step (a console of one tag, a row without its tab, shelf or hint). Two-value rows flip on
+     * every press. Onboarding's value rows step the same entries through a bare row of their kind.
+     */
+    private fun settingValue(row: SettingsRow): SettingValue<*>? {
+        val s = deps.settings
+        val republish: (Any?) -> Unit = { refreshSettings() }
+        fun <T> cycle(values: List<T>, current: T, label: ((T) -> String)? = null, after: (T) -> Unit = republish, set: (T) -> Unit) =
+            SettingValue(values, current, set, label, after = after)
+        fun flip(on: Boolean, after: (Boolean) -> Unit = republish, set: (Boolean) -> Unit) = cycle(listOf(false, true), on, after = after, set = set)
+        return when (row.kind) {
+            // Appearance: the pad theme, the accent presets, Auto and the presets, Large / Small.
+            SettingsKind.PAD_THEME -> cycle(PadTheme.entries, s.padTheme, ::padThemeLabel) { s.padTheme = it }
+            SettingsKind.ACCENT -> cycle(AccentPreset.entries, s.accent, { it.label }) { s.accent = it }
+            SettingsKind.SECONDARY_ACCENT -> cycle(SecondaryAccent.entries, s.secondaryAccent, { it.label }) { s.secondaryAccent = it }
+            SettingsKind.TEXT_SIZE -> cycle(OptionTextSize.entries, s.optionTextSize) { s.optionTextSize = it }
+            // Layouts. A main menu tab cycles List, Grid, Carousel and Minimal ([MenuStyles.MAIN_MENU_STYLES]; Backdrop is a
+            // game-list style only), Home rebuilt in its new one.
+            SettingsKind.MENU_STYLE -> row.category?.let { c ->
+                cycle(MenuStyles.MAIN_MENU_STYLES, MenuStyles.styleOf(s.menuStyles, c), ::menuStyleLabel, after = {
+                    if (c == MenuCategory.HOME) rebuildHomeTab()
+                    refreshSettings()
+                }) { s.menuStyles = s.menuStyles + (c to it) }
+            }
+            SettingsKind.GAME_LIST_STYLE -> cycle(MenuStyles.GAME_LIST_STYLES, s.gameListStyle, ::menuStyleLabel) { s.gameListStyle = it }
+            SettingsKind.MENU_ORIENTATION -> row.category?.let { c ->
+                cycle(MenuOrientation.entries, MenuStyles.orientationOf(s.menuOrientations, c)) { s.menuOrientations = s.menuOrientations + (c to it) }
+            }
+            SettingsKind.GAME_LIST_ORIENTATION -> cycle(MenuOrientation.entries, s.gameListOrientation) { s.gameListOrientation = it }
+            SettingsKind.GAME_LIST_VERTICAL_ALIGNMENT -> cycle(VerticalListAlignment.entries, s.gameListVerticalAlignment) { s.gameListVerticalAlignment = it }
+            SettingsKind.CONTROLLER_ART -> cycle(ConsoleArt.entries, s.consoleArt, { it.label }) { s.consoleArt = it }   // Controller, Background, None
+            SettingsKind.LIST_ART -> cycle(GameListArt.entries, s.gameListArt, { it.label }) { s.gameListArt = it }
+            SettingsKind.BACKDROP_ART -> cycle(BackdropArt.entries, s.backdropArt, { it.label }) { s.backdropArt = it }
+            SettingsKind.SWITCHER_LAYOUT -> cycle(SwitcherLayout.entries, s.switcherLayout) { s.switcherLayout = it }   // Full screen / List
+            SettingsKind.TAB_SHOWN -> row.category?.let { c ->
+                flip(tabSetting(c)) { on ->
+                    when (c) {
+                        MenuCategory.HOME -> s.showHomeTab = on
+                        MenuCategory.CONSOLES -> s.showConsolesTab = on
+                        MenuCategory.COLLECTIONS -> s.showCollectionsTab = on
+                        MenuCategory.TOOLS -> s.showToolsTab = on
+                    }
+                }
+            }
+            // New shelf / Not started shelf: Home is rebuilt without (or with) it. Pick up again has no setting.
+            SettingsKind.SHELF_SHOWN -> row.shelf?.let { shelf ->
+                flip(shelfShown(shelf), after = { rebuildHomeTab(); refreshSettings() }) { on ->
+                    when (shelf) {
+                        HomeShelf.NEW -> s.showNewShelf = on
+                        HomeShelf.NOT_STARTED -> s.showNotStartedShelf = on
+                        HomeShelf.PICK_UP -> Unit
+                    }
+                }
+            }
+            // Recent / Search / Netplay hint: the Show / Hide of SELECT's, START's and Y's hint.
+            SettingsKind.HINT_SHOWN -> row.hint?.let { button ->
+                val shown = when (button) {
+                    NxButton.SELECT -> s.showRecentHint
+                    NxButton.START -> s.showSearchHint
+                    NxButton.Y -> s.showNetplayHint
+                    else -> false
+                }
+                flip(shown) { on ->
+                    when (button) {
+                        NxButton.SELECT -> s.showRecentHint = on
+                        NxButton.START -> s.showSearchHint = on
+                        NxButton.Y -> s.showNetplayHint = on
+                        else -> Unit
+                    }
+                }
+            }
+            // Hidden, the tab row gives up the d-pad ([dropHiddenTabFocus]).
+            SettingsKind.PAGE_TITLE -> flip(s.menuPageTitle, after = { dropHiddenTabFocus(); refreshSettings() }) { s.menuPageTitle = it }
+            SettingsKind.BUTTON_HINTS -> flip(s.menuButtonHints) { s.menuButtonHints = it }
+            SettingsKind.EXTRA_INFO -> flip(s.menuExtraInfo) { s.menuExtraInfo = it }
+            SettingsKind.HOME_STATS -> flip(s.menuHomeStats) { s.menuHomeStats = it }   // Home's board follows through its frame
+            SettingsKind.LAYOUT_OPTIONS -> flip(s.gameListLayoutOptions) { s.gameListLayoutOptions = it }   // a game list's icons
+            SettingsKind.ACHIEVEMENTS_PANEL -> flip(s.gameListAchievementsPanel) { s.gameListAchievementsPanel = it }   // X's hint
+            // Controls: Off, Light, Medium and Strong; Game rumble previews the new level. The menu pad: the shell follows.
+            SettingsKind.PAD_VIBRATION -> cycle(PadVibration.entries, s.padVibration, { it.label }) { s.padVibration = it }
+            SettingsKind.GAME_RUMBLE -> cycle(GameRumble.entries, s.gameRumble, { it.label }, after = { refreshSettings(); deps.rumblePreview(it) }) { s.gameRumble = it }
+            SettingsKind.MENU_PAD -> flip(s.menuPad) { s.menuPad = it }
+            SettingsKind.PAD_LAYOUT_CONSOLE -> {   // Shared, then the library's consoles; a gone console reads as Shared
+                val keys = listOf(PadLayouts.SHARED_KEY) + padLayoutConsoles().map { it.id }
+                cycle(keys, padLayoutConsole.takeIf { it in keys } ?: keys.first(), ::padLayoutConsoleName) { padLayoutConsole = it }
+            }
+            // Emulators, Saves (the handheld's formats in its order), Second screen and Developer.
+            SettingsKind.PAUSE_UNFOCUSED -> flip(s.pauseWhenUnfocused) { s.pauseWhenUnfocused = it }
+            SettingsKind.SAVE_FORMAT -> cycle(SaveFormat.entries, s.saveFormat, { it.label }) { s.saveFormat = it }
+            SettingsKind.STATE_FORMAT -> cycle(StateFormat.entries, s.stateFormat, { it.label }) { s.stateFormat = it }
+            SettingsKind.EXTRACTED_NAME -> flip(s.useExtractedFileName) { s.useExtractedFileName = it }
+            // A console's default emulator steps through its tags (leaving Default emulators rescans); one tag: nothing to pick.
+            SettingsKind.DEFAULT_TAG -> row.consoleId?.let { id -> CoreRegistry.consoles.firstOrNull { it.id == id } }?.takeIf { it.tags.size > 1 }?.let { console ->
+                cycle(console.tags, console.defaultTagFor(s.defaultTags[console.id]), CoreRegistry::emulatorLabel) { s.defaultTags = s.defaultTags + (console.id to it) }
+            }
+            SettingsKind.SECOND_SCREEN_ENABLE -> flip(s.secondScreen) { s.secondScreen = it }
+            SettingsKind.BOTTOM_SCREEN -> cycle(BottomScreen.entries, s.bottomScreen, ::bottomScreenLabel) { s.bottomScreen = it }   // Auto, Main screen, Second screen
+            SettingsKind.DEBUG_LOG -> flip(s.debugLog) { s.debugLog = it }
+            else -> null
+        }
     }
 
     /** A save transfer's report: its progress notice stays until the result (done) replaces it. */
@@ -3667,118 +3677,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 result is ImportResult.Message -> showNotice(result.text)
             }
         }
-    }
-
-    /** Controls → Menu pad: two values, so every press flips it; the shell follows when Settings refreshes. */
-    private fun flipMenuPad() {
-        deps.settings.menuPad = !deps.settings.menuPad
-        refreshSettings()
-    }
-
-    /** Developer → Debug log: two values, so every press flips it. */
-    private fun flipDebugLog() {
-        deps.settings.debugLog = !deps.settings.debugLog
-        refreshSettings()
-    }
-
-    /** Settings → Emulators → Pause when unfocused: two values, so every press flips it. */
-    private fun flipPauseUnfocused() {
-        deps.settings.pauseWhenUnfocused = !deps.settings.pauseWhenUnfocused
-        refreshSettings()
-    }
-
-    /** Settings → Second screen → Enable: two values, so every press flips it. */
-    private fun flipSecondScreen() {
-        deps.settings.secondScreen = !deps.settings.secondScreen
-        refreshSettings()
-    }
-
-    /** Settings → Second screen → Bottom screen: Auto, Main screen, Second screen (LEFT back, RIGHT and A forward, wrapping). */
-    private fun cycleBottomScreen(step: Int) {
-        val all = BottomScreen.entries
-        deps.settings.bottomScreen = all[(all.indexOf(deps.settings.bottomScreen) + step).mod(all.size)]
-        refreshSettings()
-    }
-
-    /** Layouts → Page title: two values, so every press flips it; hidden, the tab row gives up the d-pad ([dropHiddenTabFocus]). */
-    private fun flipPageTitle() {
-        deps.settings.menuPageTitle = !deps.settings.menuPageTitle
-        dropHiddenTabFocus()
-        refreshSettings()
-    }
-
-    /** Layouts → Button hints: two values, so every press flips it. */
-    private fun flipButtonHints() {
-        deps.settings.menuButtonHints = !deps.settings.menuButtonHints
-        refreshSettings()
-    }
-
-    /** Layouts → Extra info: two values, so every press flips it. */
-    private fun flipExtraInfo() {
-        deps.settings.menuExtraInfo = !deps.settings.menuExtraInfo
-        refreshSettings()
-    }
-
-    /** Layouts → Home stats, as Extra info; Home's board follows through its frame. */
-    private fun flipHomeStats() {
-        deps.settings.menuHomeStats = !deps.settings.menuHomeStats
-        refreshSettings()
-    }
-
-    /** Layouts → Layout options and Achievements panel, Show / Hide (a game list's icons, X's hint). */
-    private fun flipGameListShown(kind: SettingsKind) {
-        val s = deps.settings
-        if (kind == SettingsKind.LAYOUT_OPTIONS) s.gameListLayoutOptions = !s.gameListLayoutOptions
-        else s.gameListAchievementsPanel = !s.gameListAchievementsPanel
-        refreshSettings()
-    }
-
-    /** Controls → Pad vibration: steps through Off, Light, Medium and Strong (LEFT back, RIGHT and A forward), wrapping. */
-    private fun cyclePadVibration(step: Int) {
-        deps.settings.padVibration = deps.settings.padVibration.step(step)
-        refreshSettings()
-    }
-
-    /** Controls → Game rumble: steps through Off, Light, Medium and Strong as [cyclePadVibration], previewing the new level. */
-    private fun cycleGameRumble(step: Int) {
-        val level = deps.settings.gameRumble.step(step)
-        deps.settings.gameRumble = level
-        refreshSettings()
-        deps.rumblePreview(level)
-    }
-
-    /** Emulators → Saves → Save format: the handheld's choices in its order (LEFT back, RIGHT and A forward). */
-    private fun cycleSaveFormat(step: Int) {
-        deps.settings.saveFormat = deps.settings.saveFormat.step(step)
-        refreshSettings()
-    }
-
-    private fun cycleStateFormat(step: Int) {
-        deps.settings.stateFormat = deps.settings.stateFormat.step(step)
-        refreshSettings()
-    }
-
-    private fun flipExtractedName() {
-        deps.settings.useExtractedFileName = !deps.settings.useExtractedFileName
-        refreshSettings()
-    }
-
-    /** Appearance → Accent: steps through the presets (LEFT back, RIGHT and A forward); the theme re-reads it with the republished screen. */
-    private fun cycleAccent(step: Int) {
-        deps.settings.accent = deps.settings.accent.step(step)
-        refreshSettings()
-    }
-
-    /** Appearance → Text size: Large and Small, so every press flips it (App re-reads it with the page). */
-    private fun cycleTextSize(step: Int) {
-        deps.settings.optionTextSize = deps.settings.optionTextSize.step(step)
-        refreshSettings()
-    }
-
-    /** Appearance → Secondary accent: steps through Auto and the presets, as [cycleAccent]. */
-    private fun cycleSecondaryAccent(step: Int) {
-        deps.settings.secondaryAccent = deps.settings.secondaryAccent.step(step)
-        refreshSettings()
     }
 
     /**
@@ -3985,65 +3883,11 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         MenuCategory.TOOLS -> deps.settings.showToolsTab
     }
 
-    /** Layouts → a tab's Show/Hide row: two values, so every press flips it. */
-    private fun flipTabShown(c: MenuCategory) {
-        val s = deps.settings
-        when (c) {
-            MenuCategory.HOME -> s.showHomeTab = !s.showHomeTab
-            MenuCategory.CONSOLES -> s.showConsolesTab = !s.showConsolesTab
-            MenuCategory.COLLECTIONS -> s.showCollectionsTab = !s.showCollectionsTab
-            MenuCategory.TOOLS -> s.showToolsTab = !s.showToolsTab
-        }
-        refreshSettings()
-    }
-
-    /** Layouts → New shelf / Not started shelf: flips [shelf]'s Show / Hide; Home is rebuilt without (or with) it. */
-    private fun flipShelfShown(shelf: HomeShelf) {
-        val s = deps.settings
-        when (shelf) {
-            HomeShelf.NEW -> s.showNewShelf = !s.showNewShelf
-            HomeShelf.NOT_STARTED -> s.showNotStartedShelf = !s.showNotStartedShelf
-            HomeShelf.PICK_UP -> Unit
-        }
-        rebuildHomeTab()
-        refreshSettings()
-    }
-
-    /** Layouts → Recent / Search / Netplay hint: flips the Show / Hide of [button]'s hint (SELECT, START, Y). */
-    private fun flipHintShown(button: NxButton) {
-        val s = deps.settings
-        when (button) {
-            NxButton.SELECT -> s.showRecentHint = !s.showRecentHint
-            NxButton.START -> s.showSearchHint = !s.showSearchHint
-            NxButton.Y -> s.showNetplayHint = !s.showNetplayHint
-            else -> Unit
-        }
-        refreshSettings()
-    }
-
     /** Whether Layouts shows [shelf] on Home: New and Not started by their settings; Pick up again always. */
     private fun shelfShown(shelf: HomeShelf): Boolean = when (shelf) {
         HomeShelf.NEW -> deps.settings.showNewShelf
         HomeShelf.NOT_STARTED -> deps.settings.showNotStartedShelf
         HomeShelf.PICK_UP -> true
-    }
-
-    /** Layouts → List art: steps through its six values (LEFT back, RIGHT and A forward), wrapping. */
-    private fun cycleGameListArt(step: Int) {
-        deps.settings.gameListArt = deps.settings.gameListArt.step(step)
-        refreshSettings()
-    }
-
-    /** Layouts → Backdrop art: steps through 3D box art, 2D box art and Wheel, wrapping. */
-    private fun cycleBackdropArt(step: Int) {
-        deps.settings.backdropArt = deps.settings.backdropArt.step(step)
-        refreshSettings()
-    }
-
-    /** Layouts → Game Switcher layout: Full screen and List, so every press flips it. */
-    private fun cycleSwitcherLayout(step: Int) {
-        deps.settings.switcherLayout = deps.settings.switcherLayout.step(step)
-        refreshSettings()
     }
 
     /** Rebuilds the open page's rows in place (selection clamped). */
@@ -4096,11 +3940,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
 
     /** The console's next default tag ([step] -1: the previous one, for LEFT). Leaving Default emulators rescans. */
     fun cycleDefaultTag(consoleId: String, step: Int = 1) {
-        val console = CoreRegistry.consoles.firstOrNull { it.id == consoleId }?.takeIf { it.tags.size > 1 } ?: return   // one tag: nothing to pick
-        val current = console.defaultTagFor(deps.settings.defaultTags[consoleId])
-        val next = console.tags[(console.tags.indexOf(current) + step).mod(console.tags.size)]
-        deps.settings.defaultTags = deps.settings.defaultTags + (consoleId to next)
-        refreshSettings()
+        settingValue(SettingsRow(SettingsKind.DEFAULT_TAG, "", consoleId = consoleId))?.change(step)   // one tag (or none): nothing to pick
     }
 
     /** Settings sections and the section menu: UP/DOWN move, A opens or acts, B goes back. */
@@ -4124,43 +3964,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 // Two panes: RIGHT on a category moves into its page, like A. LEFT never leaves a page (B does).
                 if (settingsSplit && button == NxButton.RIGHT) openSelected()
             } else (s as? Screen.Settings)?.rows?.getOrNull(_selection.value.index)?.let { row ->
-                val step = if (button == NxButton.LEFT) -1 else 1
-                when (row.kind) {
-                    SettingsKind.PAD_THEME -> cyclePadTheme(step)
-                    SettingsKind.DEFAULT_TAG -> if (row.enabled) row.consoleId?.let { cycleDefaultTag(it, if (button == NxButton.LEFT) -1 else 1) }
-                    SettingsKind.MENU_STYLE -> if (row.enabled) row.category?.let { cycleMenuStyle(it, if (button == NxButton.LEFT) -1 else 1) }
-                    SettingsKind.GAME_LIST_STYLE -> cycleGameListStyle(if (button == NxButton.LEFT) -1 else 1)
-                    SettingsKind.MENU_ORIENTATION -> row.category?.let { flipMenuOrientation(it) }
-                    SettingsKind.GAME_LIST_ORIENTATION -> flipGameListOrientation()
-                    SettingsKind.GAME_LIST_VERTICAL_ALIGNMENT -> flipGameListVerticalAlignment()
-                    SettingsKind.CONTROLLER_ART -> cycleConsoleArt(step)
-                    SettingsKind.TAB_SHOWN -> row.category?.let { flipTabShown(it) }
-                    SettingsKind.SHELF_SHOWN -> row.shelf?.let { flipShelfShown(it) }
-                    SettingsKind.HINT_SHOWN -> row.hint?.let { flipHintShown(it) }
-                    SettingsKind.LIST_ART -> cycleGameListArt(step)
-                    SettingsKind.BACKDROP_ART -> cycleBackdropArt(step)
-                    SettingsKind.PAGE_TITLE -> flipPageTitle()
-                    SettingsKind.DEBUG_LOG -> flipDebugLog()
-                    SettingsKind.SECOND_SCREEN_ENABLE -> flipSecondScreen()
-                    SettingsKind.PAUSE_UNFOCUSED -> flipPauseUnfocused()
-                    SettingsKind.BOTTOM_SCREEN -> cycleBottomScreen(step)
-                    SettingsKind.MENU_PAD -> flipMenuPad()
-                    SettingsKind.BUTTON_HINTS -> flipButtonHints()
-                    SettingsKind.EXTRA_INFO -> flipExtraInfo()
-                    SettingsKind.HOME_STATS -> flipHomeStats()
-                    SettingsKind.LAYOUT_OPTIONS, SettingsKind.ACHIEVEMENTS_PANEL -> flipGameListShown(row.kind)
-                    SettingsKind.SWITCHER_LAYOUT -> cycleSwitcherLayout(step)
-                    SettingsKind.PAD_VIBRATION -> cyclePadVibration(step)
-                    SettingsKind.GAME_RUMBLE -> cycleGameRumble(step)
-                    SettingsKind.SAVE_FORMAT -> cycleSaveFormat(step)
-                    SettingsKind.STATE_FORMAT -> cycleStateFormat(step)
-                    SettingsKind.EXTRACTED_NAME -> flipExtractedName()
-                    SettingsKind.PAD_LAYOUT_CONSOLE -> cyclePadLayoutConsole(step)
-                    SettingsKind.ACCENT -> cycleAccent(step)
-                    SettingsKind.SECONDARY_ACCENT -> cycleSecondaryAccent(step)
-                    SettingsKind.TEXT_SIZE -> cycleTextSize(step)
-                    else -> Unit
-                }
+                if (row.enabled) settingValue(row)?.change(if (button == NxButton.LEFT) -1 else 1)   // a dimmed row (one tag) stays
             }
             else -> Unit
         }
@@ -5098,6 +4902,25 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         )
     }
 
+    /**
+     * The settings page's value row [kind] as a [SettingValue] ([settingValue]'s table for this page): the two durations
+     * (LEFT / RIGHT stop at their ends, A wraps), the sort order, and the On / Off rows. Each re-renders the page after a
+     * change. Null for a row that is not a value row.
+     */
+    private fun raSettingValue(kind: RaSettingKind?): SettingValue<*>? {
+        val s = deps.settings
+        fun <T> cycle(values: List<T>, current: T, label: ((T) -> String)? = null, clamps: Boolean = false, set: (T) -> Unit) =
+            SettingValue(values, current, set, label, clamps) { refreshRaSettings() }
+        return when (kind) {
+            RaSettingKind.NOTIFICATION_SECONDS -> cycle((1..5).toList(), s.raNotificationSeconds, { "$it s" }, clamps = true) { s.raNotificationSeconds = it }
+            RaSettingKind.PROGRESS_SECONDS -> cycle((0..5).toList(), s.raProgressSeconds, { if (it == 0) "Off" else "$it s" }, clamps = true) { s.raProgressSeconds = it }
+            RaSettingKind.SORT_ORDER -> cycle(RaSortOrder.entries, s.raSortOrder, { it.label }) { s.raSortOrder = it }
+            RaSettingKind.ENABLED -> cycle(listOf(false, true), s.raEnabled) { s.raEnabled = it }
+            RaSettingKind.NOTIFICATIONS -> cycle(listOf(false, true), s.raShowNotifications) { s.raShowNotifications = it }
+            else -> null
+        }
+    }
+
     /** Opens on the remembered row, but never on Sign out: the page lands on Status instead, so a stray A reads only. */
     private fun openRaSettings() {
         val rows = raSettingsRows()
@@ -5218,24 +5041,18 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         when (button) {
             NxButton.UP -> _selection.value = _selection.value.up()
             NxButton.DOWN -> _selection.value = _selection.value.down()
-            NxButton.LEFT, NxButton.RIGHT -> {
-                val step = if (button == NxButton.RIGHT) 1 else -1
-                when (row?.kind) {
-                    RaSettingKind.NOTIFICATION_SECONDS -> settings.raNotificationSeconds = (settings.raNotificationSeconds + step).coerceIn(1, 5)
-                    RaSettingKind.PROGRESS_SECONDS -> settings.raProgressSeconds = (settings.raProgressSeconds + step).coerceIn(0, 5)
-                    RaSettingKind.SORT_ORDER -> {
-                        val all = RaSortOrder.entries
-                        settings.raSortOrder = all[(settings.raSortOrder.ordinal + step).mod(all.size)]
-                    }
-                    // The On/Off rows flip either way (NX Redux ITEM_CYCLE); Enable needs an account, as on A.
-                    RaSettingKind.ENABLED -> if (row.enabled) settings.raEnabled = !settings.raEnabled else return
-                    RaSettingKind.NOTIFICATIONS -> settings.raShowNotifications = !settings.raShowNotifications
-                    else -> return
-                }
-                refreshRaSettings()
+            // The value rows step either way (NX Redux ITEM_CYCLE): the durations stop at their ends, the sort order and the
+            // On/Off rows wrap. Enable needs an account, as on A.
+            NxButton.LEFT, NxButton.RIGHT -> if (row?.enabled != false) raSettingValue(row?.kind)?.let { v ->
+                v.change(if (button == NxButton.RIGHT) 1 else -1, wrap = !v.clamps)
             }
             NxButton.A -> if (row?.enabled == false) Unit else when (row?.kind) {
-                RaSettingKind.ENABLED -> { settings.raEnabled = !settings.raEnabled; refreshRaSettings() }
+                // A (and a row tap) steps a value row forward with wrap-around, so touch alone reaches every value.
+                // Touch only, a row of three or more values picks from a chooser instead.
+                RaSettingKind.ENABLED, RaSettingKind.NOTIFICATIONS, RaSettingKind.NOTIFICATION_SECONDS, RaSettingKind.PROGRESS_SECONDS,
+                RaSettingKind.SORT_ORDER -> raSettingValue(row?.kind)?.let { v ->
+                    if (!(touchMode && openValueChooser(row?.label.orEmpty(), v) { raSettingValue(row?.kind) })) v.change(1)
+                }
                 RaSettingKind.SIGN_IN ->
                     if (c.busy) _error.value = RA_BUSY   // a sign-in (or other job) is still running
                     else _screen.value = s.copy(signingIn = true, draftUser = settings.raUsername, draftPassword = "")
@@ -5247,7 +5064,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     // cached already); a download that could not start goes back to that page.
                     if (c.download.value.let { it != null && it !== before }) { raSettingsSelection = _selection.value; openRaDownload() } else leaveRaSettings()
                 }
-                RaSettingKind.NOTIFICATIONS -> { settings.raShowNotifications = !settings.raShowNotifications; refreshRaSettings() }
                 RaSettingKind.RESET_ACCOUNT -> _screen.value = s.copy(confirm = RaConfirm.RESET_ACCOUNT)
                 RaSettingKind.ERASE_ALL -> _screen.value = s.copy(confirm = RaConfirm.ERASE_ALL)
                 RaSettingKind.RESET_SETTINGS -> {
@@ -5255,17 +5071,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     settings.raEnabled = false; settings.raShowNotifications = true
                     settings.raNotificationSeconds = 3; settings.raProgressSeconds = 1; settings.raSortOrder = RaSortOrder.DEFAULT
                     refreshRaSettings()
-                }
-                // A (and a row tap) steps a value row forward with wrap-around, so touch alone reaches every value.
-                // Touch only these pick from a chooser; else A steps them.
-                RaSettingKind.NOTIFICATION_SECONDS -> if (!(touchMode && openChooser(row?.label.orEmpty(), (1..5).map { "$it s" }, settings.raNotificationSeconds - 1) { settings.raNotificationSeconds = it + 1; refreshRaSettings() })) {
-                    settings.raNotificationSeconds = if (settings.raNotificationSeconds >= 5) 1 else settings.raNotificationSeconds + 1; refreshRaSettings()
-                }
-                RaSettingKind.PROGRESS_SECONDS -> if (!(touchMode && openChooser(row?.label.orEmpty(), listOf("Off") + (1..5).map { "$it s" }, settings.raProgressSeconds) { settings.raProgressSeconds = it; refreshRaSettings() })) {
-                    settings.raProgressSeconds = if (settings.raProgressSeconds >= 5) 0 else settings.raProgressSeconds + 1; refreshRaSettings()
-                }
-                RaSettingKind.SORT_ORDER -> if (!(touchMode && openChooser(row?.label.orEmpty(), RaSortOrder.entries.map { it.label }, settings.raSortOrder.ordinal) { settings.raSortOrder = RaSortOrder.entries[it]; refreshRaSettings() })) {
-                    val all = RaSortOrder.entries; settings.raSortOrder = all[(settings.raSortOrder.ordinal + 1).mod(all.size)]; refreshRaSettings()
                 }
                 RaSettingKind.STATUS, null -> Unit
             }
@@ -5557,7 +5362,10 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             is Screen.Switcher -> onSwitcherButton(s, NxButton.A)
             is Screen.Settings -> s.rows.getOrNull(_selection.value.index)?.let { row ->
                 if (touchMode && row.enabled && openSettingChooser(row)) return   // touch only: a value row of three or more picks from a chooser
-                when (row.kind) {
+                val value = settingValue(row)
+                if (value != null) {
+                    if (row.enabled) value.change(1)   // a value row: A steps it forward, as RIGHT
+                } else when (row.kind) {
                     SettingsKind.HOME -> pickHome()
                     SettingsKind.ADD_EXTRA -> pickExtra()
                     SettingsKind.EXTRA -> refreshSettings(confirm = row.extra)
@@ -5574,42 +5382,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     SettingsKind.IMPORT_ZIP -> importSaves(ImportSource.ZIP)
                     SettingsKind.IMPORT_RETROARCH -> importSaves(ImportSource.RETROARCH)
                     SettingsKind.IMPORT_DONE -> leaveSubPage(SettingsSection.IMPORT_RESULT)
-                    SettingsKind.SAVE_FORMAT -> cycleSaveFormat(1)
-                    SettingsKind.STATE_FORMAT -> cycleStateFormat(1)
-                    SettingsKind.EXTRACTED_NAME -> flipExtractedName()
-                    SettingsKind.DEFAULT_TAG -> if (row.enabled) row.consoleId?.let { cycleDefaultTag(it) }
-                    SettingsKind.PAD_THEME -> cyclePadTheme()
-                    SettingsKind.MENU_STYLE -> if (row.enabled) row.category?.let { cycleMenuStyle(it, 1) }
-                    SettingsKind.GAME_LIST_STYLE -> cycleGameListStyle(1)
-                    SettingsKind.MENU_ORIENTATION -> row.category?.let { flipMenuOrientation(it) }
-                    SettingsKind.GAME_LIST_ORIENTATION -> flipGameListOrientation()
-                    SettingsKind.GAME_LIST_VERTICAL_ALIGNMENT -> flipGameListVerticalAlignment()
-                    SettingsKind.CONTROLLER_ART -> cycleConsoleArt(1)
-                    SettingsKind.TAB_SHOWN -> row.category?.let { flipTabShown(it) }
-                    SettingsKind.SHELF_SHOWN -> row.shelf?.let { flipShelfShown(it) }
-                    SettingsKind.HINT_SHOWN -> row.hint?.let { flipHintShown(it) }
-                    SettingsKind.LIST_ART -> cycleGameListArt(1)
-                    SettingsKind.BACKDROP_ART -> cycleBackdropArt(1)
-                    SettingsKind.PAGE_TITLE -> flipPageTitle()
-                    SettingsKind.DEBUG_LOG -> flipDebugLog()
-                    SettingsKind.SECOND_SCREEN_ENABLE -> flipSecondScreen()
-                    SettingsKind.PAUSE_UNFOCUSED -> flipPauseUnfocused()
-                    SettingsKind.BOTTOM_SCREEN -> cycleBottomScreen(1)
-                    SettingsKind.MENU_PAD -> flipMenuPad()
-                    SettingsKind.BUTTON_HINTS -> flipButtonHints()
-                    SettingsKind.EXTRA_INFO -> flipExtraInfo()
-                    SettingsKind.HOME_STATS -> flipHomeStats()
-                    SettingsKind.LAYOUT_OPTIONS, SettingsKind.ACHIEVEMENTS_PANEL -> flipGameListShown(row.kind)
-                    SettingsKind.SWITCHER_LAYOUT -> cycleSwitcherLayout(1)
-                    SettingsKind.PAD_VIBRATION -> cyclePadVibration(1)
-                    SettingsKind.GAME_RUMBLE -> cycleGameRumble(1)
                     SettingsKind.PAD_LAYOUT -> { sectionSelections[s.section] = _selection.value; padLayoutConsole = PadLayouts.SHARED_KEY; openSettings(SettingsSection.PAD_LAYOUT) }
-                    SettingsKind.PAD_LAYOUT_CONSOLE -> cyclePadLayoutConsole(1)
                     SettingsKind.PAD_LAYOUT_SHAPE -> row.padShape?.let { openPadEditor(it) }
                     SettingsKind.PAD_LAYOUT_RESET -> resetPadLayoutConsole()
-                    SettingsKind.ACCENT -> cycleAccent(1)
-                    SettingsKind.SECONDARY_ACCENT -> cycleSecondaryAccent(1)
-                    SettingsKind.TEXT_SIZE -> cycleTextSize(1)
                     SettingsKind.HIDDEN -> openList(ListSource.Hidden)
                     SettingsKind.UNASSIGNED -> unassignedSystem()?.let { sectionSelections[s.section] = _selection.value; openSystem(it) }
                     SettingsKind.EMULATORS -> { sectionSelections[s.section] = _selection.value; emulatorSettings.openList(systemsCache) }
@@ -5620,6 +5395,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     SettingsKind.ANDROID_GAMES -> openToolApps(AppPick.GAMES)
                     SettingsKind.RESET_DEFAULTS -> resetToDefaults(s.section)
                     SettingsKind.ALL_FILES -> deps.allFilesAccess?.openSettings()
+                    else -> Unit   // a value row with nothing to step ([settingValue] null): as before, nothing
                 }
             }
             Screen.PickFolder, is Screen.PermissionsStep -> setupStepRow(_selection.value.index)
