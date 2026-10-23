@@ -1,6 +1,9 @@
 package com.nxredux.mobile.ui
 
 import com.nxredux.mobile.sync.SyncLink
+import com.nxredux.mobile.update.AppRelease
+import com.nxredux.mobile.update.UpdateController
+import com.nxredux.mobile.update.UpdateState
 import com.nxredux.mobile.library.unassignedHint
 import com.nxredux.mobile.library.folderSummary
 import com.nxredux.mobile.library.homeSummary
@@ -170,7 +173,11 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -256,6 +263,8 @@ class AppDeps(
      * is the bottom one. The platform shows the step's second button on it ([AppState.onboardingBottomScreenOnSecond]).
      */
     val builtInSecondScreen: () -> Boolean = { false },
+    /** The in-app updater (Android's, process-wide): the main menu's Update available popup and About's update row; null: neither. */
+    val updater: UpdateController? = null,
 )
 
 /**
@@ -418,7 +427,7 @@ sealed interface Screen {
     data class ArtworkReset(val scopes: List<ResetScope>, val confirm: ResetScope? = null) : Screen
 }
 
-enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SECOND_SCREEN_ENABLE, BOTTOM_SCREEN, PAUSE_UNFOCUSED, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_FOLDER, IMPORT_ZIP, IMPORT_RETROARCH, IMPORT_DONE, RESET_DEFAULTS, ALL_FILES,
+enum class SettingsKind { HOME, ADD_EXTRA, EXTRA, RESCAN, FOLDERS, HIDDEN, UNASSIGNED, EMULATORS, DEFAULTS, DEFAULT_TAG, PAD_THEME, MENU_STYLE, GAME_LIST_STYLE, MENU_ORIENTATION, GAME_LIST_ORIENTATION, GAME_LIST_VERTICAL_ALIGNMENT, CONTROLLER_ART, TAB_SHOWN, SHELF_SHOWN, HINT_SHOWN, LIST_ART, BACKDROP_ART, LAYOUT_OPTIONS, ACHIEVEMENTS_PANEL, PAGE_TITLE, BUTTON_HINTS, EXTRA_INFO, HOME_STATS, SWITCHER_LAYOUT, PAD_VIBRATION, GAME_RUMBLE, MENU_PAD, ACCENT, SECONDARY_ACCENT, INFO, HOME_SCREEN, TOOL_APPS, ANDROID_GAMES, COPY_INFO, PAD_LAYOUT, PAD_LAYOUT_CONSOLE, PAD_LAYOUT_SHAPE, PAD_LAYOUT_RESET, DEBUG_LOG, SECOND_SCREEN_ENABLE, BOTTOM_SCREEN, PAUSE_UNFOCUSED, SAVES, SAVE_FORMAT, STATE_FORMAT, EXTRACTED_NAME, EXPORT_SAVES, IMPORT_SAVES, IMPORT_FOLDER, IMPORT_ZIP, IMPORT_RETROARCH, IMPORT_DONE, RESET_DEFAULTS, ALL_FILES, APP_UPDATE,
     LAYOUT_HOME, LAYOUT_CONSOLES, LAYOUT_COLLECTIONS, LAYOUT_TOOLS, LAYOUT_GAME_LISTS, LAYOUT_TITLE_HINTS, LAYOUT_SWITCHER, TEXT_SIZE }
 
 /**
@@ -751,6 +760,24 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** An installed library's "Add N Android games to Consoles?" dialog over the main menu (A Yes, B Not now); null when not showing. */
     val androidGamesAsk: StateFlow<AndroidGamesAsk?> = _androidGamesAsk.asStateFlow()
     private var androidAskGuard: Job? = null   // active for [ANDROID_ASK_GUARD_MILLIS] after the dialog shows: its answers are ignored
+    private var updateAskGuard: Job? = null   // as [androidAskGuard], for the update dialog (declared first: [updatePopup] may set it while built)
+    /**
+     * The updater's Update available dialog over the main menu (A Update, B Not now); null when not showing. It waits behind
+     * the Android games question, a Problem dialog and a context menu, and shows on the main menu only (not over onboarding).
+     */
+    val updatePopup: StateFlow<AppRelease?> = deps.updater?.let { u ->
+        var shown = false
+        combine(u.popup, _androidGamesAsk, _error, _screen) { release, ask, error, screen -> release?.takeIf { updatePopupFits(ask, error, screen) } }
+            .onEach {
+                // Guarded from before it draws: the check lands while the menu is in use, so a press may be on its way.
+                if (it != null && !shown) { updateAskGuard?.cancel(); updateAskGuard = scope.launch { delay(ANDROID_ASK_GUARD_MILLIS) } }
+                shown = it != null
+            }
+            .stateIn(scope, SharingStarted.Eagerly, null)
+    } ?: MutableStateFlow(null)
+    /** About's update row's label ([appUpdateLabel] of the updater's state), set from init; null without an updater. */
+    private val _updateLabel = MutableStateFlow<String?>(null)
+    internal val updateLabel: StateFlow<String?> = _updateLabel.asStateFlow()   // the two-pane preview of About redraws on it, as on [gpu]
     /** First-launch onboarding and Settings → Run setup again ([OnboardingController]). */
     val onboarding = OnboardingController()
     private var allFilesStepShown = false   // this run showed the All files step: it counts in the step numbers
@@ -1010,6 +1037,19 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     val achievements: RaController? get() = deps.achievements
 
     init {
+        deps.updater?.let { u ->
+            u.hostBusy = ::updateHostBusy
+            // About's update row follows the updater (a check, the download's percent, the wait), as the GPU row follows its
+            // query; by its label, so a download's many progress reports redraw the page once a percent.
+            scope.launch {
+                u.state.collect { st ->
+                    val label = appUpdateLabel(st)
+                    if (label == _updateLabel.value) return@collect
+                    _updateLabel.value = label
+                    if ((_screen.value as? Screen.Settings)?.section == SettingsSection.ABOUT) refreshSettings()
+                }
+            }
+        }
         // A started game was recorded: a first launch makes the Recently Played row appear, also when launched from the
         // main menu itself (a pin row, the switcher over it). Ends with the scope, so the recorder never holds this state.
         scope.launch {
@@ -1705,6 +1745,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (!homeStatsAsked) { homeStatsAsked = true; refreshHomeStats() }
         else if (screen.category == MenuCategory.HOME && raSignedIn() != homeStats.signedIn) refreshHomeStats()
         maybeAskAndroidGames()
+        // The menu came up (not rebuilt in place, which a count landing does while the install-permission screen is up):
+        // the daily check, or a held install's retry. A foreground over it does the same ([onForeground]).
+        if (prev !is Screen.Systems && screen.menu == null && !firstSetup) deps.updater?.onMainMenu()
     }
 
     /**
@@ -3410,7 +3453,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             // Xiaomi's MiSans terms require the app to note that it uses the font (shared/build.gradle.kts fetchMiSans).
             aboutRows(deps.appInfo, _gpu.value).map { (label, value) -> SettingsRow(SettingsKind.INFO, label, value) } +
                 SettingsRow(SettingsKind.INFO, "Font", "MiSans by Xiaomi") +
-                SettingsRow(SettingsKind.COPY_INFO, "Copy device info")
+                SettingsRow(SettingsKind.COPY_INFO, "Copy device info") +
+                listOfNotNull(_updateLabel.value?.let { SettingsRow(SettingsKind.APP_UPDATE, it) })
         }
     }
 
@@ -4584,6 +4628,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (homeStatsAsked) refreshHomeStats()   // Home's stats too (before the menu's first show, that show computes them)
         val s = _screen.value as? Screen.Systems ?: return
         if (s.menu != null) return
+        if (!firstSetup) deps.updater?.onMainMenu()   // back over the menu (from a game, or the install-permission screen)
         scope.launch { rebuildMainRows(); swapMainRows() }   // Continue's save (its resume frame) may be new since the rows were built
         val root = deps.settings.treeRef ?: return
         if (foregroundJob?.isActive == true) return   // a quick second onStart: the first check (or its scan) covers it
@@ -5390,6 +5435,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     SettingsKind.EMULATORS -> { sectionSelections[s.section] = _selection.value; emulatorSettings.openList(systemsCache) }
                     SettingsKind.INFO -> Unit   // About: read-only
                     SettingsKind.COPY_INFO -> copyDeviceInfo()
+                    SettingsKind.APP_UPDATE -> deps.updater?.let(::appUpdateRowA)
                     SettingsKind.HOME_SCREEN -> deps.launcher?.let { it.setHome(!it.isHome()); refreshSettings() }
                     SettingsKind.TOOL_APPS -> openToolApps(AppPick.TOOLS)
                     SettingsKind.ANDROID_GAMES -> openToolApps(AppPick.GAMES)
@@ -6005,6 +6051,10 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             if (button == NxButton.A) answerAndroidGames(true) else if (button == NxButton.B) answerAndroidGames(false)
             return
         }
+        if (updatePopupShows()) {   // the update dialog: A Update, B Not now
+            if (button == NxButton.A) answerUpdate(true) else if (button == NxButton.B) answerUpdate(false)
+            return
+        }
         if (_screen.value is Screen.AndroidGamesStep) {   // setup's step: the d-pad moves between Yes and Not now, A chooses, B goes back
             when (button) {
                 NxButton.UP -> _selection.value = _selection.value.up(wrap = true)
@@ -6112,6 +6162,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     fun back(): Boolean {
         if (_chooser.value != null) { closeChooser(); return true }   // a touch chooser: Back closes it
         if (_androidGamesAsk.value != null) { answerAndroidGames(false); return true }   // the dialog's B: Not now
+        if (updatePopupShows()) { answerUpdate(false); return true }   // the update dialog's B: Not now
         netplay?.takeIf { it.page.value != null }?.let { it.onButton(NxButton.B); return true }   // the Netplay sheet: its own B
         switcherJob?.cancel()   // B while the switcher loads abandons it
         if (loader.cancel()) return true   // likewise a screen load (the overlay): the screen underneath stays
@@ -6279,6 +6330,42 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         androidAskGuard?.cancel()
         androidAskGuard = scope.launch { delay(ANDROID_ASK_GUARD_MILLIS) }
         _androidGamesAsk.value = ask
+    }
+
+    /** The update dialog may show over [screen]: the main menu with no context menu, the Android games question or a Problem over it. */
+    private fun updatePopupFits(ask: AndroidGamesAsk?, error: String?, screen: Screen): Boolean =
+        ask == null && error == null && screen is Screen.Systems && screen.menu == null
+
+    /** The update dialog is drawn and still fits what shows now (so a press is its answer). */
+    private fun updatePopupShows(): Boolean =
+        updatePopup.value != null && updatePopupFits(_androidGamesAsk.value, _error.value, _screen.value)
+
+    /**
+     * Update ([yes]) or Not now to the update dialog: Update downloads the release (its progress on About's row and in the
+     * notification), Not now silences that version. Ignored in the dialog's first [ANDROID_ASK_GUARD_MILLIS], as the Android
+     * games question is.
+     */
+    fun answerUpdate(yes: Boolean) {
+        val u = deps.updater ?: return
+        if (!updatePopupShows() || updateAskGuard?.isActive == true) return
+        if (yes) u.update() else u.notNow()
+    }
+
+    /** What the host holds an install for: the Netplay sheet; "" off the main menu (a game list may be about to launch); null when free. */
+    private fun updateHostBusy(): String? = when {
+        netplay?.page?.value != null -> "Close Netplay to install"
+        _screen.value !is Screen.Systems -> ""
+        else -> null
+    }
+
+    /** A on About's update row: Check for updates (also after a failed check), Update to after one found a release; nothing while busy. */
+    private fun appUpdateRowA(u: UpdateController) {
+        when (val s = u.state.value) {
+            UpdateState.Idle, is UpdateState.UpToDate -> u.checkNow()
+            is UpdateState.Failed -> if (s.release == null) u.checkNow() else u.update()
+            is UpdateState.Available -> u.update()
+            else -> Unit
+        }
     }
 
     /**

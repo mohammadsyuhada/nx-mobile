@@ -134,6 +134,7 @@ fun App(state: AppState, onPadEvent: (PadEvent) -> Unit = {}) {
     val screen by state.screen.collectAsState()
     val error by state.error.collectAsState()
     val androidGamesAsk by state.androidGamesAsk.collectAsState()
+    val updatePopup by state.updatePopup.collectAsState()
     val chooser by state.chooser.collectAsState()   // touch only: a value row's chooser
     // Collected but not read here: each page reads them only where the selection shows ([PageContent]), so a selection
     // change recomposes the selected tile, the caption, the background and the hints, not the whole page.
@@ -220,6 +221,12 @@ fun App(state: AppState, onPadEvent: (PadEvent) -> Unit = {}) {
                             androidGamesAsk?.let { ask ->
                                 NxDialog(ask.title, ask.text, onConfirm = { state.answerAndroidGames(true) }, confirmLabel = "Yes",
                                     onCancel = { state.answerAndroidGames(false) }, cancelLabel = "Not now", scrimDismisses = false)
+                            }
+                            // A newer release, asked once a day at most over the menu; Not now silences that version.
+                            updatePopup?.let { r ->
+                                val text = "NX Redux ${r.version}" + if (r.notes.isNotBlank()) "\n\n${r.notes}" else ""
+                                NxDialog("Update available", text, onConfirm = { state.answerUpdate(true) }, confirmLabel = "Update",
+                                    onCancel = { state.answerUpdate(false) }, cancelLabel = "Not now", scrimDismisses = false)
                             }
                             chooser?.let { c -> NxValueDropdown(c.labels, c.selected, valueAnchor.bounds, onPick = state::chooseValue, onDismiss = state::closeChooser) }
                             error?.let { NxDialog("Problem", it, onConfirm = state::dismissError) }
