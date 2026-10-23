@@ -1,6 +1,8 @@
 package com.nxredux.mobile.library
 
 import com.nxredux.mobile.runner.ContentRef
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Art layout inside a folder's `.media`, each `.png`, else `.jpg`:
@@ -28,6 +30,32 @@ class ArtworkResolver(private val source: RomsSource) {
         return list(media.ref)
     }
 
+    /**
+     * Each typed `.media` subfolder's [subArtMap] as last read, by the subfolder's ref, with the modified time its parent's
+     * listing gave it then. [subArtMap] with `reuse` takes the kept map while that time is unchanged: a map holds only names
+     * and refs, and a file added, deleted or renamed in a folder (a scraper's `.part` swap included) bumps the folder's
+     * modified time on the storage the app reads (internal storage and SD cards, through FUSE or SAF's external storage
+     * provider; a file overwritten in place keeps its name and ref, so its map is still right). A folder whose provider reports no time is always listed.
+     * Shared by a scan (which fills it) and a later [LibraryScanner.readArt] (which reuses it), so it is locked.
+     */
+    class SubArtMaps {
+        private val lock = Mutex()
+        private val maps = HashMap<ContentRef, Pair<Long, Map<String, ContentRef>>>()
+
+        /** [dir]'s kept map, when it was read at [dir]'s current modified time. */
+        suspend fun unchanged(dir: Entry): Map<String, ContentRef>? {
+            val modified = dir.lastModified ?: return null
+            return lock.withLock { maps[dir.ref] }?.takeIf { it.first == modified }?.second
+        }
+
+        suspend fun put(dir: Entry, map: Map<String, ContentRef>) {
+            lock.withLock { if (dir.lastModified == null) maps.remove(dir.ref) else maps[dir.ref] = dir.lastModified to map }
+        }
+
+        /** Forgets every map: a full scan reads each folder again and keeps only those it reaches. */
+        suspend fun clear() = lock.withLock { maps.clear() }
+    }
+
     /** baseName -> ref for every .png directly in a listing. */
     fun pngMap(entries: List<Entry>): Map<String, ContentRef> =
         entries.filter { !it.isDirectory && it.name.endsWith(".png", ignoreCase = true) }
@@ -37,13 +65,14 @@ class ArtworkResolver(private val source: RomsSource) {
      * baseName -> ref for the files in `.media/<sub>` (one of [TYPED]): `.png`, else `.jpg`, else `.jpeg` (the extension
      * in any case), whatever the listing order; the scrape engine reads a slot the same way.
      */
-    suspend fun subArtMap(mediaEntries: List<Entry>, sub: String): Map<String, ContentRef> {
+    suspend fun subArtMap(mediaEntries: List<Entry>, sub: String, maps: SubArtMaps? = null, reuse: Boolean = false): Map<String, ContentRef> {
         val dir = mediaEntries.firstOrNull { it.isDirectory && it.name == sub } ?: return emptyMap()
+        if (reuse) maps?.unchanged(dir)?.let { return it }
         val files = source.listChildren(dir.ref).filter { !it.isDirectory }
         fun withExt(ext: String) = files.filter { it.name.endsWith(ext, ignoreCase = true) && it.name.length > ext.length }
             .associate { it.name.dropLast(ext.length) to it.ref }
         // Lowest priority first: each later map overrides the names it shares.
-        return JPEG.reversed().fold(emptyMap<String, ContentRef>()) { m, ext -> m + withExt(ext) } + pngMap(files)
+        return (JPEG.reversed().fold(emptyMap<String, ContentRef>()) { m, ext -> m + withExt(ext) } + pngMap(files)).also { maps?.put(dir, it) }
     }
 
     /** Top-level `.media` map from a folder's already-listed children. */

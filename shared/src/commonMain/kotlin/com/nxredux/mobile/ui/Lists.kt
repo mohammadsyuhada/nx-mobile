@@ -111,5 +111,20 @@ internal fun playableLookup(systems: List<SystemFolder>): Map<GameRef, Listed> =
     systems.forEach { s -> if (s.core != null) s.games.forEach { g -> g.hiddenCopies.forEach { r -> map.getOrPut(r) { Listed(s, g) } } } }
 }
 
+/** [path]'s game in [lookup] ([playableLookup]): what [resolveIn] over the same systems gives, in one lookup. */
+internal fun resolveIn(lookup: Map<GameRef, Listed>, path: String): Listed? = GamePath.split(path)?.let(lookup::get)
+
+/** [resolveDistinct] through [lookup] ([playableLookup]). */
+internal fun resolveDistinct(lookup: Map<GameRef, Listed>, paths: List<String>): List<Listed> =
+    paths.mapNotNull { resolveIn(lookup, it) }.distinctBy { it.game.path }
+
+/**
+ * Every game in [systems] by its ref, the first system holding it winning, coreless ones and Unassigned included and no
+ * hidden copies: what Hidden's lines resolve against (every hidden game can be unhidden).
+ */
+internal fun gameLookup(systems: List<SystemFolder>): Map<GameRef, Listed> = HashMap<GameRef, Listed>().also { map ->
+    systems.forEach { s -> s.games.forEach { g -> map.getOrPut(GameRef(g.sourceId, g.relativeDir, g.fileName)) { Listed(s, g) } } }
+}
+
 /** How many of a collection's [lines] resolve in [lookup] ([playableLookup]): the games its opened list shows. */
 internal fun resolvedCount(lines: List<String>, lookup: Map<GameRef, Listed>): Int = lines.count { l -> GamePath.split(l)?.let(lookup::containsKey) == true }

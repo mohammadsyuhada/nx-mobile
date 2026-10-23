@@ -30,6 +30,8 @@ class LooseResolver internal constructor(
     private val defaultTag: (Console) -> String,
     /** A disc image's console by its contents ([DiscProbes]), asked last, for the disc extensions nothing else placed. */
     private val probe: (suspend (Entry, List<Entry>) -> String?)? = null,
+    /** The sheet and zip head reads, reused across scans while a file is unchanged ([HeadReads]). */
+    private val heads: HeadReads = HeadReads(source, emptyList()),
 ) {
     constructor(source: RomsSource, sidecars: Sidecars, defaultTag: (Console) -> String) : this(source, ScanReads(source, sidecars, null), defaultTag)
 
@@ -48,7 +50,7 @@ class LooseResolver internal constructor(
         val sidecar = reads.sidecars.read(sourceId, relativeDir, children)
         val folder = Resolution.FolderHints.of(ancestors, defaultTag)
         // A bin/cue or m3u set shows once, as its sheet.
-        val hidden = DiscSheet.hiddenIn(children.filter { !it.isDirectory && !Names.isHidden(it.name) }) { source.readHead(it.ref, DiscSheet.HEAD_BYTES) }
+        val hidden = DiscSheet.hiddenNamed(children.filter { !it.isDirectory && !Names.isHidden(it.name) }, heads::sheetNames)
         for (c in children) {
             if (Names.isHidden(c.name)) continue
             if (c.isDirectory) {
@@ -65,7 +67,7 @@ class LooseResolver internal constructor(
             if (!candidate && Names.extensionOf(c.name) !in CoreRegistry.coreExtensions) continue
             // Only a zip is peeked (its first local header names the entry), and only when the folder and sidecar place
             // nothing; a 7z is placed by folder or sidecar alone.
-            val tag = Resolution.resolve(c.name, sidecar[c.name], folder, defaultTag) { source.readHead(c.ref, ZipPeek.HEAD_BYTES)?.let(ZipPeek::firstEntryName) }
+            val tag = Resolution.resolve(c.name, sidecar[c.name], folder, defaultTag) { heads.zipEntry(c) }
                 ?: probed(c, children)
             if (tag == null && !candidate) continue
             out += LooseFile(c, dir, relativeDir, tag)
@@ -120,5 +122,36 @@ internal class DiscProbes(private val probe: com.nxredux.mobile.library.disc.Dis
     private fun dataUnchanged(p: IndexedProbe, siblings: List<Entry>): Boolean {
         val ref = p.data ?: return true
         return siblings.any { it.ref.value == ref && it.sizeBytes == p.dataSize && it.lastModified == p.dataModified }
+    }
+}
+
+/**
+ * A scan's head reads ([RomsSource.readHead]): what each disc sheet names ([DiscSheet.hiddenNamed]: the [DiscSheet.references]
+ * of its head, read as its own type) and each peeked zip's first entry name ([ZipPeek]). As [DiscProbes], a file's answer
+ * is reused from [previous] while its size and modified time are unchanged, and every answer this scan used is in [used],
+ * for the next index: a rescan of an unchanged library opens no sheet and no zip. A failed read is not kept (the next scan
+ * reads again), and neither is a file whose provider reports no modified time: a rewrite of the same size would go unseen.
+ */
+internal class HeadReads(private val source: RomsSource, previous: List<IndexedHead>) {
+    private val before = previous.associateBy { it.ref }
+    private val kept = LinkedHashMap<String, IndexedHead>()   // by ref: a folder reached twice (an extra inside the home) keeps one
+
+    val used: List<IndexedHead> get() = kept.values.toList()
+
+    /** What sheet [file] names, or null when it cannot be read. */
+    suspend fun sheetNames(file: Entry): List<String>? =
+        names(file) { source.readHead(file.ref, DiscSheet.HEAD_BYTES)?.let { DiscSheet.references(file.name, DiscSheet.decode(it)) } }
+
+    /** Zip [file]'s first entry name; null when it cannot be read or names none (a folder entry, not a zip). */
+    suspend fun zipEntry(file: Entry): String? =
+        names(file) { source.readHead(file.ref, ZipPeek.HEAD_BYTES)?.let { listOfNotNull(ZipPeek.firstEntryName(it)) } }?.firstOrNull()
+
+    private suspend fun names(file: Entry, read: suspend () -> List<String>?): List<String>? {
+        val modified = file.lastModified
+        val known = before[file.ref.value]?.takeIf { modified != null && it.size == file.sizeBytes && it.modified == modified }
+        if (known != null) { kept[known.ref] = known; return known.names }
+        val names = read() ?: return null
+        if (modified != null) kept[file.ref.value] = IndexedHead(file.ref.value, file.sizeBytes, modified, names)
+        return names
     }
 }

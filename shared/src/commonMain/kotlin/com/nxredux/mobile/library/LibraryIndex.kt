@@ -30,6 +30,8 @@ data class LibraryIndex(
     val scannedAt: Long? = null,
     /** Each disc image an extra folder's scan probed ([com.nxredux.mobile.library.disc.DiscProbe]), so an unchanged one is not read again. */
     val probes: List<IndexedProbe> = emptyList(),
+    /** What each disc sheet named and each peeked zip held at scan time ([HeadReads]), so an unchanged one is not opened again. */
+    val heads: List<IndexedHead> = emptyList(),
 ) {
     companion object {
         /**
@@ -56,6 +58,13 @@ data class IndexedProbe(
     val ref: String, val size: Long?, val modified: Long?, val console: String?,
     val data: String? = null, val dataSize: Long? = null, val dataModified: Long? = null,
 )
+
+/**
+ * A head read's answer for [ref] at that [size] and [modified] time ([HeadReads]): the names a disc sheet's head lists
+ * ([DiscSheet.references]), or a zip's first entry name (none when its head names no file).
+ */
+@Serializable
+data class IndexedHead(val ref: String, val size: Long?, val modified: Long, val names: List<String>)
 
 @Serializable
 data class IndexedSystem(

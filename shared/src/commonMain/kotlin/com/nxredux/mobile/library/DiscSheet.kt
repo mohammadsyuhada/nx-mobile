@@ -41,13 +41,16 @@ object DiscSheet {
      * What [sheet] loads, in order: its references and, for an `.m3u`, the references of each cue/gdi/ccd/toc it lists (one
      * level; a listed `.m3u` is not followed). [read] gives a same-folder file's text; a sheet it cannot read names nothing.
      */
-    suspend fun expand(sheet: String, read: suspend (String) -> String?): List<SheetRef> {
+    suspend fun expand(sheet: String, read: suspend (String) -> String?): List<SheetRef> = expandNamed(sheet) { referencesOf(it, read) }
+
+    /** [expand] with each sheet's references from [refs] (a name -> what that sheet names, as [referencesOf] gives it). */
+    private suspend fun expandNamed(sheet: String, refs: suspend (String) -> List<String>): List<SheetRef> {
         val out = ArrayList<SheetRef>()
         val isM3u = Names.extensionOf(sheet) == "m3u"
-        for (name in referencesOf(sheet, read)) {
+        for (name in refs(sheet)) {
             out += SheetRef(name, sheet)
             if (isM3u && isSheet(name) && Names.extensionOf(name) != "m3u") {
-                for (inner in referencesOf(name, read)) out += SheetRef(inner, name)
+                for (inner in refs(name)) out += SheetRef(inner, name)
             }
         }
         return out.distinctBy { it.name.lowercase() }
@@ -57,19 +60,31 @@ object DiscSheet {
      * The lowercased names among [files] that a sibling sheet loads, so a set shows once, as its sheet. Each cue, gdi and
      * m3u is read at most once, through [head] (the first [HEAD_BYTES]).
      */
-    suspend fun hiddenIn(files: List<Entry>, head: suspend (Entry) -> ByteArray?): Set<String> {
+    suspend fun hiddenIn(files: List<Entry>, head: suspend (Entry) -> ByteArray?): Set<String> =
+        hiddenNamed(files) { e -> head(e)?.let { references(e.name, decode(it)) } }
+
+    /**
+     * [hiddenIn] with each read sheet's names from [named]: the [references] of its head read as its own type, null when
+     * it cannot be read (it then names nothing). A scan passes its cached ones ([HeadReads]), so an unchanged sheet is not
+     * read again. A name a sheet spells another way (case, code page) is read as the listed file it finds, whose type is
+     * the same: only an ASCII name's case or a non-ASCII run differs, never a `.cue`/`.m3u`/`.gdi` extension.
+     */
+    internal suspend fun hiddenNamed(files: List<Entry>, named: suspend (Entry) -> List<String>?): Set<String> {
         val sheets = files.filter { isSheet(it.name) }
         if (sheets.isEmpty()) return emptySet()
         val listing = Listing(files)
-        val texts = HashMap<String, String?>()
-        val read: suspend (String) -> String? = { name ->
-            val key = name.lowercase()
-            if (key in texts) texts[key] else listing.find(name)?.let { head(it) }?.let(::decode).also { texts[key] = it }
+        val known = HashMap<String, List<String>?>()   // by the listed file's lowercased name: each read at most once
+        val refs: suspend (String) -> List<String> = { name ->
+            if (Names.extensionOf(name) !in READ) references(name, "")
+            else listing.find(name)?.let { e ->
+                val key = e.name.lowercase()
+                if (key in known) known[key] else named(e).also { known[key] = it }
+            } ?: emptyList()
         }
         val out = HashSet<String>()
         for (s in sheets) {
             val self = s.name.lowercase()
-            for (r in expand(s.name, read)) {
+            for (r in expandNamed(s.name, refs)) {
                 val key = listing.find(r.name)?.name?.lowercase() ?: continue
                 if (key != self) out += key
             }

@@ -19,7 +19,8 @@ class FakeRomsSource(
     private val dirs: MutableMap<String, MutableList<String>> = dirs.mapValues { it.value.toMutableList() }.toMutableMap()
     private val texts: MutableMap<String, String> = texts.toMutableMap()
     private val bytes: MutableMap<String, ByteArray> = bytes.toMutableMap()
-    private val stamps = HashMap<String, Long>()
+    /** Last-modified times by path (none: the provider reports no time); writes stamp [now], and a test may set one. */
+    val stamps = HashMap<String, Long>()
     var now: Long = 0L
     val written = ArrayList<String>()
 

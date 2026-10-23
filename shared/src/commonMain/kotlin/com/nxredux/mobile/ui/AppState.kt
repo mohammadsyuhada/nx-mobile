@@ -720,6 +720,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private var countsJob: Job? = null
     private val countCache = CollectionCountCache(deps.privateFiles, scope, deps.compute)   // the counts between runs, app-private
     private var libraryStampOf: Pair<List<SystemFolder>, String>? = null   // [CountStamps.library] of the systems it was taken for
+    @Volatile private var playableOf: Pair<List<SystemFolder>, Map<GameRef, Listed>>? = null   // [playableLookup] of the systems it was built for
+    @Volatile private var hiddenLookupOf: Pair<LibraryIndex, Map<GameRef, Listed>>? = null     // [gameLookup] of the index it was built for (Hidden)
     private val rowsLock = Mutex()                            // one main-row rebuild at a time: an older one never writes last
     private var menuCategory: MenuCategory = MenuCategory.HOME   // the tab last shown (the menu opens on Home); a gone one resolves to the next visible tab
     private var pushedTab: MenuCategory? = null   // a hidden tab opened over the menu ([openHiddenTab]); [menuCategory] stays the tab under it
@@ -1269,8 +1271,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         // The Android pins after the ROM pins, resolved against the console (one that left it is skipped, and kept).
         // Each game once (a hidden copy's line opens its home game, [resolveDistinct]); the recent set also holds the
         // resolved games' own paths, so a home game played as its hidden copy is not "not started".
-        val played = recents.map { it.path }.toSet() + resolveDistinct(systemsCache, recents.map { it.path }).map { it.game.path }
-        val inputs = HomeInputs(last, resolveDistinct(systemsCache, pins.map { it.path }) + androidPinned(), pinnedToolRows(toolPins, tools), played)
+        val lookup = playable()
+        val played = recents.map { it.path }.toSet() + resolveDistinct(lookup, recents.map { it.path }).map { it.game.path }
+        val inputs = HomeInputs(last, resolveDistinct(lookup, pins.map { it.path }) + androidPinned(), pinnedToolRows(toolPins, tools), played)
         val built = homeFor(inputs)   // the stats as they are now, after the reads
         homeInputs = inputs
         allMenuTabs = buildMenuTabs(
@@ -1439,7 +1442,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private suspend fun libraryStamp(systems: List<SystemFolder>): String {
         libraryStampOf?.takeIf { it.first === systems }?.let { return it.second }
         val home = deps.settings.treeRef?.value
-        val stamp = withContext(deps.compute) { CountStamps.library(home, playableLookup(systems).keys) }
+        val lookup = playableOffMain(systems)
+        val stamp = withContext(deps.compute) { CountStamps.library(home, lookup.keys) }
         libraryStampOf = systems to stamp
         return stamp
     }
@@ -1481,8 +1485,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     missing.mapNotNull { n -> countCache.valid(n, stamps[n], library)?.let { n to it } }.toMap()
                 } else emptyMap()
                 val read = (missing - cached.keys).associateWith { collections.readStamped(it) }
-                val counts = if (read.isEmpty()) emptyMap() else withContext(deps.compute) {
-                    val lookup = playableLookup(systems)
+                val lookup = if (read.isEmpty()) null else playableOffMain(systems)
+                val counts = if (lookup == null) emptyMap() else withContext(deps.compute) {
                     read.mapValues { (_, r) -> r.lines?.let { resolvedCount(it, lookup) } }
                 }
                 if (generation != countsGeneration) continue
@@ -4212,18 +4216,35 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     // --- List sources: resolving recents, collections and hidden lines against the index ---
 
     /** A recents/pins/collection line resolved against the playable cache; null when hidden, coreless, Unassigned or not indexed. */
-    private fun resolveOne(path: String): Listed? = resolveIn(systemsCache, path)
+    private fun resolveOne(path: String): Listed? = resolveIn(playable(), path)
 
-    /** Hidden games resolved against the whole library (coreless and Unassigned included) so every one can be unhidden. */
+    /**
+     * [playableLookup] of [systems] (the playable cache by default): every line resolves in one lookup instead of a walk
+     * over every game ([resolveIn] gives the same answers). Built once per systems list, here when [playableOffMain] has
+     * not built it yet (one pass over the games, for a resolve outside a coroutine).
+     */
+    private fun playable(systems: List<SystemFolder> = systemsCache): Map<GameRef, Listed> =
+        playableOf?.takeIf { it.first === systems }?.second ?: playableLookup(systems).also { playableOf = systems to it }
+
+    /** [playable], built on [AppDeps.compute] when it is not built yet: a list opening or refreshing never walks the library on the main thread. */
+    private suspend fun playableOffMain(systems: List<SystemFolder> = systemsCache): Map<GameRef, Listed> =
+        playableOf?.takeIf { it.first === systems }?.second ?: withContext(deps.compute) { playableLookup(systems) }.also { playableOf = systems to it }
+
+    /**
+     * Hidden games resolved against the whole library (coreless and Unassigned included) so every one can be unhidden,
+     * through one [gameLookup] per index, built on [AppDeps.compute].
+     */
     private suspend fun hiddenEntries(): List<Listed> {
-        val all = indexLock.withLock { library?.toSystems() } ?: return emptyList()
-        return hiddenPaths.mapNotNull { p -> GamePath.split(p)?.let { ref -> all.firstNotNullOfOrNull { s -> s.games.firstOrNull { it.matches(ref) }?.let { Listed(s, it) } } } }
+        val index = indexLock.withLock { library } ?: return emptyList()
+        val lookup = hiddenLookupOf?.takeIf { it.first === index }?.second
+            ?: withContext(deps.compute) { gameLookup(index.toSystems()) }.also { hiddenLookupOf = index to it }
+        return hiddenPaths.mapNotNull { resolveIn(lookup, it) }
     }
 
     private suspend fun entriesFor(source: ListSource): List<Listed> = when (source) {
         is ListSource.Console -> consoleGroup(source.system)?.let(::consoleEntries) ?: emptyList()
-        ListSource.Recent -> resolveDistinct(systemsCache, deps.userData.readRecents().map { it.path })
-        is ListSource.Collection -> collections.read(source.name).mapNotNull(::resolveOne)
+        ListSource.Recent -> deps.userData.readRecents().map { it.path }.let { paths -> resolveDistinct(playableOffMain(), paths) }
+        is ListSource.Collection -> collections.read(source.name).let { lines -> playableOffMain().let { lookup -> lines.mapNotNull { resolveIn(lookup, it) } } }
         ListSource.Hidden -> hiddenEntries()
         is ListSource.Search -> GameSearch.search(searchCorpus(), source.query)
         is ListSource.Filtered -> GameSearch.filter(entriesFor(source.parent), source.query)
@@ -4751,7 +4772,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * rebuild uses app-private reads only (recents, pins, resume markers, tool pins, the in-memory index), never the tree.
      */
     fun onForeground() {
-        checkArt()   // art deleted or added while away
+        checkArt(reuse = true)   // art deleted or added while away (only changed art folders are listed)
         if (!minimalPending) _minimalOpening.value?.let { minimalJob?.cancel(); _minimalOpening.value = null }   // back from a game a Minimal band opened
         onLauncherChanged()   // back from Android's home settings or the role dialog: the Launcher page re-reads its state
         refreshInstalled()    // apps may have been installed or removed meanwhile
@@ -4898,7 +4919,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         when (row.kind) {
             ToolKind.RETRO_ACHIEVEMENTS -> if (deps.achievements != null) showRetroAchievements()
             ToolKind.GAME_TIME -> gameTimeScreen?.open(onCancel = ::showTools)
-            ToolKind.ARTWORK -> { artworkScreens?.open(); checkArt() }
+            ToolKind.ARTWORK -> { artworkScreens?.open(); checkArt(reuse = false) }
             ToolKind.CHEAT_DB -> {
                 val c = deps.cheatDb ?: return   // no controller on this platform: nothing to open
                 _screen.value = Screen.CheatDb()
@@ -5748,20 +5769,28 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     }
 
     private var artCheck: Job? = null
+    private var artCheckReused = false   // [artCheck] skips the art folders whose modified time is unchanged
 
     /**
      * Each game's art read again from its folder in the background ([LibraryScanner.readArt]): art deleted or added
      * outside the app (a file manager, a computer) since the scan shows, counts in Artwork and offers Fetch art without
      * a rescan. On coming back to the app and on opening Artwork; one at a time, never during a fetch, and only onto the
-     * index it was read from (a scan or a fetch's art meanwhile wins).
+     * index it was read from (a scan or a fetch's art meanwhile wins). Coming back ([reuse]) lists only the typed art
+     * folders whose modified time changed since they were last read, as it happens on every return; opening Artwork
+     * lists them all, so its counts never rest on a provider's folder times (it follows a coming-back check in flight, which
+     * is let finish: cancelled, it could stop between its index write and the refresh after it).
      */
-    private fun checkArt() {
-        if (artCheck?.isActive == true) return
+    private fun checkArt(reuse: Boolean) {
+        val running = artCheck?.takeIf { it.isActive }
+        if (running != null && (reuse || !artCheckReused)) return
         val phase = artworkScreens?.job?.value?.phase
         if (phase == com.nxredux.mobile.scraper.JobPhase.RUNNING) return
-        val from = library ?: return
+        if (library == null) return
+        artCheckReused = reuse
         artCheck = scope.launch {
-            val art = try { scanner.readArt(from) } catch (e: CancellationException) { throw e } catch (e: Throwable) { return@launch }
+            running?.join()
+            val from = library ?: return@launch
+            val art = try { scanner.readArt(from, reuse) } catch (e: CancellationException) { throw e } catch (e: Throwable) { return@launch }
             mutateIndex(IndexRefresh(rows = true, openList = true, ui = true)) { current -> current?.takeIf { it === from }?.withArt(art) } ?: return@launch
             withContext(uiContext) { artworkScreens?.libraryChanged() }
         }

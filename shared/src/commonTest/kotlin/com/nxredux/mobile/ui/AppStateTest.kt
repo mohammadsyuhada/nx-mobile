@@ -3816,6 +3816,34 @@ class AppStateTest {
         assertNull(tetris().boxartRef)
     }
 
+    // Coming back lists only the art folders whose modified time moved since the scan read them: none on a return with
+    // nothing changed; a deletion (which bumps its folder's time) is still dropped.
+    @Test fun coming_back_lists_only_the_art_folders_that_changed() = runTest {
+        val gb = "Home/Roms/Game Boy (GB)/.media"
+        val fake = FakeRomsSource(dirs = mapOf(
+            "Home" to listOf("Roms"),
+            "Home/Roms" to listOf("Game Boy (GB)"),
+            "Home/Roms/Game Boy (GB)" to listOf("Tetris.gb", ".media"),
+            gb to listOf("boxart", "screenshot"),
+            "$gb/boxart" to listOf("Tetris.png"),
+            "$gb/screenshot" to listOf("Tetris.png"),
+        )).apply { stamps["$gb/boxart"] = 1_000L; stamps["$gb/screenshot"] = 1_000L }
+        val src = CountingRomsSource(fake)
+        val st = state(MemorySettings(ContentRef("Home")), src)
+        st.load(); advanceUntilIdle()
+        fun tetris() = assertIs<Screen.Systems>(st.screen.value).systems.first { it.tag == "GB" }.games.single()
+        src.calls.clear()
+        st.onForeground(); advanceUntilIdle()
+        assertTrue(src.calls.listings().none { it.startsWith("listChildren:$gb/") }, "${src.calls}")
+        fake.delete("$gb/boxart/Tetris.png")
+        fake.stamps["$gb/boxart"] = 2_000L
+        src.calls.clear()
+        st.onForeground(); advanceUntilIdle()
+        assertEquals(listOf("listChildren:$gb/boxart"), src.calls.listings().filter { it.startsWith("listChildren:$gb/") })
+        assertNull(tetris().boxartRef)
+        assertEquals(ContentRef("$gb/screenshot/Tetris.png"), tetris().screenshotRef)
+    }
+
     @Test fun a_throwing_sidecar_write_reports_and_closes_the_menu_without_moving_the_game() = runTest {
         var failing = false
         val throwing = object : RomsSource by source {
