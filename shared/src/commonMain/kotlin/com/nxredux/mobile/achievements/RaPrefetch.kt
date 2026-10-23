@@ -196,10 +196,10 @@ class RaPrefetch(
     }
 
     private suspend fun cachedGameId(hash: String): Int? =
-        store.read(RaPaths.gameId(hash))?.decodeToString()?.let { RaJson.parse(GameIdBody.serializer(), it) }?.GameID
+        store.readJson(RaPaths.gameId(hash), GameIdBody.serializer())?.GameID
 
     private suspend fun readSets(hash: String): SetsBody? =
-        store.read(RaPaths.sets(hash))?.decodeToString()?.let { RaJson.parse(SetsBody.serializer(), it) }
+        store.readJson(RaPaths.sets(hash), SetsBody.serializer())
 
     private suspend fun repairBadges(hash: String, sets: SetsBody?) {
         sets ?: return

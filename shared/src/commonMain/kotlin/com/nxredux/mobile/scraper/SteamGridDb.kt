@@ -1,14 +1,12 @@
 package com.nxredux.mobile.scraper
 
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.json.Json
+import com.nxredux.mobile.scraper.LenientJson.bool
+import com.nxredux.mobile.scraper.LenientJson.int
+import com.nxredux.mobile.scraper.LenientJson.str
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.intOrNull
 
 /** A `search/autocomplete` result. */
 data class SgdbGame(val id: Int, val name: String, val verified: Boolean = false)
@@ -47,14 +45,9 @@ object Sgdb {
     /** The game's logos (the wheel): still PNGs only (logos come as PNG or WebP), any style. */
     fun logos(gameId: Int): String = "$API/logos/game/$gameId?types=static&mimes=image/png&nsfw=false&humor=false&epilepsy=false"
 
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-    private fun data(body: String?): JsonArray? = body
-        ?.let { runCatching { json.parseToJsonElement(it) as? JsonObject }.getOrNull() }
+    private fun data(body: String?): JsonArray? = LenientJson.parseObject(body)
         ?.takeIf { (it["success"] as? JsonPrimitive)?.booleanOrNull != false }
         ?.get("data") as? JsonArray
-    private fun JsonElement?.int(): Int? = (this as? JsonPrimitive)?.let { it.intOrNull ?: it.content.toIntOrNull() }
-    private fun JsonElement?.str(): String? = (this as? JsonPrimitive)?.takeIf { it.isString }?.content
-    private fun JsonElement?.bool(): Boolean = (this as? JsonPrimitive)?.booleanOrNull == true
 
     /** A `search/autocomplete` body; anything unreadable (or `success:false`) is empty, never a throw. */
     fun parseGames(body: String?): List<SgdbGame> = data(body).orEmpty().mapNotNull { e ->
@@ -141,29 +134,25 @@ class SteamGridDbSource(
     override fun knows(ref: LibraryGameRef): Boolean = !ref.android && ref.tag.trim().uppercase() !in ScraperSystems.EXCLUDED_TAGS
 
     private val pacer = Pacer(RATE_MS, now, sleep)
-    private val lock = Mutex()
+    private val calls = PacedGet(pacer, http, sleep, TRIES, BACKOFF, BUSY_WAIT_MS)
     /** A stop met on a game's hero or logo call after other assets were in hand: that game keeps them, the next call stops. */
-    private var pendingStop: String? = null
+    private val pendingStop = PendingStop()
 
-    override suspend fun startJob() { lock.withLock { pendingStop = null } }
+    override suspend fun startJob() { pendingStop.clear() }
 
     override suspend fun find(ref: LibraryGameRef, wanted: Set<ArtSlot>): List<ArtHit> {
         val k = key()?.ifEmpty { null } ?: return emptyList()
         if (slots.none { it in wanted }) return emptyList()
-        lock.withLock { pendingStop }?.let { throw SourceStop(it) }
+        pendingStop.throwIfHeld()
         val game = Sgdb.match(Sgdb.parseGames(api(Sgdb.search(TitleMatch.searchTerm(ref.name)), k)), ref.name) ?: return emptyList()
         val hits = ArrayList<ArtHit>()
         suspend fun add(slot: ArtSlot, url: String, rank: (List<SgdbAsset>) -> List<SgdbAsset>) {
-            val body = try { api(url, k) } catch (e: SourceStop) {
-                if (hits.isEmpty()) throw e
-                lock.withLock { pendingStop = e.note }
-                return
-            }
+            val body = try { api(url, k) } catch (e: SourceStop) { pendingStop.hold(e, hits); return }
             rank(Sgdb.parseAssets(body)).mapTo(hits) { ArtHit(slot, it.url, ArtOrigin(SourceId.SGDB, game.id.toString(), it.id.toString())) }
         }
         if (ArtSlot.GRID in wanted) add(ArtSlot.GRID, Sgdb.grids(game.id), Sgdb::rankGrids)
-        if (ArtSlot.HERO in wanted && lock.withLock { pendingStop } == null) add(ArtSlot.HERO, Sgdb.heroes(game.id), Sgdb::rankHeroes)
-        if (ArtSlot.WHEEL in wanted && lock.withLock { pendingStop } == null) add(ArtSlot.WHEEL, Sgdb.logos(game.id), Sgdb::rankLogos)
+        if (ArtSlot.HERO in wanted && !pendingStop.held()) add(ArtSlot.HERO, Sgdb.heroes(game.id), Sgdb::rankHeroes)
+        if (ArtSlot.WHEEL in wanted && !pendingStop.held()) add(ArtSlot.WHEEL, Sgdb.logos(game.id), Sgdb::rankLogos)
         return hits
     }
 
@@ -179,22 +168,8 @@ class SteamGridDbSource(
     }
 
     /** A paced call with the key's header: the body of a 200, null for a not-found or other answer. */
-    private suspend fun api(url: String, k: String): String? {
-        var failures = 0
-        var busy = false
-        while (true) {
-            val r = pacer.paced { http.get(url, Sgdb.auth(k)) }
-            when {
-                r.status == -1 -> { if (failures == TRIES - 1) throw JobPause(ScrapeEngine.NO_CONNECTION); sleep(BACKOFF[failures++]) }
-                r.status == 401 || r.status == 403 -> throw SourceStop(KEY_REFUSED)
-                r.status == 429 || r.status >= 500 -> {
-                    if (busy) throw SourceStop(if (r.status == 429) TOO_MANY else UNAVAILABLE)
-                    busy = true
-                    sleep(BUSY_WAIT_MS)
-                }
-                r.status == 200 -> return r.body?.decodeToString()
-                else -> return null
-            }
-        }
-    }
+    private suspend fun api(url: String, k: String): String? = calls.get(
+        url, Sgdb.auth(k), busyNote = { if (it == 429) TOO_MANY else UNAVAILABLE },
+        stop = { if (it == 401 || it == 403) KEY_REFUSED else null },
+    )?.decodeToString()
 }

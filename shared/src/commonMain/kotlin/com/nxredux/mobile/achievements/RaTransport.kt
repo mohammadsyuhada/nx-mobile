@@ -87,7 +87,7 @@ class RaTransport(
         val gameId = kind.g ?: return RaResponse(200, OFFLINE_BODY)
         val hash = kind.m?.takeIf(RaPaths::isHash)
         val user = kind.u ?: ""
-        val cached = store.read(RaPaths.session(gameId))?.decodeToString()?.let { RaJson.parse(SessionBody.serializer(), it) }
+        val cached = store.readJson(RaPaths.session(gameId), SessionBody.serializer())
         val session = cached ?: if (hash != null && store.exists(RaPaths.sets(hash))) SessionBody(true, emptyList(), emptyList(), now() / 1000) else return RaResponse(200, OFFLINE_BODY)
         val extra = (journal.entries(user) + confirmed.entries(user)).filter { hash == null || it.m == hash }
         val merged = LinkedHashMap<Int, Long>()

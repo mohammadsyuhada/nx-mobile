@@ -122,7 +122,7 @@ class RaSync(
             val shown = entries.filter { e ->
                 val gameId = gameIds.getOrPut(e.m) { RaSetsCache.summary(store, e.m)?.gameId?.takeIf { it != 0 } } ?: return@filter false
                 e.a in sessions.getOrPut(gameId) {
-                    store.read(RaPaths.session(gameId))?.decodeToString()?.let { RaJson.parse(SessionBody.serializer(), it) }
+                    store.readJson(RaPaths.session(gameId), SessionBody.serializer())
                         ?.Unlocks?.filter { it.When > 0 }?.mapTo(HashSet()) { it.ID }.orEmpty()
                 }
             }
@@ -139,7 +139,7 @@ class RaSync(
 
     /** The cached sets of [hash], read once per sync into [memo]: null when not cached or unreadable. */
     private suspend fun cachedSets(hash: String, memo: HashMap<String, SetsBody?>): SetsBody? = memo.getOrPut(hash) {
-        try { store.read(RaPaths.sets(hash))?.decodeToString()?.let { RaJson.parse(SetsBody.serializer(), it) } } catch (e: RaStoreException) { null }
+        try { store.readJson(RaPaths.sets(hash), SetsBody.serializer()) } catch (e: RaStoreException) { null }
     }
 
     /** An official achievement's points from the cached sets; null when unknown (not cached, not found, or unofficial). */
@@ -147,7 +147,7 @@ class RaSync(
         sets?.Sets?.asSequence()?.flatMap { it.Achievements }?.firstOrNull { it.ID == id }?.takeIf { it.Flags == 3 }?.Points
 
     private suspend fun readFullSync(): RaFullSync? = try {
-        store.read(RaPaths.FULL_SYNC)?.decodeToString()?.let { RaJson.parse(RaFullSync.serializer(), it) }
+        store.readJson(RaPaths.FULL_SYNC, RaFullSync.serializer())
     } catch (e: RaStoreException) { null }
 
     private suspend fun writeFullSync(record: RaFullSync) =
@@ -188,7 +188,7 @@ class RaSync(
                 onProgress(RaSyncProgress(RaSyncStep.READING, i + 1, hashes.size))
                 val sets = RaSetsCache.summary(store, hash) ?: return@mapNotNull null
                 if (sets.gameId == 0 || sets.consoleId == 0) return@mapNotNull null   // not a usable set reply
-                val session = store.read(RaPaths.session(sets.gameId))?.decodeToString()?.let { RaJson.parse(SessionBody.serializer(), it) }
+                val session = store.readJson(RaPaths.session(sets.gameId), SessionBody.serializer())
                 Cached(hash, sets.gameId, sets.setGameIds.orEmpty().ifEmpty { listOf(sets.gameId) }, sets.consoleId, session?.let(::unlockCount) ?: -1, sets.title)
             }
             val serverCounts = HashMap<Int, Int>()

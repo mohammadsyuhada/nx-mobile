@@ -70,15 +70,8 @@ object Libretro {
         for (c in name) append(if (c in "&*/:`<>?\\|\"") '_' else c)
     }
 
-    /** A URL path segment: UTF-8, unreserved `A-Z a-z 0-9 - . _ ~` kept, every other byte `%XX` (uppercase). */
-    fun pathEncode(s: String): String = buildString {
-        for (b in s.encodeToByteArray()) {
-            val c = b.toInt() and 0xFF
-            val ch = c.toChar()
-            if (ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '-' || ch == '.' || ch == '_' || ch == '~') append(ch)
-            else { append('%'); append(HEX[c shr 4]); append(HEX[c and 0xF]) }
-        }
-    }
+    /** A URL path segment: UTF-8, unreserved `A-Z a-z 0-9 - . _ ~` kept, every other byte `%XX` (uppercase; a space `%20`). */
+    fun pathEncode(s: String): String = percentEncode(s, spaceAsPlus = false)
 
     fun url(system: String, folder: String, name: String): String = "$BASE/${pathEncode(system)}/$folder/${pathEncode(clean(name))}.png"
 
@@ -196,8 +189,6 @@ object Libretro {
     private fun unescapeHtml(s: String): String = if ('&' !in s) s else s
         .replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&#x27;", "'")
         .replace("&amp;", "&")
-
-    private const val HEX = "0123456789ABCDEF"
 }
 
 /**
@@ -228,7 +219,7 @@ class LibretroThumbnails(
     override val slots: Set<ArtSlot> = setOf(ArtSlot.BOX_2D, ArtSlot.SCREENSHOT)
     override fun knows(ref: LibraryGameRef): Boolean = !ref.android && Libretro.systems(ref.tag, ref.fileName).isNotEmpty()
 
-    private val pacer = Pacer(RATE_MS, now, sleep)
+    private val calls = PacedGet(Pacer(RATE_MS, now, sleep), http, sleep, TRIES, BACKOFF, BUSY_WAIT_MS)
     private val listLock = Mutex()
     /** "system/folder" -> its name list by match key, for this job (an unreadable list is kept as empty). */
     private val lists = HashMap<String, Libretro.NameIndex>()
@@ -277,18 +268,6 @@ class LibretroThumbnails(
         }
     }
 
-    /** A paced GET: the body of a 200, null for any other answer; throws for the stop / pause cases. */
-    private suspend fun get(url: String): ByteArray? {
-        var failures = 0
-        var busy = false
-        while (true) {
-            val r = pacer.paced { http.get(url) }
-            when {
-                r.status == -1 -> { if (failures == TRIES - 1) throw JobPause(ScrapeEngine.NO_CONNECTION); sleep(BACKOFF[failures++]) }
-                r.status == 429 || r.status >= 500 -> { if (busy) throw SourceStop(UNAVAILABLE); busy = true; sleep(BUSY_WAIT_MS) }
-                r.status == 200 -> return r.body?.takeIf { it.isNotEmpty() }
-                else -> return null
-            }
-        }
-    }
+    /** A paced GET: the body of a 200 (null when empty), null for any other answer; throws for the stop / pause cases. */
+    private suspend fun get(url: String): ByteArray? = calls.get(url, busyNote = { UNAVAILABLE })?.takeIf { it.isNotEmpty() }
 }

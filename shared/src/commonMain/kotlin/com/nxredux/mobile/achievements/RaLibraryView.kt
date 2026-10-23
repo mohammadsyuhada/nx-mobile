@@ -35,7 +35,7 @@ object RaLibraryView {
 
     /** [hash]'s achievements with their state, from its [pending] and [confirmed] journal entries (already read). */
     private suspend fun achievementsOf(store: RaStore, hash: String, pending: List<RaUnlock>, confirmed: List<RaUnlock>): List<RaAchievement> {
-        val sets = store.read(RaPaths.sets(hash))?.decodeToString()?.let { RaJson.parse(SetsBody.serializer(), it) } ?: return emptyList()
+        val sets = store.readJson(RaPaths.sets(hash), SetsBody.serializer()) ?: return emptyList()
         val states = States.of(store, sets.gameId, pending, confirmed)
         return sets.coreAchievements.map { a ->
             val (state, at) = states.of(a.ID)
@@ -116,5 +116,5 @@ object RaLibraryView {
         (session.HardcoreUnlocks + session.Unlocks).associate { it.ID to it.When }
 
     private suspend fun readSession(store: RaStore, gameId: Int): SessionBody? =
-        store.read(RaPaths.session(gameId))?.decodeToString()?.let { RaJson.parse(SessionBody.serializer(), it) }
+        store.readJson(RaPaths.session(gameId), SessionBody.serializer())
 }

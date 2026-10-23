@@ -35,6 +35,65 @@ class Pacer(private val gapMs: Long, private val now: () -> Long, private val sl
 }
 
 /**
+ * The paced GET and error table TheGamesDB, SteamGridDB and libretro-thumbnails share (each passes its own constants):
+ * no connection (-1) is asked again after each [backoff] wait and pauses the job on the [tries]th try; a 429 or 5xx is
+ * asked again once after [busyWaitMs], and a second one stops the source. ScreenScraper keeps its own table
+ * ([ScreenScraperSource]'s `api`): a 5xx stops it at once, 430 is a quota answer and every other answer (a 404
+ * included) comes back whole.
+ */
+class PacedGet(
+    private val pacer: Pacer, private val http: ScraperHttp, private val sleep: suspend (Long) -> Unit,
+    private val tries: Int, private val backoff: List<Long>, private val busyWaitMs: Long,
+) {
+    /**
+     * The body of a 200 (null when it carries none), null for any other answer. [stop]: the source's own statuses that
+     * stop it at once, as their note (null = not a stop); [busyNote]: the note of a second 429 / 5xx by its status;
+     * [before]: run ahead of every try (TheGamesDB stops there once its allowance is spent).
+     */
+    suspend fun get(
+        url: String, headers: Map<String, String> = emptyMap(), busyNote: (Int) -> String,
+        stop: (Int) -> String? = { null }, before: suspend () -> Unit = {},
+    ): ByteArray? {
+        var failures = 0
+        var busy = false
+        while (true) {
+            before()
+            val r = pacer.paced { http.get(url, headers) }
+            when {
+                r.status == -1 -> { if (failures == tries - 1) throw JobPause(ScrapeEngine.NO_CONNECTION); sleep(backoff[failures++]) }
+                r.status == 429 || r.status >= 500 -> { if (busy) throw SourceStop(busyNote(r.status)); busy = true; sleep(busyWaitMs) }
+                r.status == 200 -> return r.body
+                else -> { stop(r.status)?.let { throw SourceStop(it) }; return null }
+            }
+        }
+    }
+}
+
+/**
+ * A stop met on a game's later call once its earlier calls found art (TheGamesDB's screenshot call after the box,
+ * SteamGridDB's hero or logo call after the grid): that game keeps what it found, the source's next call stops.
+ */
+class PendingStop {
+    private val lock = Mutex()
+    private var note: String? = null
+
+    /** A new job starts with none. */
+    suspend fun clear() { lock.withLock { note = null } }
+
+    /** One is held from an earlier call. */
+    suspend fun held(): Boolean = lock.withLock { note != null }
+
+    /** Throws the held stop, if any: the first thing a source's [ArtSource.find] does. */
+    suspend fun throwIfHeld() { lock.withLock { note }?.let { throw SourceStop(it) } }
+
+    /** [e] met with [hits] already in hand: held for the next call (the caller returns its hits); with none, thrown. */
+    suspend fun hold(e: SourceStop, hits: Collection<ArtHit>) {
+        if (hits.isEmpty()) throw e
+        lock.withLock { note = e.note }
+    }
+}
+
+/**
  * One place art comes from. The engine asks the sources in order, each only for the slots a game still lacks, and only
  * when it is [enabled] and [knows] the game. A source-wide failure is a [SourceStop] (that source is left out for the
  * rest of the job); a [JobPause] pauses the whole job.

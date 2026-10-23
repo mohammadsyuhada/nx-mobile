@@ -52,7 +52,7 @@ object RaSetsCache {
         read(store, hash)?.let { return it }
         return lock.withLock {
             read(store, hash) ?: run {
-                val sets = store.read(RaPaths.sets(hash))?.decodeToString()?.let { RaJson.parse(SetsBody.serializer(), it) } ?: return@withLock null
+                val sets = store.readJson(RaPaths.sets(hash), SetsBody.serializer()) ?: return@withLock null
                 RaSetsSummary.of(sets).also { s ->
                     try { writeSummary(store, hash, s) } catch (e: RaStoreException) { }   // rebuilt again next read
                 }
@@ -61,7 +61,7 @@ object RaSetsCache {
     }
 
     private suspend fun read(store: RaStore, hash: String): RaSetsSummary? =
-        store.read(RaPaths.summary(hash))?.decodeToString()?.let { RaJson.parse(RaSetsSummary.serializer(), it) }?.takeIf { it.setGameIds != null }
+        store.readJson(RaPaths.summary(hash), RaSetsSummary.serializer())?.takeIf { it.setGameIds != null }
 
     private suspend fun writeSummary(store: RaStore, hash: String, s: RaSetsSummary) =
         store.writeAtomic(RaPaths.summary(hash), RaJson.json.encodeToString(RaSetsSummary.serializer(), s).encodeToByteArray())

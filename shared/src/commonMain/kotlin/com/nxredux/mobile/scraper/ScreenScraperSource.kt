@@ -160,7 +160,8 @@ class ScreenScraperSource(
     /**
      * A paced API call with the error table (codes as ScreenScraper answers them, 403/404 checked against the live
      * API): retries, then stops this source (no connection: pauses the job); returns only answers that are neither (a
-     * 404, not found, is returned).
+     * 404, not found, is returned). Not [PacedGet]: a 5xx stops at once here, 429 / 430 are quota answers and the whole
+     * answer comes back.
      */
     private suspend fun api(url: String): HttpResult {
         var failures = 0

@@ -102,7 +102,19 @@ class LibraryScanner(
         val box3d: Map<String, ContentRef>, val box2d: Map<String, ContentRef>, val screenshot: Map<String, ContentRef>,
         val grid: Map<String, ContentRef>, val hero: Map<String, ContentRef>, val names: Map<String, String>,
         val wheel: Map<String, ContentRef> = emptyMap(), val mix: Map<String, ContentRef> = emptyMap(),
-    )
+    ) {
+        /**
+         * A game's art of every kind: the file named for [key] (a disc folder's name, else the file's base name), else
+         * for [base]. The one place an art kind is mapped: the scan and [readArt] both read it.
+         */
+        fun artFor(key: String, base: String): ArtRefs {
+            fun Map<String, ContentRef>.of(): String? = (this[key] ?: this[base])?.value
+            return ArtRefs(
+                boxart = box3d.of(), box2d = box2d.of(), screenshot = screenshot.of(), grid = grid.of(), hero = hero.of(),
+                wheel = wheel.of(), mix = mix.of(),
+            )
+        }
+    }
 
     /**
      * The whole library: the home's `Roms/<System (TAG)>/` folders (a file's `systems.txt` entry may move it to another
@@ -356,13 +368,9 @@ class LibraryScanner(
                 source = f.sourceId, dir = f.relativeDir, file = name, ref = f.entry.ref.value, folder = f.folder.value,
                 name = alias ?: (if (arcade) sets.title(base)?.let(Names::plainTitle) else null)
                     ?: (if (naomiSet) naomi.title(base)?.let(Names::plainTitle) else null) ?: Names.plainName(key),
-                boxart = (look.box3d[key] ?: look.box3d[base])?.value, box2d = (look.box2d[key] ?: look.box2d[base])?.value,
-                screenshot = (look.screenshot[key] ?: look.screenshot[base])?.value,
-                grid = (look.grid[key] ?: look.grid[base])?.value, hero = (look.hero[key] ?: look.hero[base])?.value,
-                wheel = (look.wheel[key] ?: look.wheel[base])?.value, mix = (look.mix[key] ?: look.mix[base])?.value,
                 lookupDir = f.lookupDir,
                 firstSeen = f.entry.lastModified,   // the file's date; withFirstSeen keeps a known game's
-            )
+            ).withArt(look.artFor(key, base))
             plain += alias == null
         }
         // An extra folder's copy of a home game (the same file name, any case) is left out: the home copy is the one
@@ -509,12 +517,7 @@ class LibraryScanner(
             for (g in games) {
                 val base = Names.stripExtension(g.file)
                 val key = if (g.lookupDir != g.dir) g.dir.substringAfterLast('/') else base   // a disc folder's game: its folder's name
-                out[artKey(g)] = ArtRefs(
-                    boxart = (look.box3d[key] ?: look.box3d[base])?.value, box2d = (look.box2d[key] ?: look.box2d[base])?.value,
-                    screenshot = (look.screenshot[key] ?: look.screenshot[base])?.value,
-                    grid = (look.grid[key] ?: look.grid[base])?.value, hero = (look.hero[key] ?: look.hero[base])?.value,
-                    wheel = (look.wheel[key] ?: look.wheel[base])?.value, mix = (look.mix[key] ?: look.mix[base])?.value,
-                )
+                out[artKey(g)] = look.artFor(key, base)
             }
         }
         out

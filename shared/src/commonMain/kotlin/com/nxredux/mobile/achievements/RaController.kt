@@ -105,7 +105,7 @@ class RaController(
     // The whole journal is parsed here (pending count), and the games folder listed: on [work], as the walks.
     private suspend fun readStatus(error: String? = null): RaStatus = withContext(work) {
         val user = settings.raUsername.takeIf { settings.raToken != null && it.isNotBlank() }
-        val login = platform.store.read(RaPaths.login())?.decodeToString()?.let { RaJson.parse(LoginBody.serializer(), it) }
+        val login = platform.store.readJson(RaPaths.login(), LoginBody.serializer())
         val pending = user?.let { journal.count(it) } ?: 0
         val lastSync = platform.store.read(RaPaths.LAST_SYNC)?.decodeToString()?.trim()?.toLongOrNull()?.let { it * 1000 }
         val cached = platform.store.list(RaPaths.GAMES).count { RaPaths.isHash(it) && platform.store.exists(RaPaths.sets(it)) }

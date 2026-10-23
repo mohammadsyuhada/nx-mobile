@@ -201,7 +201,7 @@ fun LibraryIndex.setArt(game: IndexedGame, art: ArtRefs): LibraryIndex {
         val at = s.games.indexOfFirst { it.source == game.source && it.dir == game.dir && it.file == game.file }
         if (at < 0) return@map s
         changed = true
-        s.copy(games = s.games.toMutableList().also { it[at] = it[at].copy(boxart = art.boxart, box2d = art.box2d, screenshot = art.screenshot, grid = art.grid, hero = art.hero, wheel = art.wheel, mix = art.mix) })
+        s.copy(games = s.games.toMutableList().also { it[at] = it[at].withArt(art) })
     }
     return if (changed) copy(systems = next) else this
 }
@@ -215,6 +215,13 @@ fun artKey(game: IndexedGame): ArtKey = Triple(game.source, game.dir, game.file)
 val IndexedGame.artRefs: ArtRefs get() = ArtRefs(boxart, box2d, screenshot, grid, hero, wheel, mix)
 
 /**
+ * This game with all its art refs replaced by [a], every other field kept. With [artRefs] and [ArtRefs] itself, the
+ * only places that name each art kind: a new kind is added here, not at every copy.
+ */
+fun IndexedGame.withArt(a: ArtRefs): IndexedGame =
+    copy(boxart = a.boxart, box2d = a.box2d, screenshot = a.screenshot, grid = a.grid, hero = a.hero, wheel = a.wheel, mix = a.mix)
+
+/**
  * Each game in [art] with its art refs replaced by its entry there (a game not in [art] keeps its own); other fields and
  * order kept. Unchanged (the same instance) when no game's art differs.
  */
@@ -225,7 +232,7 @@ fun LibraryIndex.withArt(art: Map<ArtKey, ArtRefs>): LibraryIndex {
         val games = s.games.map { g ->
             val a = art[artKey(g)]
             if (a == null || a == g.artRefs) g
-            else { mine = true; g.copy(boxart = a.boxart, box2d = a.box2d, screenshot = a.screenshot, grid = a.grid, hero = a.hero, wheel = a.wheel, mix = a.mix) }
+            else { mine = true; g.withArt(a) }
         }
         if (mine) { changed = true; s.copy(games = games) } else s
     }
