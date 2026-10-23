@@ -144,8 +144,14 @@ object CheatMatch {
      */
     private fun parse(baseName: String): Parsed {
         val work = if (baseName.endsWith(".cht", ignoreCase = true)) baseName.dropLast(4) else baseName
-        val cut = listOf(work.indexOf(" ("), work.indexOf(" [")).filter { it >= 0 }.minOrNull()
-        val stem = (if (cut != null) work.substring(0, cut) else work).trim()
+        // The stem ends at the first " (", then loses its trailing "[…]" groups (`Name [US] [ULUS-10041]`); a "[…]" inside
+        // the name (`Game [Hack] Deluxe`) stays.
+        var stem = work.indexOf(" (").let { if (it >= 0) work.substring(0, it) else work }.trim()
+        while (stem.endsWith(']')) {
+            val open = stem.lastIndexOf(" [")
+            if (open < 0) break
+            stem = stem.substring(0, open).trimEnd()
+        }
         val quals = ArrayList<String>()
         var source = ""
         fun add(tok: String) {

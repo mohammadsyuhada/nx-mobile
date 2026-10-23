@@ -133,14 +133,11 @@ object CheatFile {
         var i = 1
         while (i < value.length) {
             val c = value[i]
+            val entity = if (c == '&') ENTITIES.firstOrNull { value.startsWith(it.first, i) } else null
             when {
                 c == '"' -> return out.toString()
                 c == '\\' && i + 1 < value.length -> { out.append(value[i + 1]); i += 2 }
-                c == '&' && ENTITIES.any { value.startsWith(it.first, i) } -> {
-                    val (entity, text) = ENTITIES.first { value.startsWith(it.first, i) }
-                    out.append(text)
-                    i += entity.length
-                }
+                entity != null -> { out.append(entity.second); i += entity.first.length }
                 else -> { out.append(c); i++ }
             }
         }

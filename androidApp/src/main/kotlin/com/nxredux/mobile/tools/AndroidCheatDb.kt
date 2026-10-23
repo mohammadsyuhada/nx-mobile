@@ -97,6 +97,7 @@ class AndroidCheatDb(context: Context) : CheatDbPlatform {
     }
 
     override suspend fun install(archive: CheatDbArchive, folders: Map<String, List<String>>, onProgress: (String, Int, Int) -> Unit): List<String> = withContext(Dispatchers.IO) {
+        CheatsRoot.awaitMove()   // the move copies into the same tree; after it, sdRoot is the home
         val zip = try { ZipFile(archive.path) } catch (e: ZipException) { throw CheatDbException(CheatDbException.Kind.CORRUPT, e) } catch (e: IOException) { throw CheatDbException(CheatDbException.Kind.CORRUPT, e) }
         val written = ArrayList<String>()
         // Targets that did not exist before this attempt wrote them: the only files a failure may take back.

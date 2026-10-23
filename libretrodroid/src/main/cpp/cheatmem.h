@@ -28,7 +28,7 @@ namespace libretrodroid {
 // ma_cheat_mem.h; pure logic, host-tested by src/test/cpp/cheatmem_test.cpp.
 // LibretroDroid owns the patches and the memory.
 
-#define CHEAT_MEM_MAX_REGIONS 16
+#define CHEAT_MEM_MAX_REGIONS 64
 
 // cheatN_cheat_type values
 enum {
@@ -65,7 +65,8 @@ typedef struct {
 } CheatMem;
 
 void CheatMem_reset(CheatMem* mem);
-void CheatMem_addRegion(CheatMem* mem, void* ptr, size_t len);
+// False when the table is full and the region was left out (an empty or null region is skipped and counts as taken).
+bool CheatMem_addRegion(CheatMem* mem, void* ptr, size_t len);
 
 void CheatMemPatch_init(struct CheatMemPatch* p);
 

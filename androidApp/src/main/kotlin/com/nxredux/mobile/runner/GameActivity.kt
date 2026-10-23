@@ -4494,7 +4494,7 @@ class GameActivity : ComponentActivity() {
             val job = load().also { cheatsLoad = it }
             lifecycleScope.launch {
                 job.join()
-                if (!quitting && cheatSet.enabledCodes().isNotEmpty()) retroView?.let(::applyCheats)
+                if (!quitting && (cheatSet.enabledCodes().isNotEmpty() || cheatSet.enabledPatches().isNotEmpty())) retroView?.let(::applyCheats)
             }
         }
         refreshDiscs()

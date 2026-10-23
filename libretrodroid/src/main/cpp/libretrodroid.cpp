@@ -933,10 +933,12 @@ void LibretroDroid::applyMemoryCheats() {
     if (!cheatMemReady || cheatMemMapVersion != achievements.memoryMapVersion()) {
         CheatMem_reset(&cheatMem);
         bool fromMap = false;
+        unsigned dropped = 0;
         if (const auto* map = achievements.currentMemoryMap()) {
             for (unsigned i = 0; i < map->num_descriptors; i++) {
                 const auto& d = map->descriptors[i];
-                if ((d.flags & RETRO_MEMDESC_SYSTEM_RAM) && d.ptr && d.len) CheatMem_addRegion(&cheatMem, d.ptr, d.len);
+                if ((d.flags & RETRO_MEMDESC_SYSTEM_RAM) && d.ptr && d.len && !CheatMem_addRegion(&cheatMem, d.ptr, d.len))
+                    dropped++;
             }
             fromMap = cheatMem.count > 0;
         }
@@ -945,6 +947,7 @@ void LibretroDroid::applyMemoryCheats() {
                                core->retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM));
         if (!cheatMemLogged) {
             if (!cheatMem.count) LOGW("cheats: the core exposes no system RAM, RAM cheats can't apply");
+            if (dropped) LOGW("cheats: %u system RAM region(s) past the first %d are left out", dropped, CHEAT_MEM_MAX_REGIONS);
             else LOGI("cheats: RAM cheats apply to %d region(s), %zu bytes (%s)", cheatMem.count, cheatMem.total,
                       fromMap ? "memory map" : "RETRO_MEMORY_SYSTEM_RAM");
             cheatMemLogged = true;

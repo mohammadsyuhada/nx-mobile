@@ -131,6 +131,18 @@ int main(void) {
 		CHECK(a[1] == 0, "IF_GT: value > memory false skips next");
 	}
 
+	// 6b. a memory map with many SYSTEM_RAM regions: the first 64 are taken, a later one is refused
+	{
+		static uint8_t many[65][4];
+		CheatMem_reset(&m);
+		bool all = true;
+		for (int i = 0; i < 64; i++) all = CheatMem_addRegion(&m, many[i], sizeof(many[i])) && all;
+		CHECK(all && m.count == 64 && m.total == 256, "64 regions are kept");
+		CHECK(!CheatMem_addRegion(&m, many[64], sizeof(many[64])) && m.count == 64, "a 65th region is refused");
+		struct CheatMemPatch p = patch(252, 9, 3, CHEAT_MEM_SET_TO_VALUE);
+		CHECK(apply1(&m, &p) == 1 && many[63][0] == 9, "an offset in the 64th region applies");
+	}
+
 	// 7. repeat: fill 4 bytes, value +1 each, address +1 item
 	{
 		memset(a, 0, sizeof(a));

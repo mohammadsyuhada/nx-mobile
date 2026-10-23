@@ -125,6 +125,12 @@ class CheatMatchTest {
         assertEquals(listOf("Game (Japan) (Action Replay).cht"), CheatMatch.select("Game", "Game (Japan).md", jp))
     }
 
+    @Test fun a_bracket_group_inside_the_name_stays_in_the_stem() {
+        val files = listOf("Game [Hack] Deluxe (USA).cht", "Game (USA).cht")
+        assertEquals(listOf("Game [Hack] Deluxe (USA).cht"), CheatMatch.select("Game [Hack] Deluxe", "Game [Hack] Deluxe (Europe).gba", files))
+        assertEquals(listOf("Game (USA).cht"), CheatMatch.select("Game", "Game (USA).gba", files))
+    }
+
     @Test fun stems_that_differ_only_in_spacing_or_punctuation_match_when_none_is_exact() {
         // Dreamcast: the ROM set and the database spell names differently.
         val dc = listOf("Soul Calibur.cht", "Soul Fighter.cht", "Marvel Vs. Capcom 2.cht", "Marvel Vs. Capcom.cht")

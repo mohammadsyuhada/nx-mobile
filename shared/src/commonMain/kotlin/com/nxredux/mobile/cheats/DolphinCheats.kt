@@ -26,8 +26,8 @@ object DolphinCheats {
         val own = player.entries.map {
             if (it.desc.startsWith(AR_DESC) && !it.code.startsWith(AR_PREFIX)) it.copy(code = AR_PREFIX + it.code) else it
         }
-        val seen = HashSet<String>()
-        return player.copy(entries = (builtIn + own).filter { seen.add(it.code) })
+        val seen = HashSet<Pair<String, MemoryPatch?>>()   // RAM patches all have code "": their fields tell them apart
+        return player.copy(entries = (builtIn + own).filter { seen.add(it.code to it.mem) })
     }
 
     /**

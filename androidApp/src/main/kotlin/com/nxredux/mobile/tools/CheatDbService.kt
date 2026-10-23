@@ -18,6 +18,6 @@ object CheatDbService {
         ).also { instance = it }
     }
 
-    /** Re-reads the manifest when a controller exists (after [CheatsRoot.moveFromPrivate] moved it). */
+    /** Re-reads the manifest when a controller exists (after [CheatsRoot] moved it into the home folder). */
     fun refreshIfStarted() { instance?.refresh() }
 }

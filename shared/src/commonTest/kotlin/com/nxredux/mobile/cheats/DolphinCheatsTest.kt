@@ -31,6 +31,12 @@ class DolphinCheatsTest {
         assertEquals(listOf("ar:0011 2233", "4455 6677"), set.entries.map { it.code })
     }
 
+    @Test fun ram_patches_with_no_code_are_all_kept() {
+        val a = CheatEntry("A", "", "A", false, mem = MemoryPatch(address = 0x10, value = 1))
+        val b = CheatEntry("B", "", "B", false, mem = MemoryPatch(address = 0x20, value = 2))
+        assertEquals(listOf("A", "B"), DolphinCheats.combine(null, player(a, b, a)).entries.map { it.desc })
+    }
+
     @Test fun duplicate_codes_are_kept_once() {
         val set = DolphinCheats.combine(builtIn, player(entry("Same", "AAAA0000 BBBB1111"), entry("Twice", "9999 9999"), entry("Twice again", "9999 9999")))
         assertEquals(listOf("Infinite Health", "Max Coins", "Twice"), set.entries.map { it.desc })

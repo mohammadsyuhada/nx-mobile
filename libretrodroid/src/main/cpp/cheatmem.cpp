@@ -32,13 +32,16 @@ void CheatMem_reset(CheatMem* mem) {
 	memset(mem, 0, sizeof(*mem));
 }
 
-void CheatMem_addRegion(CheatMem* mem, void* ptr, size_t len) {
-	if (!ptr || !len || mem->count >= CHEAT_MEM_MAX_REGIONS)
-		return;
+bool CheatMem_addRegion(CheatMem* mem, void* ptr, size_t len) {
+	if (!ptr || !len)
+		return true;
+	if (mem->count >= CHEAT_MEM_MAX_REGIONS)
+		return false;
 	mem->ptr[mem->count] = static_cast<uint8_t*>(ptr);
 	mem->len[mem->count] = len;
 	mem->count++;
 	mem->total += len;
+	return true;
 }
 
 void CheatMemPatch_init(struct CheatMemPatch* p) {
