@@ -47,7 +47,7 @@ internal val NxModalScrimColor = Color(0xB3000000)
  * a footer that follows [LocalFooterMode]: tappable key hints when a pad or controller exists, real buttons otherwise
  * (never for a MENU). A tap on the scrim sends B (A for INFO), unless [scrimDismisses] is false (it then only blocks
  * the page below). Every hint or button tap is delivered through [onButton], exactly as a pad press would be.
- * A card taller than the room scrolls, its bottom edge fading while there is more ([nxScrollFade]); with [scrollSteps] (the host's d-pad presses for it, -1 up and +1 down)
+ * A card taller than the room scrolls, its edges fading while there is more that way ([nxScrollFade]); with [scrollSteps] (the host's d-pad presses for it, -1 up and +1 down)
  * the key hints also lead with a d-pad Scroll hint while it overflows, whose tap steps down (back to the top at the end).
  */
 @Composable

@@ -14,20 +14,29 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * The app's "more below" cue for a vertical scroll: while [state] can scroll further down, the bottom [height] of what
- * this modifier wraps fades to transparent, so the cut-off line reads as continuing. Place it after the container's
- * background and before its `verticalScroll` (or on a lazy list), so only the scrolled content fades, not the surface.
+ * The app's "more this way" cue for a vertical scroll: while [state] can scroll further down, the bottom [height] of what
+ * this modifier wraps fades to transparent; while it can scroll back up, the top does too, so a cut-off line reads as
+ * continuing. Place it after the container's background and before its `verticalScroll` (or on a lazy list), so only
+ * the scrolled content fades, not the surface.
  */
 fun Modifier.nxScrollFade(state: ScrollableState, height: Dp = 32.dp): Modifier =
     graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
         .drawWithContent {
             drawContent()
-            if (!state.canScrollForward) return@drawWithContent
-            val fade = height.toPx().coerceAtMost(size.height)
-            drawRect(
-                brush = Brush.verticalGradient(0f to Color.Black, 1f to Color.Transparent, startY = size.height - fade, endY = size.height),
-                topLeft = Offset(0f, size.height - fade),
-                size = Size(size.width, fade),
-                blendMode = BlendMode.DstIn,
-            )
+            val fade = height.toPx().coerceAtMost(size.height / 2)
+            if (state.canScrollBackward) {
+                drawRect(
+                    brush = Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black, startY = 0f, endY = fade),
+                    size = Size(size.width, fade),
+                    blendMode = BlendMode.DstIn,
+                )
+            }
+            if (state.canScrollForward) {
+                drawRect(
+                    brush = Brush.verticalGradient(0f to Color.Black, 1f to Color.Transparent, startY = size.height - fade, endY = size.height),
+                    topLeft = Offset(0f, size.height - fade),
+                    size = Size(size.width, fade),
+                    blendMode = BlendMode.DstIn,
+                )
+            }
         }
