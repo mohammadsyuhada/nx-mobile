@@ -714,36 +714,8 @@ private fun NeuJoystick(
 
 /** A tap toggle styled like a pad button (its own press feedback), used to switch d-pad / joystick. */
 @Composable
-private fun ToggleButton(label: String, onClick: () -> Unit, height: Dp, width: Dp, modifier: Modifier = Modifier) {
-    val haptic = rememberPadHaptic()
-    // The tap handler outlives a composition: it calls the latest onClick (a hoisted choice changes it).
-    val latestOnClick by rememberUpdatedState(onClick)
-    var pressed by remember { mutableStateOf(false) }
-    NeuSurface(
-        shape = PadStyle.pillShape,
-        face = LocalPadColors.current.pill,
-        pressed = pressed,
-        modifier = modifier.width(width).height(height).pointerInput(Unit) {
-            detectTapGestures(
-                onPress = {
-                    pressed = true
-                    haptic()
-                    tryAwaitRelease()
-                    pressed = false
-                },
-                onTap = { latestOnClick() },
-            )
-        },
-    ) {
-        Text(
-            label,
-            color = LocalPadColors.current.label,
-            fontFamily = LocalNxFont.current,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = NxTextSizes.padLabel.pinned(),
-        )
-    }
-}
+private fun ToggleButton(label: String, onClick: () -> Unit, height: Dp, width: Dp) =
+    ToolButton(label, height, width, onTap = onClick)
 
 /**
  * The Wii pad's MOTION button: [on] says whether the phone's motion is driving the Wiimote; a tap flips it
@@ -753,37 +725,8 @@ data class PadMotion(val on: Boolean, val onTap: () -> Unit, val onLongPress: ()
 
 /** The MOTION pill: the normal face while motion is on, dimmed while off. Tap toggles, long-press recentres. */
 @Composable
-private fun MotionButton(motion: PadMotion, height: Dp, width: Dp) {
-    val haptic = rememberPadHaptic()
-    val latestTap by rememberUpdatedState(motion.onTap)
-    val latestLong by rememberUpdatedState(motion.onLongPress)
-    var pressed by remember { mutableStateOf(false) }
-    NeuSurface(
-        shape = PadStyle.pillShape,
-        face = LocalPadColors.current.pill,
-        pressed = pressed,
-        modifier = Modifier.width(width).height(height).alpha(if (motion.on) 1f else 0.45f).pointerInput(Unit) {
-            detectTapGestures(
-                onPress = {
-                    pressed = true
-                    haptic()
-                    tryAwaitRelease()
-                    pressed = false
-                },
-                onTap = { latestTap() },
-                onLongPress = { latestLong() },
-            )
-        },
-    ) {
-        Text(
-            "MOTION",
-            color = LocalPadColors.current.label,
-            fontFamily = LocalNxFont.current,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = NxTextSizes.padLabel.pinned(),
-        )
-    }
-}
+private fun MotionButton(motion: PadMotion, height: Dp, width: Dp) =
+    ToolButton("MOTION", height, width, alpha = if (motion.on) 1f else 0.45f, onTap = motion.onTap, onLongPress = motion.onLongPress)
 
 /**
  * The 3DS pad's own STYLUS and SWAP pills, the on-screen forms of its SELECT + L1 / SELECT + R1 chords: [stylusOn] says
@@ -792,27 +735,36 @@ private fun MotionButton(motion: PadMotion, height: Dp, width: Dp) {
  */
 data class PadTools(val stylusOn: Boolean, val onStylus: () -> Unit, val onSwap: (Boolean) -> Unit)
 
-/** A [PadTools] pill: [label] on the pill face, pressed in while [latched]; [onDown] / [onUp] around a press, [onTap] after a tap. */
+/**
+ * A pill button styled like a pad button, with its own press feedback (the [PadTools] pills, the d-pad / stick toggle,
+ * MOTION): [label] on the pill face, pressed in while [latched], drawn at [alpha] when given; [onDown] / [onUp] around a
+ * press, [onTap] after a tap, [onLongPress] after a long press (a pill without one never waits for it). The tap handler
+ * outlives a composition: it calls the latest callbacks (a hoisted choice changes them).
+ */
 @Composable
 private fun ToolButton(
     label: String,
     height: Dp,
     width: Dp,
     latched: Boolean = false,
+    alpha: Float? = null,
     onTap: () -> Unit = {},
+    onLongPress: (() -> Unit)? = null,
     onDown: () -> Unit = {},
     onUp: () -> Unit = {},
 ) {
     val haptic = rememberPadHaptic()
     val latestTap by rememberUpdatedState(onTap)
+    val latestLong by rememberUpdatedState(onLongPress)
     val latestDown by rememberUpdatedState(onDown)
     val latestUp by rememberUpdatedState(onUp)
+    val hasLongPress = onLongPress != null
     var pressed by remember { mutableStateOf(false) }
     NeuSurface(
         shape = PadStyle.pillShape,
         face = LocalPadColors.current.pill,
         pressed = pressed || latched,
-        modifier = Modifier.width(width).height(height).pointerInput(Unit) {
+        modifier = Modifier.width(width).height(height).then(if (alpha != null) Modifier.alpha(alpha) else Modifier).pointerInput(hasLongPress) {
             detectTapGestures(
                 onPress = {
                     pressed = true
@@ -824,6 +776,7 @@ private fun ToolButton(
                     }
                 },
                 onTap = { latestTap() },
+                onLongPress = if (hasLongPress) { _ -> latestLong?.invoke() } else null,
             )
         },
     ) {
@@ -911,17 +864,7 @@ fun VirtualPad(
     // Track which buttons this pad currently holds so we can release them if the pad
     // leaves composition mid-hold. A duplicate Up (also emitted by the gesture's finally
     // block) is harmless: the router ignores an Up for a button it is not holding.
-    val held = remember { mutableSetOf<NxButton>() }
-    val emit: (PadEvent) -> Unit = { event ->
-        when (event) {
-            is PadEvent.Down -> held += event.button
-            is PadEvent.Up -> held -= event.button
-        }
-        onEvent(event)
-    }
-    DisposableEffect(Unit) {
-        onDispose { held.toList().forEach { onEvent(PadEvent.Up(it)) }; held.clear() }
-    }
+    val emit = rememberEmit(onEvent)
     val stick = rememberStickChoice(useJoystick, onUseJoystickChange)
     BoxWithConstraints(modifier.fillMaxSize().background(LocalPadColors.current.surface).padding(16.dp)) {
         // Button size unit. The column stacks 6.12 units at a middle-row scale of 1 (shoulders 1 + cluster 3 +
@@ -1266,7 +1209,7 @@ internal fun landscapeClusterWidth(unit: Float, inset: Float = 0f): Float = CLUS
  */
 fun symmetricCutoutInset(start: Float, end: Float): Float = maxOf(start, end)
 
-/** Held-set tracking + guaranteed release on dispose, shared by the split clusters. */
+/** Held-set tracking + guaranteed release on dispose, shared by the whole pad and the split clusters. */
 @Composable
 private fun rememberEmit(onEvent: (PadEvent) -> Unit): (PadEvent) -> Unit {
     val held = remember { mutableSetOf<NxButton>() }

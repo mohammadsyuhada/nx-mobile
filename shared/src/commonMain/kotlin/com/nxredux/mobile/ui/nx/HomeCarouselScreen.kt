@@ -209,7 +209,7 @@ internal fun HomeCarouselScreen(
             val box = Modifier.offset(y = (headerH + place.boxTop).dp).height(place.boxH.dp).fillMaxWidth()
             if (pick) {
                 // Nothing played and no pins: the Pick a game card fills the room between the strip and the dock.
-                HomeCarouselPick({ sel() }, onSelect, onOpen, longPress?.takeIf { tabMenu }, portrait, box.padding(horizontal = gutter))
+                HomePickCard({ sel() }, onSelect, onOpen, longPress?.takeIf { tabMenu }, portrait, box.padding(horizontal = gutter))
             } else if (rowCount > 0) {
                 val accent = colors.accent.toArgb() and 0xFFFFFF
                 val tiles = remember(rows, rowCount, accent) { homeCarouselTiles(rows.take(rowCount), accent) }
@@ -228,32 +228,6 @@ internal fun HomeCarouselScreen(
             }
             if (dockH > 0f) HomeDock(rows, rowCount, { sel() }, onSelect, onOpen, longPress, side, tabMenu, Modifier.offset(y = (headerH + place.dockTop).dp))
         }
-    }
-}
-
-/**
- * The Carousel Home's Pick a game card, filling [modifier]'s box; a tap opens it (Consoles), as Home's. [onLongPress]
- * (passed only while a hidden tab can be offered; null otherwise, so a held press still taps on release) on a long press.
- */
-@Composable
-private fun HomeCarouselPick(
-    selection: () -> Int, onSelect: (Int) -> Unit, onOpen: (Int) -> Unit, onLongPress: ((Int) -> Unit)?, portrait: Boolean, modifier: Modifier,
-) {
-    val longPress by rememberUpdatedState(onLongPress)
-    val select by rememberUpdatedState(onSelect)
-    val open by rememberUpdatedState(onOpen)
-    val tapOpens by rememberUpdatedState(LocalNxTapOpens.current)
-    val sel by rememberUpdatedState(selection)
-    BoxWithConstraints(modifier) {
-        PickCard(
-            lit = selection() == 0, portrait = portrait, cardH = maxHeight.value,
-            modifier = Modifier.fillMaxSize().pointerInput(onLongPress != null) {
-                detectTapGestures(
-                    onTap = { nxTap(0, sel() == 0, tapOpens(0), select, open) },
-                    onLongPress = if (onLongPress != null) { _ -> longPress?.invoke(0) } else null,
-                )
-            },
-        )
     }
 }
 

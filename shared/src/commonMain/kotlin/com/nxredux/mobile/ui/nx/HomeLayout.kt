@@ -344,11 +344,7 @@ internal fun homeBoard(f: HomeFrame, stripLines: Int, tools: Int, games: Int, sh
     val w = f.w - 2 * gutter
     val shownH = homeShownH(f)   // the pin row's shape and the face as with the tab row shown
     val halves = f.portrait || shownH > f.w
-    var n = if (halves) 4 else 6
-    var tw = (w - (n - 1) * gap) / n
-    while (tw < HOME_MIN_TILE_W && n > 2) { n--; tw = (w - (n - 1) * gap) / n }
-    val perRow = max(2, n / 2)
-    val pinW = (w - (perRow - 1) * gap) / perRow
+    val (tw, perRow, pinW) = homeColumnGrid(w, gap, if (halves) 4 else 6)
     val shapeH = if (halves) tw * 3 / 4 else min(tw, max(tw * 3 / 4, (shownH - pageFixed(gap)) * LAND_ROW_SHARE))
     val topY = homeTopY(f, lines)
     val fill = f.h - topY - gap - RING_ROOM - HOME_PAGE_MARGIN
@@ -534,11 +530,7 @@ private fun homeBoardWide(f: HomeFrame, stripLines: Int, freed: Float, tools: In
     val inline = if (games in 0..HOME_INLINE_MAX) games else 0
     val rowGames = games.coerceAtLeast(0) - inline
     // The rows as on the landscape split: 6 columns (fewer while one is under 90 dp), a game two wide, the same row shape.
-    var n = 6
-    var tw = (w - (n - 1) * gap) / n
-    while (tw < HOME_MIN_TILE_W && n > 2) { n--; tw = (w - (n - 1) * gap) / n }
-    val perRow = max(2, n / 2)
-    val pinW = (w - (perRow - 1) * gap) / perRow
+    val (tw, perRow, pinW) = homeColumnGrid(w, gap, 6)
     val shapeH = min(tw, max(tw * 3 / 4, (homeShownH(f) - pageFixed(gap)) * LAND_ROW_SHARE))
     val fill = f.h - topY - gap - RING_ROOM - HOME_PAGE_MARGIN
     val topH = max(0f, if (rowGames > 0) fill - shapeH else f.h - topY - HOME_PAGE_MARGIN)
@@ -553,15 +545,7 @@ private fun homeBoardWide(f: HomeFrame, stripLines: Int, freed: Float, tools: In
     val blockW = if (shown > 0) cols * s + (cols - 1) * gap else 0f
     val right = w - blockW
     val col = homeInlineColumn(inline, topH, w, right, shown > 0, gap)
-    fun page(r: HomeRect) = HomeRect(gutter + r.x, topY + r.y, r.w, r.h)
-    val top = buildList {
-        add(HomeTopTile(HomeTopKind.CONTINUE, page(HomeRect(0f, 0f, col.contW, topH))))
-        col.cards.forEach { add(HomeTopTile(HomeTopKind.GAME, page(it))) }
-        repeat(shown) {
-            val kind = if (more > 0 && it == shown - 1) HomeTopKind.MORE else HomeTopKind.TOOL
-            add(HomeTopTile(kind, page(HomeRect(right + (it % cols) * (s + gap), (it / cols) * (s + gap / 2), s, s))))
-        }
-    }
+    val top = homeTopTiles(gutter, topY, topH, col, shown, more, cols, right, s, gap)
     // The shelves under the row games, in their grid, as [homeBoard]'s.
     val labelled = shelves.any { it.second > 0 }
     val labelH = if (labelled) homeLabelLineH(f) else HOME_LABEL_H
@@ -572,6 +556,36 @@ private fun homeBoardWide(f: HomeFrame, stripLines: Int, freed: Float, tools: In
         HomeToolMode.WIDE, true, stripLines, topY, topH, top, slots, more, gutter, gap, perRow, pinW, pinH, bands.tilesY, rowGames,
         bands.pageH, s, homeStripTop(f, stripLines), bands.labels, bands.tiles, bands.sizes, inline, labelH, bands.cols,
     )
+}
+
+/**
+ * The wide and large faces' top section, in the page: Continue ([col]'s width, [topH] tall), [col]'s inline cards, then
+ * [shown] squares of side [s] from [right] in reading order, [cols] a row (a gap apart, rows half a gap apart), the last
+ * one "+N" when there are [more].
+ */
+private fun homeTopTiles(
+    gutter: Float, topY: Float, topH: Float, col: HomeInlineColumn, shown: Int, more: Int, cols: Int, right: Float, s: Float, gap: Float,
+): List<HomeTopTile> {
+    fun page(r: HomeRect) = HomeRect(gutter + r.x, topY + r.y, r.w, r.h)
+    return buildList {
+        add(HomeTopTile(HomeTopKind.CONTINUE, page(HomeRect(0f, 0f, col.contW, topH))))
+        col.cards.forEach { add(HomeTopTile(HomeTopKind.GAME, page(it))) }
+        repeat(shown) {
+            val kind = if (more > 0 && it == shown - 1) HomeTopKind.MORE else HomeTopKind.TOOL
+            add(HomeTopTile(kind, page(HomeRect(right + (it % cols) * (s + gap), (it / cols) * (s + gap / 2), s, s))))
+        }
+    }
+}
+
+/** The pin grid across [w]: [start] columns (fewer while one is under [HOME_MIN_TILE_W]) of [tw], a pin two wide ([perRow] a row of [pinW]). */
+private data class HomeColumnGrid(val tw: Float, val perRow: Int, val pinW: Float)
+
+private fun homeColumnGrid(w: Float, gap: Float, start: Int): HomeColumnGrid {
+    var n = start
+    var tw = (w - (n - 1) * gap) / n
+    while (tw < HOME_MIN_TILE_W && n > 2) { n--; tw = (w - (n - 1) * gap) / n }
+    val perRow = max(2, n / 2)
+    return HomeColumnGrid(tw, perRow, (w - (perRow - 1) * gap) / perRow)
 }
 
 /** Row game [i]'s tile, in the page. */
@@ -606,15 +620,7 @@ private fun homeBoardLarge(f: HomeFrame, stripLines: Int, freed: Float, tools: I
     val right = if (shown > 0) w - cols * s - (cols - 1) * gap else w
     val inline = if (games in 1..HOME_INLINE_MAX) games else 0
     val col = homeInlineColumn(inline, topH, w, right, shown > 0, gap)
-    fun page(r: HomeRect) = HomeRect(gutter + r.x, topY + r.y, r.w, r.h)
-    val top = buildList {
-        add(HomeTopTile(HomeTopKind.CONTINUE, page(HomeRect(0f, 0f, col.contW, topH))))
-        col.cards.forEach { add(HomeTopTile(HomeTopKind.GAME, page(it))) }
-        repeat(shown) {
-            val kind = if (more > 0 && it == shown - 1) HomeTopKind.MORE else HomeTopKind.TOOL
-            add(HomeTopTile(kind, page(HomeRect(right + (it % cols) * (s + gap), (it / cols) * (s + gap / 2), s, s))))
-        }
-    }
+    val top = homeTopTiles(gutter, topY, topH, col, shown, more, cols, right, s, gap)
     val labelH = homeLabelLineH(f)
     val pinW = (w - (HOME_LARGE_PIN_COLS - 1) * gap) / HOME_LARGE_PIN_COLS
     val pinH = pinW * 9 / 16

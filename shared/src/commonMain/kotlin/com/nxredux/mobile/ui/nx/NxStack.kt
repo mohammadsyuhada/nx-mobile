@@ -1,7 +1,6 @@
 package com.nxredux.mobile.ui.nx
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -28,7 +27,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -151,14 +149,7 @@ private fun StackItem(
                 alpha = if (r.visible) a.coerceIn(0f, 1f) else 0f
                 compositingStrategy = itemCompositing(marks)
             }
-            .pointerInput(i, hasLongPress) {
-                // A composition a frame behind the position must not let a hidden item take a touch.
-                fun shown() = stackItem(style, distance(), geometry).visible
-                detectTapGestures(
-                    onTap = { if (shown()) taps.tap(i) },
-                    onLongPress = if (hasLongPress) { _ -> if (shown()) taps.longPress(i) } else null,
-                )
-            },
+            .shownItemTaps(i, taps, hasLongPress) { stackItem(style, distance(), geometry).visible },
         contentAlignment = Alignment.Center,
     ) {
         item(i, selected, distance)

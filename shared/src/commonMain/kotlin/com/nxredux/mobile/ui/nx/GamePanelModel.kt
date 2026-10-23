@@ -120,7 +120,7 @@ object GamePanelModel {
     fun nextPlayer(slot: Int, players: List<PlayerSlotRow>, pads: List<PlayerPadRow>): GamePanelEvent.SetPlayer =
         GamePanelEvent.SetPlayer(slot, cyclePlayer(slot, 1, players, pads))
 
-    /** A player slot's value, worded as the Players page words it. */
+    /** A player slot's value: "Empty", the name, or "<name> (disconnected)"; the panel and the Players page both show it. */
     fun playerValue(s: PlayerSlotRow): String = when {
         s.key == null -> "Empty"
         s.connected -> s.name

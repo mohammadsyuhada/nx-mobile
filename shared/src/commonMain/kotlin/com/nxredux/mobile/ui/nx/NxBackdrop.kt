@@ -1,13 +1,11 @@
 package com.nxredux.mobile.ui.nx
 
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -28,10 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -50,7 +45,6 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -132,7 +126,6 @@ internal fun easedStops(keys: List<Pair<Float, Float>>, step: Float = 0.02f): Li
     }
 }
 
-private const val SLIDE_MS = 300        // the row's slide and scale
 private const val FADE_MS = 350         // the picture's crossfade
 private const val SHADOW_ALPHA = 0.5f   // the box art's shadow: a black copy
 private val SHADOW_DROP = 4.dp          // the copy's offset down
@@ -459,14 +452,9 @@ fun NxBackdrop(
         val availPx = constraints.maxWidth - 2 * with(LocalDensity.current) { gutter.roundToPx() }
         val spare = (maxHeight.value - place.captionBottom - CAPTION_SPARE_MARGIN).coerceAtLeast(0f)
 
-        // The animated position, in items; a new screen (a tab switch, even to an equal list) or a new list snaps to its
-        // selection instead of sliding. The selection itself is read only by FollowSelection, the items and the caption,
-        // so a step recomposes those (and the two items whose lit state changed), never the row.
-        val pos = remember(layoutKey, games, tiles) { Animatable(selectionNow(selectedIndex, count).toFloat()) }
-        FollowSelection(pos, selectedIndex, count, SLIDE_MS)
-        // While a finger drags the row: the position it shows (NaN otherwise, the animated one).
-        val dragPos = remember(pos) { mutableFloatStateOf(Float.NaN) }
-        val at = rememberShownPosition(pos, dragPos)
+        // The animated position, in items ([rememberRowPosition]: a new screen or a new list snaps). The selection
+        // itself is read only by FollowSelection and the caption ([NxRow]), so a step recomposes those, never the row.
+        val pos = rememberRowPosition(selectedIndex, count, layoutKey, games, tiles)
 
         // A games row's boxes centred in the box, not the reserved block ([rowNeighbourTop],
         // [rowSelectedTop]): a neighbour by itself, the selection with its shadow room, the gap and its caption as drawn,
@@ -484,7 +472,6 @@ fun NxBackdrop(
         val bandTop = if (captioned) min(nbTop, rowSelectedTop(area, rowH, capGap, captionH + spare)) else top
         val bandH = if (captioned) nbTop + rowH - bandTop else rowH
 
-        val taps = rememberItemTaps(selectedIndex, count, onSelect, onOpen, onLongPress)
         val hasLongPress = onLongPress != null
         val k = backdropContentScale(g, slot, portrait = false)   // the row is the landscape size in both orientations
         // Main-menu Consoles and Collections: the unselected items fade further (Tools and game lists keep the row's).
@@ -499,23 +486,14 @@ fun NxBackdrop(
         // A drag steps by the items' mean width (the row's widths differ; the handheld has no touch to follow).
         val swipeG = if (widths == null) g else rowLook.g.copy(itemW = widths.average().toFloat())
 
-        Box(Modifier.fillMaxWidth().offset(y = bandTop.dp).height(bandH.dp)
-                .horizontalSwipe(
-                    key = pos, value = pos, live = dragPos, perDp = -1f / rowSwipeStep(swipeG),
-                    lo = 0f, hi = (count - 1).toFloat(), give = 0.5f, ms = SLIDE_MS,
-                    target = { start, drag, velocity ->
-                        val i = rowSwipeTarget(start, drag, velocity, count, swipeG)
-                        i to i.toFloat()
-                    },
-                    onSelect = { taps.swipeSelect(it) },
-                    toValue = { rowSwipeDelta(it, swipeG) }, slope = { rowSwipeSlope(it, swipeG) },
-                )
-        ) {
-            BackdropItems(games, tiles, count, at, rowLook, selTop, taps, hasLongPress)
+        // No item lit: the selection shows by its size, so a step recomposes the window only, no item.
+        NxRow(count, selectedIndex, pos, swipeG, bandTop, bandH, onSelect, onOpen, onLongPress) { i, _, at, taps ->
+            BackdropRowItem(i, games?.getOrNull(i), if (games == null) tiles.getOrNull(i) else null, at, rowLook, selTop, taps, hasLongPress)
         }
 
-        if (captioned) BackdropCaption(
-            captionTitle, captionInfo, glide, nameStyle, infoStyle, gutter, avail, availPx, spare, selTop, rowH, capGap, colors.listText,
+        // The time and the achievements, then the next goal under the name's one line.
+        if (captioned) RowCaption(
+            captionTitle, captionInfo, glide, nameStyle, 1, infoStyle, gutter, avail, availPx, spare, selTop, rowH + capGap, colors.listText,
         )
     }
 }
@@ -528,25 +506,6 @@ internal data class BackdropItemLook(
     /** Each item's width at full size ([rememberSlotWidths], placed by [rowItemDxVar]); null, the slot's. */
     val widths: FloatArray? = null,
 )
-
-/**
- * The items rowItem shows (less than four steps from the animated position) and one more hidden at each end
- * ([rowComposeWindow]; a hidden item is neither drawn nor touchable), keyed by recycled slots ([ItemSlots]). Recomposes
- * only when the window moves; the items skip unless their slot took another item.
- */
-@Composable
-private fun BoxScope.BackdropItems(
-    games: List<BackdropGame>?, tiles: List<GridTile>, count: Int, at: () -> Float, look: BackdropItemLook,
-    selTop: () -> Float, taps: ItemTaps, hasLongPress: Boolean,
-) {
-    val window by remember(at, count) { derivedStateOf { rowComposeWindow(at(), count) } }
-    val slots = remember { ItemSlots() }.of(window)
-    for (i in window) {
-        key(slots.getValue(i)) {
-            BackdropRowItem(i, games?.getOrNull(i), if (games == null) tiles.getOrNull(i) else null, at, look, selTop, taps, hasLongPress)
-        }
-    }
-}
 
 @Composable
 private fun BoxScope.BackdropRowItem(
@@ -581,46 +540,8 @@ private fun BoxScope.BackdropRowItem(
         // The touch target: the item's own width (a content-sized item's, so a neighbour's edge never takes its taps).
         Box(
             Modifier.size((look.widths?.getOrNull(i) ?: g.itemW).dp, g.itemH.dp)
-                .pointerInput(i, hasLongPress) {
-                    // A composition a frame behind the position must not let a hidden item take a touch.
-                    fun shown() = rowItem(RowStyle.BACKDROP, i - shownAt(), current.g).visible
-                    detectTapGestures(
-                        onTap = { if (shown()) taps.tap(i) },
-                        onLongPress = if (hasLongPress) { _ -> if (shown()) taps.longPress(i) } else null,
-                    )
-                },
+                .shownItemTaps(i, taps, hasLongPress) { rowItem(RowStyle.BACKDROP, i - shownAt(), current.g).visible },
         )
-    }
-}
-
-/**
- * A games row's caption under the selected box ([selTop], its shadow room and the gap below it): the name, then the time
- * and the achievements, then the next goal, one row each, a row without data left out ([backdropCaptionRows]). Fitted,
- * then measured as drawn so the row is placed right on the first frame ([GlideCaptionHeight] glides [glide] to it); too
- * long for the width, "Next: <name>" takes the room under the reserve ([spare]). Reads the caption itself, so a
- * selection step recomposes only this and the items.
- */
-@Composable
-private fun BackdropCaption(
-    captionTitle: () -> String?, captionInfo: () -> List<InfoLine>, glide: CaptionGlide,
-    nameStyle: TextStyle, infoStyle: TextStyle, gutter: Dp, avail: Dp, availPx: Int, spare: Float,
-    selTop: () -> Float, rowH: Float, capGap: Float, textColor: Color,
-) {
-    val title = captionTitle()
-    val infoRows = if (title != null) backdropCaptionRows(captionInfo()) else emptyList()
-    val fitted = rememberFittedCaptionRows(infoRows, infoStyle, 12.dp, avail, spare.dp)
-    val drawn = rememberCaptionDrawnHeight(title, nameStyle, 1, fitted, infoStyle, availPx)
-    GlideCaptionHeight(glide, drawn, SLIDE_MS)
-    if (title != null) {
-        Column(
-            Modifier.fillMaxWidth().offset { IntOffset(0, (selTop() + rowH + capGap).dp.roundToPx()) }
-                .padding(horizontal = gutter).wrapContentWidth().captionTap(),   // the tap target is the text, not the strip
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(title, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis, style = nameStyle)
-            // The time and the achievements, then the next goal: one row each, a row without data left out.
-            CaptionFittedRows(fitted, infoStyle, 12.dp)
-        }
     }
 }
 

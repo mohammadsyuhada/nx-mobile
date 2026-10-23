@@ -536,14 +536,8 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
 
     private fun playersPage() = MenuPage(
         PageKind.Players, PLAYERS_LABEL,
-        playerSlots.mapIndexed { i, s ->
-            val value = when {
-                s.key == null -> EMPTY
-                s.connected -> s.name
-                else -> "${s.name} (disconnected)"
-            }
-            MenuRow.Option("Player ${i + 1}", "$PLAYER_KEY_PREFIX$i", value)
-        },
+        // Worded as the game panel words a slot (one wording for both).
+        playerSlots.mapIndexed { i, s -> MenuRow.Option("Player ${i + 1}", "$PLAYER_KEY_PREFIX$i", GamePanelModel.playerValue(s)) },
         footer = PLAYERS_FOOTER,
     )
 
@@ -1127,7 +1121,6 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         const val PLAYER_KEY_PREFIX = "nx:player:"
         // Presses while the menu is open never claim a slot.
         const val PLAYERS_FOOTER = "Close the menu, then press a button\non a new controller to join."
-        private const val EMPTY = "Empty"
         const val CHEATS_LABEL = "Cheats"
         const val CHEATS_INFO = "Toggle cheats for this game"
         const val CHEAT_KEY_PREFIX = "cheat:"

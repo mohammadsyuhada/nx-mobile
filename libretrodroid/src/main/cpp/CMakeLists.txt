@@ -166,6 +166,8 @@ add_library(libretrodroid SHARED
         netplay/np_engine.c
         netplay/np_net.h
         netplay/np_net.c
+        netplay/np_tcp.h
+        netplay/np_tcp.c
         netplay/netplayhooks.h
         netplay/netplayhooks.cpp
         netplay/netplayjni.cpp

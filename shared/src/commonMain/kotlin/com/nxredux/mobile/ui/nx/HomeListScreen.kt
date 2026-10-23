@@ -97,7 +97,7 @@ internal fun HomeListScreen(
                 NxScreenScaffold(
                     rows = emptyList(), selectedIndex = 0, hints = hints, onSelect = onSelect, onOpen = onOpen,
                     modifier = Modifier.weight(1f), onHint = onHint, bodyAlpha = bodyAlpha, hideHints = chrome.emptyBarRoom || chrome.noBar,
-                    grid = { m -> HomeListPick(selection, onSelect, onOpen, onLongPress?.takeIf { tabMenu }, portrait, m.padding(horizontal = gutter, vertical = 12.dp)) },
+                    grid = { m -> HomePickCard(selection, onSelect, onOpen, onLongPress?.takeIf { tabMenu }, portrait, m.padding(horizontal = gutter, vertical = 12.dp).fillMaxSize()) },
                 )
                 return@Column
             }
@@ -129,23 +129,35 @@ internal fun HomeListScreen(
                 )
             }
         }
-        if (pageStrip != null) {
-            val inkTop = homeListStripInkTop(above, inkH, firstPill)
-            BoxWithConstraints(Modifier.fillMaxWidth().graphicsLayer { alpha = bodyAlpha() }) {
-                HomeStripLines(
-                    pageStrip, stripLines, gutter.value, inkTop - capTop,
-                    width = maxWidth.value - 2 * gutter.value, lh = homeStripLineH(frame), pitch = homeStripPitch(frame),
-                )
-            }
+        val inkTop = if (pageStrip != null) homeListStripInkTop(above, inkH, firstPill) else 0f
+        HomeStripOverlay(shownStrip, pageStrip, header, stripLines, inkTop, capTop, frame, gutter, bodyAlpha)
+    }
+}
+
+/**
+ * List and Minimal Home's strip over their body (faded with [bodyAlpha]), at the [gutter]: [pageStrip] in the page under
+ * the tab row, its text's top at [inkTop] ([capTop] under its lines' top), or [strip] in the stats [header] (the tab row
+ * hidden), short of the Recent and Search icons MainMenuScreen draws at its right.
+ */
+@Composable
+internal fun HomeStripOverlay(
+    strip: HomeStrip?, pageStrip: HomeStrip?, header: HomeStatsHeader?, stripLines: Int, inkTop: Float, capTop: Float,
+    frame: HomeFrame, gutter: Dp, bodyAlpha: () -> Float,
+) {
+    if (pageStrip != null) {
+        BoxWithConstraints(Modifier.fillMaxWidth().graphicsLayer { alpha = bodyAlpha() }) {
+            HomeStripLines(
+                pageStrip, stripLines, gutter.value, inkTop - capTop,
+                width = maxWidth.value - 2 * gutter.value, lh = homeStripLineH(frame), pitch = homeStripPitch(frame),
+            )
         }
-        // The header's strip, at the gutter, short of the Recent and Search icons MainMenuScreen draws at its right.
-        if (header != null && shownStrip != null) {
-            BoxWithConstraints(Modifier.fillMaxWidth().graphicsLayer { alpha = bodyAlpha() }) {
-                HomeStripLines(
-                    shownStrip, header.lines, gutter.value, header.stripTop,
-                    width = maxWidth.value - 2 * gutter.value - HOME_HEADER_ICONS_ROOM, lh = homeStripLineH(frame), pitch = homeStripPitch(frame),
-                )
-            }
+    }
+    if (header != null && strip != null) {
+        BoxWithConstraints(Modifier.fillMaxWidth().graphicsLayer { alpha = bodyAlpha() }) {
+            HomeStripLines(
+                strip, header.lines, gutter.value, header.stripTop,
+                width = maxWidth.value - 2 * gutter.value - HOME_HEADER_ICONS_ROOM, lh = homeStripLineH(frame), pitch = homeStripPitch(frame),
+            )
         }
     }
 }
@@ -162,9 +174,12 @@ internal fun homeListStripInkTop(above: Float, inkH: Float, firstPill: Float?): 
     if (firstPill == null) HOME_LIST_STRIP_MIN_GAP - above
     else -above + max(HOME_LIST_STRIP_MIN_GAP, (firstPill + above - inkH) / 2)
 
-/** List Home's Pick a game card, filling [modifier]'s box; a tap opens it (Consoles), as Home's; a long press calls [onLongPress]. */
+/**
+ * List and Carousel Home's Pick a game card, filling [modifier]'s box; a tap opens it (Consoles), as Home's. [onLongPress]
+ * (passed only while a hidden tab can be offered; null otherwise, so a held press still taps on release) on a long press.
+ */
 @Composable
-private fun HomeListPick(
+internal fun HomePickCard(
     selection: () -> Int, onSelect: (Int) -> Unit, onOpen: (Int) -> Unit, onLongPress: ((Int) -> Unit)?, portrait: Boolean, modifier: Modifier,
 ) {
     val longPress by rememberUpdatedState(onLongPress)
@@ -172,7 +187,7 @@ private fun HomeListPick(
     val open by rememberUpdatedState(onOpen)
     val tapOpens by rememberUpdatedState(LocalNxTapOpens.current)
     val sel by rememberUpdatedState(selection)
-    BoxWithConstraints(modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier) {
         PickCard(
             lit = selection() == 0, portrait = portrait, cardH = maxHeight.value,
             modifier = Modifier.fillMaxSize().pointerInput(onLongPress != null) {
