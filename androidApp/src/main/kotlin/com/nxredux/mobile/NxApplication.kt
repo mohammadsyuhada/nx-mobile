@@ -2,6 +2,7 @@ package com.nxredux.mobile
 
 import android.app.Activity
 import android.app.Application
+import android.app.NotificationManager
 import android.os.Bundle
 import com.nxredux.mobile.settings.AndroidAppSettings
 import com.nxredux.mobile.tools.CheatsRoot
@@ -42,6 +43,8 @@ class NxApplication : Application() {
             File(cacheDir, "update").deleteRecursively()
             CheatsRoot.of(this)
         }, "cheats-root").start()
+        // A dead process's install wait notice: that wait ended with it.
+        getSystemService(NotificationManager::class.java)?.cancel(NotificationIds.APP_UPDATE_WAIT)
         // Off is both flags' default: only On needs setting, so a launcher-only start never loads the native library.
         if (!AndroidAppSettings(this).debugLog) return
         try {

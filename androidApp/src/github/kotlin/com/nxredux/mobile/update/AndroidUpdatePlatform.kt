@@ -153,8 +153,11 @@ class AndroidUpdatePlatform(private val app: Context, private val scope: Corouti
         }
     }
 
-    /** The install's session: [WRITING] while [install] writes it, its id once committed, null when there is none. Main thread only. */
+    /** The install's session: [WRITING] while [install] writes it, its id once written, null when there is none. Main thread only. */
     private var session: Int? = null
+    /** [session] written but not committed: a game started during the copy, so [resumeInstall] commits it on a free main menu. */
+    private var uncommitted: PackageInstaller.Session? = null
+    private var uncommittedResult: ((UpdateInstallResult) -> Unit)? = null
 
     /** Writes [file] into a PackageInstaller session on IO, then commits it on Main; [onResult] is called on Main. */
     override fun install(file: UpdateFile, clear: () -> Boolean, onResult: (UpdateInstallResult) -> Unit) {
@@ -178,13 +181,19 @@ class AndroidUpdatePlatform(private val app: Context, private val scope: Corouti
                 if (result != UpdateInstallResult.STARTED && session == id) session = null
                 onResult(result)
             }
-            try {
-                written.second.use { it.commit(statusReceiver(id)) }
-            } catch (e: Exception) {
-                NxLog.e(TAG, "install commit failed", e)
-                dropSession(installer, id)
-                onResult(UpdateInstallResult.FAILED)
-            }
+            // Committing may install with no confirm screen (USER_ACTION_NOT_REQUIRED), so a game started meanwhile holds it.
+            if (!clear()) { uncommitted = written.second; uncommittedResult = onResult; return@launch }
+            commit(installer, id, written.second, onResult)
+        }
+    }
+
+    private fun commit(installer: PackageInstaller, id: Int, written: PackageInstaller.Session, onResult: (UpdateInstallResult) -> Unit) {
+        try {
+            written.use { it.commit(statusReceiver(id)) }
+        } catch (e: Exception) {
+            NxLog.e(TAG, "install commit failed", e)
+            dropSession(installer, id)
+            onResult(UpdateInstallResult.FAILED)
         }
     }
 
@@ -193,6 +202,13 @@ class AndroidUpdatePlatform(private val app: Context, private val scope: Corouti
         if (id == WRITING) return true   // still copying the APK in: the commit follows
         val installer = app.packageManager.packageInstaller
         if (installer.getSessionInfo(id) == null || !UpdateInstallReceiver.waits(id)) return dropSession(installer, id)
+        uncommitted?.let { held ->   // the controller calls this only on a free main menu
+            val onResult = uncommittedResult!!
+            uncommitted = null
+            uncommittedResult = null
+            commit(installer, id, held, onResult)
+            return true   // a failed commit already answered FAILED
+        }
         val confirm = UpdateInstallReceiver.confirm(id) ?: return true   // committed; the status asking for the confirm screen is yet to come
         return try {
             app.startActivity(Intent(confirm).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -206,6 +222,9 @@ class AndroidUpdatePlatform(private val app: Context, private val scope: Corouti
     /** Abandons [id], whose status no longer reaches the controller; false, for [resumeInstall]. */
     private fun dropSession(installer: PackageInstaller, id: Int): Boolean {
         UpdateInstallReceiver.forget(id)
+        uncommitted?.let { runCatching { it.close() } }
+        uncommitted = null
+        uncommittedResult = null
         runCatching { installer.abandonSession(id) }
         if (session == id) session = null
         return false
