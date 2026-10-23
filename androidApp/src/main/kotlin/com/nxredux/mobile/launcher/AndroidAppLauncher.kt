@@ -67,7 +67,7 @@ class AndroidAppLauncher(private val activity: ComponentActivity, private val re
     }
 
     /**
-     * The shape in [id]'s icon as its package ships it ([packagedIcon]), as [ICON_PX] of white on clear framed by
+     * The shape in [id]'s icon as its package ships it ([packagedIcon]), as [ICON_PX] of alpha (drawn tinted) framed by
      * [IconSilhouette]: its themed-icon layer (API 33+), else its foreground's own outline, else what stands out from
      * the plate the icon is painted on. Null for a legacy icon, or one with no shape any of these finds.
      */
@@ -83,7 +83,8 @@ class AndroidAppLauncher(private val activity: ComponentActivity, private val re
             }
             val (alpha, frame) = shapes.firstNotNullOfOrNull { a -> IconSilhouette.frame(a, SHAPE_PX)?.let { a to it } } ?: return@runCatching null
             val shape = Bitmap.createBitmap(IntArray(alpha.size) { (alpha[it] shl 24) or 0xFFFFFF }, SHAPE_PX, SHAPE_PX, Bitmap.Config.ARGB_8888)
-            val out = Bitmap.createBitmap(ICON_PX, ICON_PX, Bitmap.Config.ARGB_8888)
+            // Alpha alone (a quarter of ARGB's memory): the tile tints it, and the drawer's icons stay cached for the session.
+            val out = Bitmap.createBitmap(ICON_PX, ICON_PX, Bitmap.Config.ALPHA_8)
             val k = ICON_PX / frame.side
             val fit = Matrix().apply { setTranslate(-frame.x, -frame.y); postScale(k, k) }
             Canvas(out).drawBitmap(shape, fit, Paint(Paint.FILTER_BITMAP_FLAG))

@@ -11413,6 +11413,20 @@ class AppStateTest {
         assertEquals(ToolKind.APPS, state.screen.value.toolRows()[state.selection.value.index].kind)
     }
 
+    // An app installed after the preview was read: the tap still lands on the app tapped, not on its old index.
+    @Test fun a_drawer_preview_tap_opens_on_the_app_tapped() = runTest {
+        val launcher = FakeLauncher(listOf(alpha, beta))
+        val state = state(MemorySettings(ContentRef("Home")), launcher = launcher)
+        state.load()
+        state.onDualMenu(true)
+        state.openTools()
+        state.select(state.screen.value.toolRows().indexOfFirst { it.kind == ToolKind.APPS }); advanceUntilIdle()
+        launcher.apps = listOf(InstalledApp("0/0", "Aardvark"), alpha, beta)
+        state.openDrawerPreviewApp(1); advanceUntilIdle()                      // Beta in the preview
+        val drawer = assertIs<Screen.ToolApps>(state.screen.value)
+        assertEquals("b/B", drawer.apps[state.selection.value.index].id)
+    }
+
     @Test fun the_app_drawer_opens_apps_and_adds_them_to_tools() = runTest {
         val settings = MemorySettings(ContentRef("Home"))
         val launcher = FakeLauncher(listOf(alpha, beta))

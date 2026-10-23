@@ -882,7 +882,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private fun followDrawerPreview() {
         val s = _screen.value as? Screen.Systems
         val l = deps.launcher
-        val on = l != null && _dualMenu.value && s != null && s.menu == null && isAppsTile(s.rows.getOrNull(_selection.value.index))
+        val on = l != null && _dualMenu.value && s != null && s.menu == null && s.search == null && isAppsTile(s.rows.getOrNull(_selection.value.index))
         if (!on) { drawerPreviewJob?.cancel(); drawerPreviewJob = null; _drawerPreview.value = null; return }
         if (_drawerPreview.value != null || drawerPreviewJob?.isActive == true) return
         drawerPreviewJob = scope.launch {
@@ -895,11 +895,12 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** A tap on app [index] of the second display's drawer preview: opens the drawer there on it, as A would (B returns). */
     fun openDrawerPreviewApp(index: Int) {
         val s = _screen.value as? Screen.Systems ?: return
-        if (loader.active || _drawerPreview.value == null || !isAppsTile(s.rows.getOrNull(_selection.value.index))) return
+        val app = _drawerPreview.value?.getOrNull(index) ?: return
+        if (loader.active || s.menu != null || s.search != null || !isAppsTile(s.rows.getOrNull(_selection.value.index))) return
         intendNav(NavMotion.FORWARD)
         rememberMenuSelection()
         noteToolOrigin()
-        openToolApps(AppPick.TOOLS, select = index)
+        openToolApps(AppPick.TOOLS, selectId = app.id)
     }
 
     /**
@@ -1092,7 +1093,12 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         }
         // The achievements panel follows the game list's selection, and closes off the game list.
         scope.launch { _selection.collect { followRaPanel(); followRaDetails(); followSecondList(); followDrawerPreview() } }
-        scope.launch { _screen.collect { if (it !is Screen.Games) { closeRaPanel() } else { followRaPanel() }; followRaDetails(); followSecondList(); followDrawerPreview() } }
+        scope.launch {
+            _screen.collect {
+                if (setupScreen(it)) _toolOnTop.value = false   // a tool's page no more: setup takes the menu's screen
+                if (it !is Screen.Games) { closeRaPanel() } else { followRaPanel() }; followRaDetails(); followSecondList(); followDrawerPreview()
+            }
+        }
         deps.achievements?.let { c ->
             scope.launch {
                 var wasBusy = false
@@ -1743,6 +1749,12 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * Shows [screen] with its tab's remembered row, clamped. Over START's open prompt (a rebuild in place: a foreground,
      * a new Home frame, counts landing) the prompt and its draft stay; closing it is the prompt's own keys.
      */
+    /** First setup's steps and onboarding (a folder change in Settings may resume them): never a tool on the top screen. */
+    private fun setupScreen(s: Screen): Boolean = when (s) {
+        is Screen.PermissionsStep, Screen.PickFolder, Screen.AddFirstExtra, is Screen.FolderSummary, is Screen.AndroidGamesStep, is Screen.Onboarding -> true
+        else -> false
+    }
+
     private fun showMenu(menu: Screen.Systems, at: Int = -1) {
         val prev = _screen.value
         _toolOnTop.value = false   // back on the menu: it has the focus again
@@ -6435,9 +6447,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /**
      * The apps grid for [pick]. TOOLS: the app drawer, every installed app but the Android games console's, marked when
      * it is in Tools. GAMES: the detected games, then every other app ([androidGamesPickOrder]), checked when it is in
-     * the console. [select]: the app highlighted first (the second display's preview tapped).
+     * the console. [selectId]: the app highlighted first (the second display's preview tapped), else the first.
      */
-    private fun openToolApps(pick: AppPick, select: Int = 0) {
+    private fun openToolApps(pick: AppPick, selectId: String? = null) {
         val l = deps.launcher ?: return
         (_screen.value as? Screen.Settings)?.let { sectionSelections[it.section] = _selection.value }
         loader.start {
@@ -6453,7 +6465,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             toolAppsColumns = 0   // a new picker: it reports its own columns on its first layout
             if (pick == AppPick.TOOLS) _toolOnTop.value = true   // the drawer, a tool: it lands after a read, so [openTool] could not tell
             _screen.value = Screen.ToolApps(rows, pick)
-            _selection.value = ListSelection(select, rows.size).clampedTo(rows.size)
+            _selection.value = ListSelection(rows.indexOfFirst { it.id == selectId }.coerceAtLeast(0), rows.size)
         }
     }
 
@@ -6486,6 +6498,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val apps = s.apps - row
         _screen.value = s.copy(apps = apps)
         _selection.value = ListSelection(_selection.value.index, apps.size).clampedTo(apps.size)
+        scope.launch { rebuildMainRows() }   // gone from Tools and Home too, when it was there
     }
 
     /**

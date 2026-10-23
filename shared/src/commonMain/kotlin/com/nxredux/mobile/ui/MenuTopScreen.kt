@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -80,6 +81,9 @@ fun MenuTopScreen(state: AppState) {
                         is TopContent.Preview -> PreviewList(state, top.list, gameInfo)
                         is TopContent.AppsPreview -> AppsPreview(state, top.apps)
                         TopContent.Tool -> Box(Modifier.fillMaxSize()) {
+                            // Laid out here: this window decides whether Settings splits (App reports the bottom's otherwise).
+                            val split = settingsSplit(LocalWindowSize.current)
+                            LaunchedEffect(split) { state.onSettingsSplit(split) }
                             val live = remember { mutableStateOf(true) }
                             val chooser by state.chooser.collectAsState()
                             val error by state.error.collectAsState()

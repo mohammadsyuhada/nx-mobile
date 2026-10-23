@@ -41,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -189,14 +190,22 @@ fun App(state: AppState, onPadEvent: (PadEvent) -> Unit = {}) {
                     val valueAnchor = remember { NxValueAnchor() }   // where a touch value dropdown opens
                     MenuLocals(state, look, footer, touchscreen, valueAnchor) {
                         Box(m) {
-                            // The window decides whether Settings splits; AppState needs it for RIGHT on a category.
+                            // A tool on the top screen ([MenuTopScreen]): this one keeps the menu, still.
+                            val toolAbove = DualMenu.bottom(screen, dualMenu, toolOnTop) == BottomContent.Menu
+                            // The window decides whether Settings splits; AppState needs it for RIGHT on a category. A tool on
+                            // the top screen is laid out there, which reports its own.
                             val split = settingsSplit(LocalWindowSize.current)
-                            LaunchedEffect(split) { state.onSettingsSplit(split) }
+                            LaunchedEffect(split, toolAbove) { if (!toolAbove) state.onSettingsSplit(split) }
+                            // Into, inside and out of a tool on the top screen the pages here do not slide: it is the same menu
+                            // throughout, and the tool's page must not show here on its way out.
+                            val wasToolAbove = remember { booleanArrayOf(false) }
+                            val still = toolAbove || wasToolAbove[0]
+                            SideEffect { wasToolAbove[0] = toolAbove }
                             // Only a [NavStep] changes the key: every other screen change (a refresh, Settings, a menu) swaps the page in place.
                             val shown = remember { HashMap<Int, Screen>() }   // each page's screen as last shown, so the one sliding out keeps its own
                             val minimalMorph = remember { MinimalMorph() }   // where a Minimal morph to the next page starts
                             AnimatedContent(
-                                targetState = nav.seq, transitionSpec = { pageTransition(nav.motion) },
+                                targetState = nav.seq, transitionSpec = { if (still) EnterTransition.None togetherWith ExitTransition.None else pageTransition(nav.motion) },
                                 modifier = Modifier.fillMaxSize().clipToBounds(), label = "page",
                             ) { seq ->
                                 val live = seq == nav.seq
