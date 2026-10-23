@@ -72,6 +72,9 @@ class DeviceSyncService : KeepAliveService<String>() {
 
         /** The controller side ([DeviceSyncPlatform.keepAlive]): start / update on [active], stop otherwise. Any thread. */
         fun update(context: Context, active: Boolean, text: String?) = state.update(context, active, text)
+
+        /** A sync is keeping the service alive (the updater's install gate). Main thread only. */
+        val active: Boolean get() = state.active
     }
 
     override val keepAlive get() = state

@@ -16,6 +16,9 @@ object NotificationIds {
     /** Device Sync ([com.nxredux.mobile.sync.DeviceSyncService]). */
     const val DEVICE_SYNC = 4103
 
+    /** The in-app update's download and install wait (the github flavor's com.nxredux.mobile.update.AppUpdateService). */
+    const val APP_UPDATE = 4104
+
     /** All of them, for the test that keeps them distinct. */
-    val all: List<Int> = listOf(SCRAPE, RA_DOWNLOAD, DEVICE_SYNC)
+    val all: List<Int> = listOf(SCRAPE, RA_DOWNLOAD, DEVICE_SYNC, APP_UPDATE)
 }

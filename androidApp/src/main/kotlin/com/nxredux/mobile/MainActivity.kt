@@ -84,6 +84,7 @@ import com.nxredux.mobile.storage.AndroidRomsSources
 import com.nxredux.mobile.storage.SafTree
 import com.nxredux.mobile.sync.DeviceSyncs
 import com.nxredux.mobile.tools.CheatDbService
+import com.nxredux.mobile.update.AppUpdates
 import com.nxredux.mobile.ui.App
 import com.nxredux.mobile.ui.MenuTopScreen
 import com.nxredux.mobile.ui.AppDeps
@@ -372,6 +373,7 @@ class MainActivity : ComponentActivity(), FolderPicker {
                 padEditor = { request -> padLayoutEditor.launch(PadLayoutActivity.intent(this, request)) },
                 saveTransfer = saveTransfer,
                 deviceSync = DeviceSyncs.get(this),
+                updater = AppUpdates.get(this),
                 chdSectors = LibchdrSectors(contentResolver),
                 allFilesAccess = allFiles,
                 notificationAccess = notificationAccess,
