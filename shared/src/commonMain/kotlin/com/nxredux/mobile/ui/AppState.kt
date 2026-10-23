@@ -116,6 +116,7 @@ import com.nxredux.mobile.settings.Sources
 import com.nxredux.mobile.settings.SourceConversion
 import com.nxredux.mobile.storage.FileRefs
 import com.nxredux.mobile.storage.AllFilesAccess
+import com.nxredux.mobile.storage.HomeLocator
 import com.nxredux.mobile.storage.LocalFiles
 import com.nxredux.mobile.storage.GamePath
 import com.nxredux.mobile.storage.GameRef
@@ -256,6 +257,8 @@ class AppDeps(
      * is the bottom one. The platform shows the step's second button on it ([AppState.onboardingBottomScreenOnSecond]).
      */
     val builtInSecondScreen: () -> Boolean = { false },
+    /** Where the home is now (the full-access folder, else the app's Android/media one); null: the saved [AppSettings.treeRef] (tests). */
+    val homes: HomeLocator? = null,
 )
 
 /**
@@ -692,7 +695,7 @@ enum class NavMotion {
 data class NavStep(val seq: Int = 0, val motion: NavMotion = NavMotion.NONE)
 
 class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
-    private val sidecars = Sidecars(deps.source, deps.sidecarStore) { deps.settings.treeRef }
+    private val sidecars = Sidecars(deps.source, deps.sidecarStore) { home() }
     private val scanner = LibraryScanner(deps.source, sidecars, deps.arcadeSets, deps.naomiSets, compute = deps.compute, chdSectors = deps.chdSectors)
     private val _screen = MutableStateFlow<Screen>(Screen.Loading)
     val screen: StateFlow<Screen> = _screen.asStateFlow()
@@ -712,7 +715,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** The last search confirmed this run (START's prompt opens on it); not saved. */
     internal var lastSearch: String = ""
         private set
-    private val collections = Collections(deps.source, deps.sidecarStore) { deps.settings.treeRef }
+    private val collections = Collections(deps.source, deps.sidecarStore) { home() }
     private var allMenuTabs: List<MenuTab> = emptyList()   // every tab with content as last built, hidden ones too (no I/O to show it again)
     /** The tabs the main menu shows: [allMenuTabs] less the ones Layouts hides ([visibleMenuTabs]). */
     private val menuTabs: List<MenuTab> get() = visibleMenuTabs(allMenuTabs, shownTabs())
@@ -758,6 +761,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private var homeOutside: List<com.nxredux.mobile.library.LooseFile> = emptyList()   // that home's games outside Roms
     @Volatile private var moveCancelled = false   // B while a summary's move runs: it stops after the current game
     private var welcomeDone = false   // the welcome was answered this run: a load without a home goes to the folder steps
+    private var mediaHomeTaken = false   // first setup went on with the media home (no All files access): no pick to wait for
     private var onboardingSync = false   // Device Sync was opened from the sync offer: leaving it returns there
     private var onboardingSigningIn = false   // onboarding's RetroAchievements sign-in is running: its end moves the step on
     private var onboardingSynced: String? = null   // the sync offer's last result ("done", "failed", "stopped"; "" left before one ended)
@@ -1307,8 +1311,19 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private fun showPickFolder() {
         val ask = !deps.settings.allFilesAsked && permissionsStep().let { it.allFiles == false || it.notifications == false }
         if (ask) { allFilesStepShown = true; showPermissions(); return }
+        // No All files access: the home is the app's Android/media folder, nothing to pick. Once per run (a failed scan of it picks).
+        val media = deps.homes?.media
+        if (media != null && inFirstSetup() && !mediaHomeTaken && deps.allFilesAccess?.takeIf { it.declared }?.granted() != true) return takeMediaHome(media)
         _screen.value = Screen.PickFolder
         _selection.value = ListSelection(0, 1)
+    }
+
+    /** First setup's folder steps on [media] as after a pick ([setHome]), the saved home left unset: its scan, then the home page. */
+    private fun takeMediaHome(media: ContentRef) {
+        mediaHomeTaken = true
+        firstSetup = true
+        if (deps.settings.onboardingDone == false) deps.settings.onboardingStep = FOLDER_STEPS
+        rescan(then = { showHomePage(media) })
     }
 
     /** The Permissions page's state now: each permission this device uses, granted or not. */
@@ -1516,7 +1531,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** [CountStamps.library] of [systems] (the games a collection line can resolve to), taken once per systems list. */
     private suspend fun libraryStamp(systems: List<SystemFolder>): String {
         libraryStampOf?.takeIf { it.first === systems }?.let { return it.second }
-        val home = deps.settings.treeRef?.value
+        val home = home()?.value
         val lookup = playableOffMain(systems)
         val stamp = withContext(deps.compute) { CountStamps.library(home, lookup.keys) }
         libraryStampOf = systems to stamp
@@ -1875,7 +1890,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      */
     private fun resumeFolderSteps(): Boolean {
         if (firstSetup || deps.settings.onboardingDone != false || deps.settings.onboardingStep != FOLDER_STEPS) return false
-        val home = deps.settings.treeRef ?: return false
+        val home = home() ?: return false
         firstSetup = true
         showHomePage(home)
         return true
@@ -2382,7 +2397,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
 
     /** The home page with [summary] (after a move: what the home held before it, and the move's [result]). */
     private fun showHomeSummary(summary: com.nxredux.mobile.library.FolderSummary, result: MoveResult? = null) {
-        val name = deps.settings.treeRef?.let { deps.source.displayName(it) } ?: ""
+        val name = home()?.let { deps.source.displayName(it) } ?: ""
         val s = Screen.FolderSummary(Recents.HOME, name, name, summary, move = result == null && homeTidy(summary), result = result)
         homePage = s
         _screen.value = s
@@ -2398,7 +2413,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * collections), then a rescan and the result.
      */
     private fun moveHomeOutside(s: Screen.FolderSummary) {
-        val home = deps.settings.treeRef ?: return
+        val home = home() ?: return
         val index = library ?: return
         moveCancelled = false
         _screen.value = s.copy(progress = 0 to 0)
@@ -2474,7 +2489,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val index = library ?: return afterFolderSteps { load() }
         val extra = deps.settings.extraFolders.firstOrNull { it.id == extraId }
         val name = extra?.let { deps.source.displayName(it.ref) } ?: ""
-        val home = deps.settings.treeRef?.let { deps.source.displayName(it) } ?: ""
+        val home = home()?.let { deps.source.displayName(it) } ?: ""
         val summary = before ?: folderSummary(index, extraId)
         val s = Screen.FolderSummary(extraId, name, home, summary, move = result != null, result = result)
         _screen.value = s
@@ -2499,7 +2514,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
 
     /** The summary's move: [s]'s placed games into the home's Roms, its progress on the page, then a rescan and the result. */
     private fun moveSummaryGames(s: Screen.FolderSummary) {
-        val home = deps.settings.treeRef ?: return
+        val home = home() ?: return
         val index = library ?: return
         moveCancelled = false
         _screen.value = s.copy(progress = 0 to 0)
@@ -2727,7 +2742,9 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     fun load(then: ((List<SystemFolder>) -> Unit)? = null) {
         // An install from before onboarding has its home already: it counts as done. A fresh one has onboarding to do.
         if (deps.settings.onboardingDone == null) deps.settings.onboardingDone = deps.settings.treeRef != null
-        if (deps.settings.treeRef == null) {
+        // First setup's folder steps come first even with a media home to fall back to; a saved step means they were reached.
+        val setupFirst = deps.settings.treeRef == null && deps.settings.onboardingDone == false && deps.settings.onboardingStep == null && !mediaHomeTaken
+        if (home() == null || setupFirst) {
             if (deps.settings.onboardingDone == false && !welcomeDone && onboarding.step == null) { onboarding.startWelcome(); showOnboarding(); return }
             showPickFolder(); return
         }
@@ -2735,7 +2752,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         _screen.value = Screen.Loading
         scope.launch {
             convertToFiles()   // before the index is read, so a converted home or extra scans once
-            val root = deps.settings.treeRef ?: return@launch
+            val root = home() ?: return@launch
+            mediaHomeNotice(root)
             countCache.load()   // before the first menu build: the collections listed next show their stored counts
             toolPins = readToolPins()
             val usable = fittingIndex(root)
@@ -2778,7 +2796,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * rebuilt from that index first, and the scan's notice or error stays, so a caller on Settings can go back there.
      */
     fun rescan(kept: (() -> Unit)? = null, then: ((List<SystemFolder>) -> Unit)? = null) {   // [then] last: a trailing lambda stays the success step
-        val root = deps.settings.treeRef ?: run { showPickFolder(); return }
+        val root = home() ?: run { showPickFolder(); return }
         _screen.value = Screen.Loading
         scope.launch { scanNow(root, then, kept) }
     }
@@ -2793,7 +2811,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             // Revoked access can list a file home as empty rather than fail: never scan (and so never store) that as an emptied library.
             if (FileRefs.isFile(root) && deps.source.isOffline(root)) throw IllegalStateException(ACCESS_OFF)
             if (isOldRomsPick(root)) {
-                deps.settings.treeRef = null
+                if (!FileRefs.isFile(root)) deps.settings.treeRef = null   // a file home is only switched from, never cleared
                 throw OldPick()
             }
             ensureSkeleton(root)
@@ -2860,7 +2878,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                     // Only drop the persisted tree when the failure means the tree itself is gone or
                     // invalid (a revoked SAF permission -> SecurityException, an invalid/stale tree URI
                     // -> IllegalArgumentException). Transient failures keep the tree so the user can retry.
-                    if (isGone(e)) deps.settings.treeRef = null
+                    if (isGone(e) && !FileRefs.isFile(root)) deps.settings.treeRef = null   // a file home is kept: the next load falls back to the media home
                     _error.value = "Could not read the home folder: ${e.message ?: e::class.simpleName}"
                 }
                 showPickFolder()
@@ -2946,7 +2964,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (failure != null) {
             val e = failure
             if (isGone(e) && homeNotBackYet(root)) return
-            if (isGone(e) && deps.settings.treeRef == root) {
+            if (isGone(e) && deps.settings.treeRef == root && !FileRefs.isFile(root)) {
                 deps.settings.treeRef = null
                 indexLock.withLock {
                     library = null
@@ -3040,6 +3058,19 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         deps.settings.treeRef = converted.home
         deps.settings.extraFolders = converted.extras
         return true
+    }
+
+    /** The home to read now: the platform's choice ([HomeLocator.current]: the full-access folder, else the media one), else the saved one. */
+    private fun home(): ContentRef? = deps.homes?.current() ?: deps.settings.treeRef
+
+    /** `Android/media/<package>/` for [media] (its last path segment is the package). */
+    private fun mediaPath(media: ContentRef): String = "Android/media/${FileRefs.path(media).substringAfterLast('/')}/"
+
+    /** A saved full-access home that cannot be read now ([root] is the media one instead): the library says so, once per load. */
+    private fun mediaHomeNotice(root: ContentRef) {
+        val saved = deps.settings.treeRef ?: return
+        if (root != deps.homes?.media || !FileRefs.isFile(saved) || saved == root) return
+        showNotice("All files access is off. Using ${mediaPath(root)} until it's back on. Saves made there stay there.")
     }
 
     /** The error for a home that cannot be read now: a file home without All files access ([ACCESS_OFF]), else the unmounted card's. */
@@ -3159,7 +3190,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
 
     /** From the platform picker: refuses a folder that is, contains or lies inside the home or another extra. */
     fun addExtra(ref: ContentRef) {
-        val home = deps.settings.treeRef
+        val home = home()
         val clash = (listOfNotNull(home) + deps.settings.extraFolders.map { it.ref }).firstOrNull { Sources.overlaps(it, ref) }
         if (clash != null) {
             // Release the grant the picker just took, unless it is one we still use (the home itself, or an extra picked twice).
@@ -3330,8 +3361,16 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
 
     /** [section]'s page as it stands now; [confirm]: the remove dialog over it. */
     /** A page's note under its title ([Screen.Settings.banner]): Saves', where they live. */
-    private fun settingsBanner(section: SettingsSection): String? =
-        if (section == SettingsSection.SAVES) "Saves are stored inside the app. Export them before uninstalling or clearing app data." else null
+    private fun settingsBanner(section: SettingsSection): String? {
+        if (section != SettingsSection.SAVES) return null
+        val home = home()
+        val media = deps.homes?.media
+        return when {
+            home != null && home == media -> "Saves are in ${mediaPath(media)}. Uninstalling the app removes them."
+            home != null && deps.homes != null && FileRefs.isFile(home) -> "Saves are in your home folder."
+            else -> "Saves are stored inside the app. Export them before uninstalling or clearing app data."   // a picker home: still private
+        }
+    }
 
     private fun settingsPage(section: SettingsSection, confirm: ExtraFolder? = null): Screen.Settings =
         Screen.Settings(section, settingsRows(section), confirm, settingsDetails(section), layoutShot(section), settingsBanner(section))
@@ -3540,10 +3579,10 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      */
     private fun settingsDetails(section: SettingsSection): List<String> = when (section) {
         SettingsSection.LIBRARY -> buildList {
-            add(deps.settings.treeRef?.let { Sources.displayPath(it) ?: deps.source.displayName(it) } ?: "No home folder")
+            add(home()?.let { Sources.displayPath(it) ?: deps.source.displayName(it) } ?: "No home folder")
             val consoles = systemsCache.filter { !it.unassigned }.map { it.displayName }.distinct().size
             add("${gamesLabel(systemsCache.sumOf { it.gameCount })} · ${if (consoles == 1) "1 console" else "$consoles consoles"}")
-            val folders = (if (deps.settings.treeRef != null) 1 else 0) + deps.settings.extraFolders.size
+            val folders = (if (home() != null) 1 else 0) + deps.settings.extraFolders.size
             add(if (folders == 1) "1 ROM folder" else "$folders ROM folders")
             library?.scannedAt?.let { add("Last scan: ${formatDateTime(it)}") }
         }
@@ -3566,7 +3605,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val s = deps.settings
         val ix = library
         return buildList {
-            val home = s.treeRef?.let { root ->
+            val home = home()?.let { root ->
                 val name = deps.source.displayName(root)
                 if (offlineHomeSaid == root) "$name · not available" else name
             }
@@ -3806,7 +3845,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * and the main rows), so a cancel between them would leave them disagreeing.
      */
     private fun rescanFromSettings(section: SettingsSection = SettingsSection.LIBRARY, row: SettingsKind = SettingsKind.RESCAN) {
-        val root = deps.settings.treeRef ?: run { showPickFolder(); return }
+        val root = home() ?: run { showPickFolder(); return }
         dismissNotice()   // a tap reaches openSelected without onButton's dismissal; a notice raised by this scan still wins below
         val backToRow = { showSettingsOn(section, row) }
         loader.start(message = "Scanning library…", cancellable = false) {
@@ -3979,7 +4018,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (section == SettingsSection.IMPORT_RESULT) return showSettingsOn(SettingsSection.SAVES, SettingsKind.IMPORT_SAVES)   // past Import saves
         val parent = section.parent ?: return
         val opener = section.opener ?: return
-        val root = deps.settings.treeRef
+        val root = home()
         val stale = section == SettingsSection.DEFAULT_EMULATORS && root != null &&
             library?.fits(root, deps.settings.extraFolders, deps.settings.defaultTags) != true
         if (stale) rescanFromSettings(parent, opener) else showSettingsOn(parent, opener)
@@ -3990,7 +4029,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         libraryDirty = true
         deps.folderPicker.forget(extra.ref)
         refreshSettings()
-        val root = deps.settings.treeRef ?: return
+        val root = home() ?: return
         scope.launch {   // background re-index without Loading; Back then reads it (the lock orders the two)
             runCatching {
                 mutateIndex(IndexRefresh(counts = true)) { current ->
@@ -4657,7 +4696,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val s = _screen.value as? Screen.Systems ?: return
         if (s.menu != null) return
         scope.launch { rebuildMainRows(); swapMainRows() }   // Continue's save (its resume frame) may be new since the rows were built
-        val root = deps.settings.treeRef ?: return
+        val root = home() ?: return
         if (foregroundJob?.isActive == true) return   // a quick second onStart: the first check (or its scan) covers it
         foregroundJob = scope.launch {
             val ix = indexLock.withLock { library } ?: return@launch
@@ -6197,7 +6236,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * some storage is known offline (the reload's probe reads it again once it is back).
      */
     private fun libraryStale(): Boolean {
-        val root = deps.settings.treeRef ?: return true
+        val root = home() ?: return true
         val ix = library ?: return true
         return libraryDirty || !ix.fits(root, deps.settings.extraFolders, deps.settings.defaultTags) ||
             offlineHomeSaid != null || ix.offline.isNotEmpty()
@@ -6373,7 +6412,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
      * launcher, before it was answered, and when [installedCache] has a detected game. First setup asks it as a step instead.
      */
     private fun maybeAskAndroidGames() {
-        if (deps.launcher == null || deps.settings.treeRef == null || deps.settings.androidGamesAsked || firstSetup) return
+        if (deps.launcher == null || home() == null || deps.settings.androidGamesAsked || firstSetup) return
         if (_androidGamesAsk.value != null) return
         val s = _screen.value as? Screen.Systems ?: return
         if (s.menu != null) return

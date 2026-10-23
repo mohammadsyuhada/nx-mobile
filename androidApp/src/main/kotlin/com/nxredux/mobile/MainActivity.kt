@@ -33,6 +33,7 @@ import com.nxredux.mobile.runner.Posture
 import com.nxredux.mobile.storage.LibchdrSectors
 import com.nxredux.mobile.storage.NotificationAccess
 import com.nxredux.mobile.storage.AndroidLocalFiles
+import com.nxredux.mobile.storage.AndroidHomeLocator
 import com.nxredux.mobile.storage.FileRefs
 import com.nxredux.mobile.ui.FilePickMode
 import com.nxredux.mobile.ui.HOME_NOT_WRITABLE
@@ -379,6 +380,7 @@ class MainActivity : ComponentActivity(), FolderPicker {
                 localFiles = AndroidLocalFiles(AndroidLocalFiles.deviceVolumes(applicationContext)),
                 archiveHead = { ref, name, exts, max -> withContext(Dispatchers.IO) { Archives.head(applicationContext, ref, name, exts, max) } },
                 builtInSecondScreen = { secondScreens.builtInNow() != null },
+                homes = AndroidHomeLocator(this),
             ),
             scope,
         )

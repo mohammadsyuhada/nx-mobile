@@ -4,10 +4,10 @@ import android.content.Context
 import android.content.pm.PackageManager
 import com.nxredux.mobile.library.LibraryIndexCodec
 import com.nxredux.mobile.runner.RomCache
-import com.nxredux.mobile.settings.AndroidAppSettings
 import com.nxredux.mobile.settings.AppSettings
 import com.nxredux.mobile.storage.LibraryIndexStore
 import com.nxredux.mobile.storage.AndroidRomsSources
+import com.nxredux.mobile.storage.AndroidHomeLocator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,10 +34,11 @@ object AchievementsService {
 
     fun platform(context: Context): RaPlatform {
         val app = context.applicationContext
+        val homes = AndroidHomeLocator(app)
         return RaPlatform(
             AndroidRaStore(app), AndroidRaHttp("NXReduxMobile/${versionName(app)}"),
             AndroidRaHasher(app, AndroidRomsSources.of(app)), AndroidRaSigner, AndroidConnectivity(app),
-            RaHomeTree(AndroidRomsSources.of(app)) { AndroidAppSettings(app).treeRef },   // storage: an unmounted card is not available()
+            RaHomeTree(AndroidRomsSources.of(app)) { homes.current() },   // storage: an unmounted card is not available()
         )
     }
 

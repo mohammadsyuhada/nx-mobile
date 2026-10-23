@@ -13,6 +13,7 @@ import com.nxredux.mobile.storage.AndroidPrivateFiles
 import com.nxredux.mobile.storage.AndroidRefs
 import com.nxredux.mobile.storage.PrivateFiles
 import com.nxredux.mobile.storage.AndroidRomsSources
+import com.nxredux.mobile.storage.AndroidHomeLocator
 import com.swordfish.libretrodroid.NxLog
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -54,8 +55,9 @@ object ArtworkService {
 
     private fun build(app: Context, relay: HostRelay): ArtworkController {
         val settings = AndroidAppSettings(app)
-        // The engine is built once; the home is read from settings at each call so a new home folder is honoured.
-        val source = HomeRomsSource(AndroidRomsSources.of(app)) { settings.treeRef }
+        // The engine is built once; the home is read at each call so a new home folder (or the media fallback) is honoured.
+        val homes = AndroidHomeLocator(app)
+        val source = HomeRomsSource(AndroidRomsSources.of(app)) { homes.current() }
         val http = AndroidScraperHttp("nx-mobile/${versionName(app)}")
         val fitter = AndroidImageFitter()
         val hasher = AndroidRomHasher(AndroidRefs(app.contentResolver))

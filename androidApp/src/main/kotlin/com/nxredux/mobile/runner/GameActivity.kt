@@ -159,6 +159,7 @@ import com.nxredux.mobile.storage.AndroidLibraryIndexStore
 import com.nxredux.mobile.storage.AndroidRefs
 import com.nxredux.mobile.storage.AndroidRomsSources
 import com.nxredux.mobile.storage.DataRoot
+import com.nxredux.mobile.storage.AndroidHomeLocator
 import com.nxredux.mobile.test.NxTestResults
 import com.nxredux.mobile.tools.CheatsRoot
 import com.swordfish.libretrodroid.GLRetroView
@@ -1145,7 +1146,7 @@ class GameActivity : ComponentActivity() {
         // for the unpack (after the inner-file check below), since Use extracted file name names them after the
         // archive's inner file; the config and marker names never depend on the settings.
         paths = NxPaths(tag, coreId, romFileName, AndroidAppSettings(this).saveNaming)
-        val home = AndroidAppSettings(this).treeRef   // a SAF tree or a file ref: BiosImport picks the tree
+        val home = AndroidHomeLocator(this).current()   // a SAF tree or a file ref (the media home without access): BiosImport picks the tree
         // netplay: a session on a copy never touches the real saves: its session folder is its own.
         val sessionDir = if (np?.onCopy == true) NetplaySessionDir.dir(filesDir) else null
         gameTag = tag
