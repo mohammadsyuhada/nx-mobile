@@ -326,4 +326,37 @@ class RaControllerTest {
         val status = assertIs<RaState.Idle>(c.state.value).status
         assertEquals("Sign in again: RetroAchievements refused the saved login", status.lastError); assertEquals(1, status.pending)
     }
+
+    // The walks' reads and parses (a cached game's sets.json, the journal, the status read) run on [work], off the
+    // caller's (main) dispatcher; the download's page and the state end as they always did.
+    @Test fun the_download_and_the_sync_read_and_parse_on_the_work_context() = runTest {
+        val store = FakeRaStore(); val http = FakeRaHttp()
+        store.put(RaPaths.login(), """{"Success":true,"User":"me","Token":"tok","SoftcoreScore":1}""")
+        val cachedHash = "a".repeat(32)
+        store.put(RaPaths.sets(cachedHash), setsJson(0))
+        RaJournal(store, RaPaths.JOURNAL).append(RaUnlock("me", 1, cachedHash, 5L))
+        http.responders["gameid"] = { RaResponse(200, """{"Success":true,"GameID":0}""") }
+        http.on("awardachievement", body = """{"Success":true,"AchievementID":1,"Score":1,"SoftcoreScore":11}""")
+        http.on("login2", body = """{"Success":true,"User":"me","Token":"tok","SoftcoreScore":11}""")
+        val hasher = FakeRaHasher().apply { hashes["Zelda.gba"] = cachedHash; hashes["Metroid.gba"] = "b".repeat(32); hashes["Nope.gba"] = null }
+        val games = listOf("Zelda", "Metroid", "Nope").map { com.nxredux.mobile.library.IndexedGame("home", "d", "$it.gba", "r$it", "f", it) }
+        val index = com.nxredux.mobile.library.LibraryIndex(2, "home", emptyList(), emptyMap(), listOf(com.nxredux.mobile.library.IndexedSystem("GBA", "GBA", games = games)))
+        val offWork = ArrayList<String>()
+        store.beforeRead = { if (kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.CoroutineName]?.name != "work") offWork += "read" }
+        val settings = Settings().apply { raUsername = "me"; raToken = "tok" }; val messages = ArrayList<RaMessage>()
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val c = RaController(fakePlatform(store, http, hasher), settings, { index }, scope, now = { 1_000_000L }, work = kotlinx.coroutines.CoroutineName("work"))
+        scope.launch { c.messages.collect { messages += it } }
+        c.refresh(); advanceUntilIdle()
+        c.prefetchAll(); advanceUntilIdle()
+        val dl = assertNotNullDownload(c)
+        assertEquals(RaDownloadPhase.DONE, dl.phase); assertEquals(3, dl.finished)
+        assertEquals(listOf(RaDownloadItem("Nope", RaItemStatus.SKIPPED, RaPrefetch.UNREADABLE)), dl.items)
+        assertEquals(Triple(0, 1, 2), Triple(dl.cached, dl.unknown, dl.skipped))
+        assertTrue(RaPaths.sets(cachedHash) in store.reads)   // the cached game's sets.json was read (and parsed)
+        c.syncNow(); advanceUntilIdle()
+        assertEquals(RaMessage.Notice("Synced 1 unlock · 11 points"), messages.last())
+        assertEquals(RaState.Idle(RaStatus("me", 11, 0, 1_000_000L, 1)), c.state.value)
+        assertEquals(emptyList(), offWork)
+    }
 }

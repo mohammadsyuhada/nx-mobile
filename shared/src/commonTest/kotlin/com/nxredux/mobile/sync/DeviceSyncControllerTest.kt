@@ -24,8 +24,10 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DeviceSyncControllerTest {
+    // Every run goes through the parse and plan hops ([DeviceSyncController]'s work context): named, on the test's
+    // dispatcher, so the pages, files and virtual time are what they are with no hop at all.
     private fun TestScope.rig(p: FakeSyncPlatform = FakeSyncPlatform()) =
-        DeviceSyncController(backgroundScope as CoroutineScope, p) { testScheduler.currentTime }.also { it.open() }
+        DeviceSyncController(backgroundScope as CoroutineScope, p, work = kotlinx.coroutines.CoroutineName("work")) { testScheduler.currentTime }.also { it.open() }
 
     private fun DeviceSyncController.press(vararg b: NxButton) = b.forEach { onButton(it) }
     private val handheld = "192.168.1.10"

@@ -63,8 +63,11 @@ object DeviceSyncs {
             }
             // A throwing step must not take the process down (the controller turns expected failures into pages).
             val errors = CoroutineExceptionHandler { _, e -> NxLog.e(TAG, "device sync failed", e) }
-            // `now` only measures intervals (HELLO/READY pacing, the server's wait): the monotonic clock.
-            DeviceSyncController(CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + errors), platform) { SystemClock.elapsedRealtime() }
+            // `now` only measures intervals (HELLO/READY pacing, the server's wait): the monotonic clock. The listings'
+            // parses and the plans run on Default, the run itself on Main.
+            DeviceSyncController(CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + errors), platform, work = Dispatchers.Default) {
+                SystemClock.elapsedRealtime()
+            }
         }.also { controller = it }
     }
 }

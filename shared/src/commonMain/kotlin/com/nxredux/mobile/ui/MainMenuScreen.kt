@@ -214,7 +214,7 @@ fun MainMenuScreen(
                         )
                         MenuStyle.GRID -> slot { m ->
                             HomeScreen(
-                                rows, index.value(), onSelect = onSelect, onOpen = onOpen, onLongPress = onLongPress, onLayout = onHomeLayout, view = homeView,
+                                rows, selection, onSelect = onSelect, onOpen = onOpen, onLongPress = onLongPress, onLayout = onHomeLayout, view = homeView,
                                 continueInfo = continueInfo(), pinInfo = tileInfo, signedIn = raSignedIn, modifier = m, layoutKey = layoutKey, tabMenu = tabMenu,
                             )
                         }

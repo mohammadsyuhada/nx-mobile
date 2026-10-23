@@ -111,15 +111,25 @@ class SaveImporter(
     private val games by lazy { matcher.gamesByConsole() }
 
     /**
+     * A run's console folders, each listed and keyed by game ([SaveKeys.of]) the first time [take] lands a save there, so
+     * an import of thousands of saves into a folder of thousands lists and parses it once, not once per save. Every file
+     * [take] places or keeps aside goes into its folder's entry as it lands, so each save sees the folder as a fresh
+     * listing would; a failed swap drops the entry (listed again). Emptied when the run ends.
+     */
+    private val folders = HashMap<File, HashMap<SaveKey, MutableList<File>>>()
+
+    /**
      * Imports [source]; [retroArch] marks RetroArch's own folders, where a loose state outside a core folder (flat
      * `states/`) goes to its console's only core: elsewhere such a state can't tell its core and is skipped.
      */
     fun run(source: ImportFiles, retroArch: Boolean = false, onFile: (String) -> Unit = {}): ImportSummary {
         val staging = File(root, STAGING)
         staging.deleteRecursively()   // a run that died before its cleanup
+        folders.clear()
         try {
             return walk(source, staging, retroArch, onFile)
         } finally {
+            folders.clear()
             staging.deleteRecursively()
         }
     }
@@ -321,8 +331,8 @@ class SaveImporter(
         val incomingName = mapped.substringAfterLast('/')
         val key = SaveKeys.of(incomingName)?.takeIf { isConsoleFolderFile(mapped) }
         // The phone's copies of this game, whatever their name (newest first).
-        val mine = if (key == null) emptyList() else dir.listFiles().orEmpty()
-            .filter { it.isFile && SaveKeys.of(it.name) == key }.sortedByDescending { it.lastModified() }
+        val mine = if (key == null) emptyList() else keyed(dir)[key].orEmpty()
+            .filter { it.isFile }.sortedByDescending { it.lastModified() }
         // A Generic `<stem>.sav` under the MinUI format borrows the ROM name of a phone copy (`<rom.ext>.sav`, one this
         // import just wrote from another tag folder included) rather than keeping a name the format never uses. The
         // library's Roms folders are out of this importer's reach (private storage only), so they are not asked. An
@@ -350,7 +360,7 @@ class SaveImporter(
             }
             val mtime = e.mtime ?: now()   // no source time: the import's, never 1970
             when (action) {
-                ImportAction.NEW -> place(tmp, target, mtime, written)
+                ImportAction.NEW -> { place(tmp, target, mtime, written); landed(dir, target) }
                 ImportAction.REPLACE -> {
                     check(tmp.length() == written) { "short copy of ${target.name}" }
                     val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(now()))
@@ -364,8 +374,12 @@ class SaveImporter(
                         place(tmp, target, mtime, written)
                     } catch (t: Throwable) {
                         kept.forEach { (old, bak) -> bak.renameTo(old) }
+                        folders.remove(dir)   // a put-back may itself fail: the folder is listed again
                         throw t
                     }
+                    for ((old, _) in kept) SaveKeys.of(old.name)?.let { folders[dir]?.get(it)?.remove(old) }
+                    for ((_, bak) in kept) landed(dir, bak)
+                    landed(dir, target)
                 }
                 ImportAction.IDENTICAL, ImportAction.SKIP_OLDER -> Unit
             }
@@ -373,6 +387,19 @@ class SaveImporter(
         } finally {
             tmp.delete()
         }
+    }
+
+    /** [dir]'s files keyed by game ([folders]): listed on first use in the run. */
+    private fun keyed(dir: File): HashMap<SaveKey, MutableList<File>> = folders.getOrPut(dir) {
+        HashMap<SaveKey, MutableList<File>>().also { byKey ->
+            for (f in dir.listFiles().orEmpty()) if (f.isFile) SaveKeys.of(f.name)?.let { byKey.getOrPut(it) { ArrayList() } += f }
+        }
+    }
+
+    /** [f], just written in [dir], into the folder's keyed listing when the run has one (a name with no game key stays out). */
+    private fun landed(dir: File, f: File) {
+        val list = folders[dir]?.getOrPut(SaveKeys.of(f.name) ?: return) { ArrayList() } ?: return
+        list.remove(f); list += f
     }
 
     /**

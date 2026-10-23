@@ -61,7 +61,10 @@ sealed interface RaMessage {
 class RaController(
     private val platform: RaPlatform, private val settings: AppSettings, private val index: suspend () -> LibraryIndex?,
     private val scope: CoroutineScope, private val now: () -> Long,
-    /** Where the browser's reads and JSON parses run (Android: Dispatchers.Default); empty = the caller's dispatcher. */
+    /**
+     * Where the browser's reads and JSON parses run, and the sync's and prefetch's walks with them (Android:
+     * Dispatchers.Default); empty = the caller's dispatcher.
+     */
     private val work: CoroutineContext = EmptyCoroutineContext,
     /** The sync's and prefetch's request pacing and backoff waits (tests: instant). */
     private val delay: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
@@ -99,13 +102,14 @@ class RaController(
         scope.launch { val s = readStatus(idleStatus.lastError); if (!busy) _state.value = RaState.Idle(s) }
     }
 
-    private suspend fun readStatus(error: String? = null): RaStatus {
+    // The whole journal is parsed here (pending count), and the games folder listed: on [work], as the walks.
+    private suspend fun readStatus(error: String? = null): RaStatus = withContext(work) {
         val user = settings.raUsername.takeIf { settings.raToken != null && it.isNotBlank() }
         val login = platform.store.read(RaPaths.login())?.decodeToString()?.let { RaJson.parse(LoginBody.serializer(), it) }
         val pending = user?.let { journal.count(it) } ?: 0
         val lastSync = platform.store.read(RaPaths.LAST_SYNC)?.decodeToString()?.trim()?.toLongOrNull()?.let { it * 1000 }
         val cached = platform.store.list(RaPaths.GAMES).count { RaPaths.isHash(it) && platform.store.exists(RaPaths.sets(it)) }
-        return RaStatus(login?.User ?: user, if (user != null) login?.SoftcoreScore else null, pending, lastSync, cached, error)
+        RaStatus(login?.User ?: user, if (user != null) login?.SoftcoreScore else null, pending, lastSync, cached, error)
     }
 
     fun login(user: String, password: String) {
@@ -142,7 +146,7 @@ class RaController(
         _state.value = RaState.Syncing(RaSyncProgress(RaSyncStep.STARTING), previous)
         job = scope.launch {
             try {
-                val r = withProgress { report -> newSync().run(user, token) { p -> report(RaState.Syncing(p, previous)) } }
+                val r = onWork { post -> newSync().run(user, token) { p -> post { _state.value = RaState.Syncing(p, previous) } } }
                 emit(syncMessage(r))
                 _state.value = RaState.Idle(readStatus(if (r.stop == RaSyncStop.AUTH) RA_SIGN_IN_AGAIN else null))
             } catch (e: CancellationException) { throw e } catch (e: Exception) { _state.value = RaState.Idle(previous); emit(RaMessage.Failure("Sync failed: ${e::class.simpleName}")) }
@@ -162,15 +166,19 @@ class RaController(
         fun publish() { if (tracker === t && _state.value is RaState.Prefetching) _download.value = t.snapshot(if (paused.value) RaDownloadPhase.PAUSED else RaDownloadPhase.RUNNING) }
         job = scope.launch {
             try {
-                val idx = index() ?: run { _state.value = RaState.Idle(previous); _download.value = null; emit(RaMessage.Failure("No library index yet")); return@launch }
-                val r = RaPrefetch(platform.store, platform.http, platform.hasher, badges, fingerprints, delay).run(
-                    idx, user, token,
-                    gate = {
-                        if (paused.value) { publish(); paused.first { !it }; t.resumed(now()) }
-                    },
-                    onListed = { t.listed(it); publish() },
-                    onItem = { i, st, why -> t.item(i, st, why, now()); publish() },
-                ) { d, total, title -> _state.value = RaState.Prefetching(d, total, title, previous, paused.value) }
+                val idx = withContext(work) { index() } ?: run { _state.value = RaState.Idle(previous); _download.value = null; emit(RaMessage.Failure("No library index yet")); return@launch }
+                // The walk (every cached game's sets.json parsed, each folder's hashes.json) runs on [work]; the tracker,
+                // the page and the state change only here, in its order, so pause/resume/cancel never meet it mid-change.
+                val r = onWork { post ->
+                    RaPrefetch(platform.store, platform.http, platform.hasher, badges, fingerprints, delay).run(
+                        idx, user, token,
+                        gate = {
+                            if (paused.value) { post { publish() }; paused.first { !it }; val at = now(); post { t.resumed(at) } }
+                        },
+                        onListed = { names -> post { t.listed(names); publish() } },
+                        onItem = { i, st, why -> val at = now(); post { t.item(i, st, why, at); publish() } },
+                    ) { d, total, title -> post { _state.value = RaState.Prefetching(d, total, title, previous, paused.value) } }
+                }
                 val text = "Game data: ${r.cached} cached · ${r.unknown} without achievements · ${r.skipped} skipped"
                 val why = when (r.stop) { RaSyncStop.AUTH -> RA_SIGN_IN_AGAIN; RaSyncStop.BUSY -> RA_BUSY; RaSyncStop.REFUSED -> "refused by RetroAchievements"; null -> "no connection" }
                 emit(if (r.failed) RaMessage.Failure("$text (stopped: $why)") else RaMessage.Notice(text))
@@ -324,10 +332,22 @@ class RaController(
     /** Badge file name -> image model for [hash]'s game; empty when it has no folder yet. */
     suspend fun badgeListing(hash: String): Map<String, String> = badgeFolder(hash)?.let { platform.home.listing(it) } ?: emptyMap()
 
-    private suspend fun <T> withProgress(block: suspend (report: (RaState) -> Unit) -> T): T = coroutineScope {
-        val updates = Channel<RaState>(Channel.UNLIMITED)
-        launch { for (s in updates) { _state.value = s; yield() } }
-        try { block { updates.trySend(it) } } finally { updates.close() }
+    /**
+     * Runs [block] (a sync's or a download's walk) on [work], so its JSON parses stay off the main thread, while what it
+     * reports, [post]ed as actions, runs here on the caller's dispatcher in the order posted: the state, the download's
+     * tracker and its page are only ever changed from one thread, and a cancel there cancels the queue with the job, so no
+     * late update lands after it. Every posted action has run when this returns, or throws (a failed walk's last reports
+     * land before its failure is handled, as when the walk ran here); a cancel drops them.
+     */
+    private suspend fun <T> onWork(block: suspend (post: (() -> Unit) -> Unit) -> T): T = coroutineScope {
+        val updates = Channel<() -> Unit>(Channel.UNLIMITED)
+        val drain = launch { for (u in updates) { u(); yield() } }
+        try {
+            withContext(work) { block { updates.trySend(it) } }
+        } catch (e: Exception) {
+            if (e !is CancellationException) { updates.close(); drain.join() }
+            throw e
+        } finally { updates.close() }
     }
 
     private fun emit(m: RaMessage) { _messages.tryEmit(m) }
