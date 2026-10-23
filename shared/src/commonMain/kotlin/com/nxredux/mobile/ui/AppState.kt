@@ -1017,17 +1017,6 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
                 refreshGameInfo()   // a game was just played
             }
         }
-        // The app drawer or the games picker left (B, Home, a Settings category, anything): only the apps in Tools, the
-        // ones pinned on Home and the Android games console's keep their icons.
-        appIcons?.let { icons ->
-            scope.launch {
-                var inPicker = false
-                _screen.collect { s ->
-                    if (s is Screen.ToolApps) inPicker = true
-                    else if (inPicker) { inPicker = false; icons.retain(deps.settings.toolApps + pinnedAppIds() + androidConsoleIds()) }
-                }
-            }
-        }
         // The achievements panel follows the game list's selection, and closes off the game list.
         scope.launch { _selection.collect { followRaPanel(); followRaDetails(); followSecondList() } }
         scope.launch { _screen.collect { if (it !is Screen.Games) { closeRaPanel() } else { followRaPanel() }; followRaDetails(); followSecondList() } }
@@ -6370,6 +6359,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         loader.start {
             val apps = l.installedApps()
             installedCache = apps
+            // Icons stay cached between visits, so the drawer opens drawn; only uninstalled apps' go.
+            appIcons?.retain(apps.map { it.id })
             val console = deps.settings.androidConsoleApps.toSet()
             val (listed, shown) = when (pick) {
                 AppPick.TOOLS -> apps.filter { it.id !in console } to deps.settings.toolApps.toSet()

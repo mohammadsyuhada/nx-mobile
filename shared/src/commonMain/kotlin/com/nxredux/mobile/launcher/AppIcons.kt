@@ -10,8 +10,8 @@ import kotlinx.coroutines.async
  * Android apps' icons by id, each asked of [launcher] once: tiles look an app's icon up here instead of loading it on
  * every composition. The full-colour icon and the [mono] one (its [AppLauncher.silhouette]) are kept apart. A missing
  * one (null) is kept too; its tile draws the generic app glyph. Loads run in [scope], so
- * tiles asking at once share one, and one finishes for the cache when its tile leaves. [retain] drops the icons no
- * longer shown (the picker's), so the cache does not grow for the session. Main thread only.
+ * tiles asking at once share one, and one finishes for the cache when its tile leaves. They stay for the session, so
+ * the app drawer reopens drawn; [retain] drops uninstalled apps' icons. Main thread only.
  */
 class AppIcons(private val launcher: AppLauncher, private val scope: CoroutineScope) {
     private data class Key(val id: String, val mono: Boolean)

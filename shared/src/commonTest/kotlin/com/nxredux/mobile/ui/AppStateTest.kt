@@ -11457,22 +11457,23 @@ class AppStateTest {
         state.select(0); press(NxButton.LEFT); assertEquals(0, state.selection.value.index)   // the first tile: LEFT stops
     }
 
-    // Leaving the picker (B, or Home) keeps only the icons of the apps shown in Tools; the rest load again next time.
-    @Test fun leaving_the_picker_drops_unshown_app_icons() = runTest {
-        val settings = MemorySettings(ContentRef("Home")).apply { toolApps = listOf("b/B") }
+    // Icons stay cached after the drawer closes, so reopening it loads none again; an app uninstalled meanwhile loses its icon.
+    @Test fun the_drawer_keeps_app_icons_until_an_app_is_uninstalled() = runTest {
         val launcher = FakeLauncher(listOf(alpha, beta))
-        val state = state(settings, launcher = launcher)
+        val state = state(MemorySettings(ContentRef("Home")), launcher = launcher)
         state.load()
         val icons = assertNotNull(state.appIcons)
         openToolApps(state)
-        icons.load("a/A"); icons.load("b/B")                              // the picker's tiles
+        icons.load("a/A"); icons.load("b/B")                              // the drawer's tiles
         state.onButton(NxButton.B)
-        icons.load("a/A"); icons.load("b/B")
-        assertEquals(listOf("a/A", "b/B", "a/A"), launcher.iconAsks)      // Beta's (shown) kept, Alpha's dropped
         openToolApps(state)
+        icons.load("a/A"); icons.load("b/B")
+        assertEquals(listOf("a/A", "b/B"), launcher.iconAsks)             // reopened: both from the cache
         state.goHome()
-        icons.load("a/A")
-        assertEquals(listOf("a/A", "b/B", "a/A", "a/A"), launcher.iconAsks)
+        launcher.apps = listOf(beta)                                       // Alpha uninstalled
+        openToolApps(state)
+        assertNull(icons.cached("a/A")); icons.load("b/B")
+        assertEquals(listOf("a/A", "b/B"), launcher.iconAsks)
     }
 
     // Before the grid lays out (no column count yet) it steps as one column: UP/DOWN and LEFT/RIGHT go one tile.
@@ -11717,6 +11718,7 @@ class AppStateTest {
         assertEquals(listOf("a/A", "b/B", "g/G"), settings.androidConsoleApps)   // skipped, kept
     }
 
+    // Leaving the games picker keeps every installed app's icon, a console game's or not: none loads again.
     @Test fun leaving_the_picker_keeps_the_console_games_icons() = runTest {
         val launcher = FakeLauncher(listOf(gAlpha, gBeta, gGamma))
         val state = state(androidSettings("a/A"), src = androidSource, launcher = launcher)
@@ -11728,7 +11730,7 @@ class AppStateTest {
         state.onButton(NxButton.B)
         icons.load("a/A"); icons.load("b/B")
         assertEquals(1, launcher.iconAsks.count { it == "a/A" })   // a console game's icon is kept
-        assertEquals(2, launcher.iconAsks.count { it == "b/B" })   // an app in neither list is dropped
+        assertEquals(1, launcher.iconAsks.count { it == "b/B" })   // and so is an app in neither list
     }
 
     @Test fun opening_an_android_game_launches_it_and_records_nothing() = runTest {
