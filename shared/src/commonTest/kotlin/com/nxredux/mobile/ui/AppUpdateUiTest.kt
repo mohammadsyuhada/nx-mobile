@@ -326,6 +326,28 @@ class AppUpdateUiTest {
         assertEquals("Close Netplay to install", r.updater.hostBusy())
     }
 
+    @Test fun a_released_host_leaves_the_updater_waiting_as_off_the_menu() = runTest {
+        val r = rig()
+        r.state.releaseUpdater()
+        assertEquals("", r.updater.hostBusy())
+    }
+
+    @Test fun releasing_an_older_host_keeps_the_newer_one_and_a_menu_takes_it_back() = runTest {
+        val r = rig()
+        val newer = AppState(
+            AppDeps(Settings(), source, Runner(), Picker, compute = UnconfinedTestDispatcher(testScheduler), updater = r.updater),
+            CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+        )
+        assertEquals("", r.updater.hostBusy())                              // the newer instance hosts now (not loaded: off the menu)
+        val newerHook = r.updater.hostBusy
+        r.state.releaseUpdater()                                            // the older one goes: the newer one's hook stays
+        assertTrue(r.updater.hostBusy === newerHook)
+        newer.releaseUpdater()
+        assertEquals("", r.updater.hostBusy())
+        r.state.onForeground()                                              // the older one's main menu shows: it hosts again
+        assertNull(r.updater.hostBusy())
+    }
+
     private companion object {
         const val NOW = 100_000_000_000L
 

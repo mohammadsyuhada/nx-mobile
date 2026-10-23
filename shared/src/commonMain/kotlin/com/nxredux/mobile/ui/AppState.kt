@@ -1036,9 +1036,12 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     /** The RetroAchievements tool, for its screens (null on a platform without it). */
     val achievements: RaController? get() = deps.achievements
 
+    /** This instance's [UpdateController.hostBusy], kept so [releaseUpdater] lets go of it only while still the updater's. */
+    private val updateHost: () -> String? = { updateHostBusy() }
+
     init {
         deps.updater?.let { u ->
-            u.hostBusy = ::updateHostBusy
+            u.hostBusy = updateHost
             // About's update row follows the updater (a check, the download's percent, the wait), as the GPU row follows its
             // query; by its label, so a download's many progress reports redraw the page once a percent.
             scope.launch {
@@ -1747,7 +1750,14 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         maybeAskAndroidGames()
         // The menu came up (not rebuilt in place, which a count landing does while the install-permission screen is up):
         // the daily check, or a held install's retry. A foreground over it does the same ([onForeground]).
-        if (prev !is Screen.Systems && screen.menu == null && !firstSetup) deps.updater?.onMainMenu()
+        if (prev !is Screen.Systems && screen.menu == null && !firstSetup) updaterOnMainMenu()
+    }
+
+    /** The main menu showed: this instance becomes the updater's host again (another may have taken it, or let it go), then tells it. */
+    private fun updaterOnMainMenu() {
+        val u = deps.updater ?: return
+        u.hostBusy = updateHost
+        u.onMainMenu()
     }
 
     /**
@@ -4628,7 +4638,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (homeStatsAsked) refreshHomeStats()   // Home's stats too (before the menu's first show, that show computes them)
         val s = _screen.value as? Screen.Systems ?: return
         if (s.menu != null) return
-        if (!firstSetup) deps.updater?.onMainMenu()   // back over the menu (from a game, or the install-permission screen)
+        if (!firstSetup) updaterOnMainMenu()   // back over the menu (from a game, or the install-permission screen)
         scope.launch { rebuildMainRows(); swapMainRows() }   // Continue's save (its resume frame) may be new since the rows were built
         val root = deps.settings.treeRef ?: return
         if (foregroundJob?.isActive == true) return   // a quick second onStart: the first check (or its scan) covers it
@@ -6349,6 +6359,15 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         val u = deps.updater ?: return
         if (!updatePopupShows() || updateAskGuard?.isActive == true) return
         if (yes) u.update() else u.notNow()
+    }
+
+    /**
+     * The host is going away (its activity destroyed): the process-wide updater stops asking it, unless a newer instance
+     * took over. With no host, an install waits as off the main menu ("Ready to install") until a menu shows again.
+     */
+    fun releaseUpdater() {
+        val u = deps.updater ?: return
+        if (u.hostBusy === updateHost) u.hostBusy = { "" }
     }
 
     /** What the host holds an install for: the Netplay sheet; "" off the main menu (a game list may be about to launch); null when free. */

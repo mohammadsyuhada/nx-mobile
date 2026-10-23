@@ -693,6 +693,7 @@ class MainActivity : ComponentActivity(), FolderPicker {
         artworkHost?.let { ArtworkService.detach(it) }; artworkHost = null
         if (DeviceSyncs.onNeedNotificationPermission === syncNotifications) DeviceSyncs.onNeedNotificationPermission = null
         UsbCables.get(this).let { c -> if (c.askConsent === usbConsent) c.askConsent = {} }
+        if (::state.isInitialized) state.releaseUpdater()   // the updater outlives this activity; a newer instance's hook stays
         scope.cancel(); super.onDestroy()
     }
 
