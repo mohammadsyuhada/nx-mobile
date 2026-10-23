@@ -1,5 +1,7 @@
 package com.nxredux.mobile.storage
 
+import com.nxredux.mobile.settings.stepFrom
+
 /**
  * NX Redux Settings → System → Save format (nx-redux settings.c `save_format_*`): in its cycle order, with its label and
  * the value it stores in `minuisettings.txt` (`saveFormat=`), so a later onboarding or Device Sync copies it unchanged.
@@ -11,7 +13,7 @@ enum class SaveFormat(val stored: Int, val label: String, val compressed: Boolea
     GENERIC(2, "Generic", false);
 
     /** The format [by] places on, wrapping (LEFT -1, RIGHT and A +1). */
-    fun step(by: Int): SaveFormat = entries[(ordinal + by).mod(entries.size)]
+    fun step(by: Int): SaveFormat = entries.stepFrom(this, by)
 
     companion object {
         val DEFAULT = RETROARCH
@@ -27,7 +29,7 @@ enum class StateFormat(val stored: Int, val label: String, val compressed: Boole
     RETROARCH_COMPRESSED(3, "Retroarch (compressed)", true),
     RETROARCH(4, "Retroarch (uncompressed)", false);
 
-    fun step(by: Int): StateFormat = entries[(ordinal + by).mod(entries.size)]
+    fun step(by: Int): StateFormat = entries.stepFrom(this, by)
 
     companion object {
         val DEFAULT = RETROARCH

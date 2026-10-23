@@ -85,6 +85,7 @@
 
 #include "np_engine.h"
 #include "np_net.h"
+#include "np_tcp.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -188,14 +189,10 @@ static struct {
 	// Sockets (sock and listen_fd are used only by the engine thread; closed by it or by np_shutdown)
 	int sock;
 	int listen_fd;
-	int wake_rd;
-	int wake_wr;
+	np_wake wake;
 
 	// Outgoing queue, drained by the engine thread
-	uint8_t* out;
-	size_t out_len;
-	size_t out_off;
-	size_t out_cap;
+	np_outq out;
 
 	// Incoming
 	np_reader rd;
@@ -244,8 +241,7 @@ static void reset_fields(void) {
 	np.reason = NP_REASON_NONE;
 	np.sock = -1;
 	np.listen_fd = -1;
-	np.wake_rd = -1;
-	np.wake_wr = -1;
+	np_wake_init(&np.wake);
 	np_reader_reset(&np.rd);
 }
 
@@ -259,44 +255,12 @@ static void put_be16(uint8_t* b, uint16_t v) {
 }
 
 static void wake_thread(void) {
-	if (np.wake_wr >= 0) {
-		uint8_t b = 1;
-		ssize_t r = write(np.wake_wr, &b, 1); // non-blocking; a full pipe already means "awake"
-		(void)r;
-	}
+	np_wake_poke(&np.wake);
 }
 
-static void drain_wake(int fd) {
-	uint8_t b[64];
-	while (read(fd, b, sizeof(b)) > 0) {
-	}
-}
-
+// No cap: the state transfer queues the whole serialised core at once.
 static bool queue_bytes(const void* data, size_t n) {
-	if (np.out_off == np.out_len) {
-		np.out_off = 0;
-		np.out_len = 0;
-	}
-	if (np.out_len + n > np.out_cap) {
-		if (np.out_off > 0) {
-			memmove(np.out, np.out + np.out_off, np.out_len - np.out_off);
-			np.out_len -= np.out_off;
-			np.out_off = 0;
-		}
-		if (np.out_len + n > np.out_cap) {
-			size_t cap = np.out_cap ? np.out_cap : 4096;
-			while (cap < np.out_len + n)
-				cap *= 2;
-			uint8_t* p = (uint8_t*)realloc(np.out, cap);
-			if (!p)
-				return false;
-			np.out = p;
-			np.out_cap = cap;
-		}
-	}
-	memcpy(np.out + np.out_len, data, n);
-	np.out_len += n;
-	return true;
+	return np_outq_push(&np.out, data, n, 0);
 }
 
 static bool send_packet(uint8_t cmd, uint32_t frame, const void* data, uint16_t size) {
@@ -576,28 +540,19 @@ static np_reason socket_error_reason(int err) {
 
 // Write as much of the queue as the socket takes right now (never blocks).
 static void flush_queue(int fd, uint64_t now) {
-	while (np.out_off < np.out_len) {
-		ssize_t s = np_net_send_some(fd, np.out + np.out_off, np.out_len - np.out_off);
-		if (s > 0) {
-			np.out_off += (size_t)s;
-			if (np.phase == NP_SYNCING && np.sync_timer)
-				np.sync_t0 = now; // progress
-		} else if (s == 0) {
-			break;
-		} else {
-			int err = errno;
-			np.out_off = np.out_len = 0;
-			end_session(NP_ENDED, socket_error_reason(err), false);
-			break;
-		}
+	bool wrote;
+	np_outq_result res = np_outq_flush(&np.out, fd, &wrote);
+	if (wrote && np.phase == NP_SYNCING && np.sync_timer)
+		np.sync_t0 = now; // progress
+	if (res == NP_OUTQ_ERROR) {
+		int err = errno;
+		np_outq_clear(&np.out);
+		end_session(NP_ENDED, socket_error_reason(err), false);
 	}
-	if (np.out_off == np.out_len) {
-		np.out_off = np.out_len = 0;
-		if (np.out_cap > (1u << 20)) { // drop the state-transfer sized buffer
-			free(np.out);
-			np.out = NULL;
-			np.out_cap = 0;
-		}
+	if (!np_outq_pending(&np.out)) {
+		np_outq_clear(&np.out);
+		if (np.out.cap > (1u << 20)) // drop the state-transfer sized buffer
+			np_outq_free(&np.out);
 	}
 }
 
@@ -609,65 +564,19 @@ static bool should_quit(void) {
 	return np.stop || !is_live();
 }
 
-// Host: accepts only a connection from `peer` (the client the control channel agreed on). A connection from any other
-// address is closed at once and the host keeps listening (still CONNECTING).
-static int accept_one(int listen_fd, int wake_fd, struct in_addr peer) {
-	for (;;) {
-		pthread_mutex_lock(&np_mutex);
-		bool quit = should_quit();
-		pthread_mutex_unlock(&np_mutex);
-		if (quit)
-			return -1;
-
-		struct pollfd p[2] = {{listen_fd, POLLIN, 0}, {wake_fd, POLLIN, 0}};
-		int r = poll(p, 2, 100);
-		if (r < 0 && errno != EINTR)
-			return -1;
-		if (p[1].revents & POLLIN)
-			drain_wake(wake_fd);
-		if (p[0].revents & POLLIN) {
-			struct sockaddr_in from;
-			socklen_t from_len = sizeof(from);
-			memset(&from, 0, sizeof(from));
-			int fd = accept(listen_fd, (struct sockaddr*)&from, &from_len);
-			if (fd < 0)
-				continue;
-			if (from.sin_family != AF_INET || from.sin_addr.s_addr != peer.s_addr) {
-				char got[INET_ADDRSTRLEN] = "?";
-				inet_ntop(AF_INET, &from.sin_addr, got, sizeof(got));
-				NP_LOG("refused a connection from %s (not the agreed peer)", got);
-				close(fd);
-				continue;
-			}
-			np_net_configure_tcp(fd);
-			if (np_net_set_nonblocking(fd) != 0) {
-				close(fd);
-				continue;
-			}
-			return fd;
-		}
-	}
+// np_tcp's loops ask between waits, taking the mutex themselves.
+static bool quit_locked(void) {
+	pthread_mutex_lock(&np_mutex);
+	bool quit = should_quit();
+	pthread_mutex_unlock(&np_mutex);
+	return quit;
 }
 
 static int connect_peer(const char* ip, uint16_t port, int wake_fd) {
-	for (int attempt = 0; attempt < NP_CONNECT_ATTEMPTS; attempt++) {
-		pthread_mutex_lock(&np_mutex);
-		bool quit = should_quit();
-		pthread_mutex_unlock(&np_mutex);
-		if (quit)
-			return -1;
-
-		int fd = np_net_connect(ip, port, NP_CONNECT_TIMEOUT_MS, wake_fd);
-		if (fd >= 0)
-			return fd;
-		if (fd == -2) {
-			drain_wake(wake_fd);
-			continue;
-		}
-		struct pollfd p = {wake_fd, POLLIN, 0};
-		if (poll(&p, 1, NP_CONNECT_RETRY_MS) > 0)
-			drain_wake(wake_fd);
-	}
+	int fd = np_tcp_connect_retry(ip, port, wake_fd, NP_CONNECT_ATTEMPTS, NP_CONNECT_TIMEOUT_MS, NP_CONNECT_RETRY_MS,
+								  quit_locked);
+	if (fd != NP_TCP_CONNECT_GAVE_UP)
+		return fd;
 	pthread_mutex_lock(&np_mutex);
 	NP_LOG("Connection failed (%s:%u)", ip, port);
 	end_session(NP_FAILED, NP_REASON_CONNECT, false);
@@ -680,7 +589,7 @@ static void run_session(int fd, int wake_fd) {
 		pthread_mutex_lock(&np_mutex);
 		check_timers(now_ms());
 		bool quit = should_quit();
-		bool want_out = np.out_off < np.out_len;
+		bool want_out = np_outq_pending(&np.out);
 		pthread_mutex_unlock(&np_mutex);
 		if (quit)
 			return;
@@ -694,7 +603,7 @@ static void run_session(int fd, int wake_fd) {
 			return;
 		}
 		if (p[1].revents & POLLIN)
-			drain_wake(wake_fd);
+			np_wake_drain(wake_fd);
 
 		if (p[0].revents & (POLLIN | POLLHUP | POLLERR)) {
 			ssize_t n = recv(fd, rx_scratch, sizeof(rx_scratch), 0);
@@ -717,35 +626,21 @@ static void run_session(int fd, int wake_fd) {
 	}
 }
 
+// close_session's flush step (engine thread, takes the mutex).
+static bool flush_pending(int fd) {
+	pthread_mutex_lock(&np_mutex);
+	flush_queue(fd, now_ms());
+	bool pending = np_outq_pending(&np.out);
+	pthread_mutex_unlock(&np_mutex);
+	return pending;
+}
+
 // Send what is still queued (DISCONNECT), half-close, give the peer a moment to close too, then close.
 static void close_session(int fd) {
-	uint64_t t0 = np_net_now_ms();
-	for (;;) {
-		pthread_mutex_lock(&np_mutex);
-		flush_queue(fd, now_ms());
-		bool pending = np.out_off < np.out_len;
-		pthread_mutex_unlock(&np_mutex);
-		if (!pending || np_net_now_ms() - t0 >= NP_FINAL_FLUSH_MS)
-			break;
-		struct pollfd p = {fd, POLLOUT, 0};
-		poll(&p, 1, NP_POLL_MS);
-	}
-	shutdown(fd, SHUT_WR);
-	t0 = np_net_now_ms();
-	for (;;) {
-		uint64_t waited = np_net_now_ms() - t0;
-		if (waited >= NP_LINGER_MS)
-			break;
-		struct pollfd p = {fd, POLLIN, 0};
-		if (poll(&p, 1, (int)(NP_LINGER_MS - waited)) <= 0)
-			break;
-		ssize_t n = recv(fd, rx_scratch, sizeof(rx_scratch), 0);
-		if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR))
-			break;
-	}
+	np_tcp_final_flush(fd, flush_pending, NP_FINAL_FLUSH_MS, NP_POLL_MS, NP_LINGER_MS, rx_scratch, sizeof(rx_scratch));
 	pthread_mutex_lock(&np_mutex);
 	np.sock = -1;
-	np.out_off = np.out_len = 0;
+	np_outq_clear(&np.out);
 	pthread_mutex_unlock(&np_mutex);
 	close(fd);
 }
@@ -760,10 +655,12 @@ static void* engine_thread(void* arg) {
 	struct in_addr peer = np.peer_addr;
 	uint16_t port = np.port;
 	int listen_fd = np.listen_fd;
-	int wake_fd = np.wake_rd;
+	int wake_fd = np.wake.rd;
 	pthread_mutex_unlock(&np_mutex);
 
-	int fd = role == NP_ROLE_HOST ? accept_one(listen_fd, wake_fd, peer) : connect_peer(ip, port, wake_fd);
+	// Host: only the client the control channel agreed on; any other address is closed and the host listens on.
+	int fd = role == NP_ROLE_HOST ? np_tcp_accept_from(listen_fd, wake_fd, peer, quit_locked, "")
+								  : connect_peer(ip, port, wake_fd);
 
 	pthread_mutex_lock(&np_mutex);
 	if (np.listen_fd >= 0) { // host: accept only one connection
@@ -804,45 +701,25 @@ int np_start(np_role role, const char* peer_ip, uint16_t port, np_clock_fn clock
 	np.clock = clock;
 
 	// Both roles name the peer (dotted IPv4): the client connects to it, the host accepts only it.
-	if (!peer_ip || strlen(peer_ip) >= sizeof(np.peer_ip) || inet_pton(AF_INET, peer_ip, &np.peer_addr) != 1) {
+	if (!np_tcp_parse_peer(peer_ip, sizeof(np.peer_ip), &np.peer_addr)) {
 		NP_LOG("Invalid IP address");
 		reset_fields();
 		pthread_mutex_unlock(&np_mutex);
 		return -1;
 	}
 	memcpy(np.peer_ip, peer_ip, strlen(peer_ip) + 1);
-	if (role == NP_ROLE_HOST) {
-		np.listen_fd = np_net_listen(port);
-		if (np.listen_fd < 0) {
-			pthread_mutex_unlock(&np_mutex);
-			return -1;
-		}
-	}
 
-	int wake[2];
-	if (pipe(wake) != 0) {
-		if (np.listen_fd >= 0)
-			close(np.listen_fd);
-		reset_fields();
+	// The thread takes np_mutex first, so it sees the phase set below. A listener that cannot open leaves the fields as
+	// they are (still IDLE, not started; the next np_start resets them), as before the move to np_tcp; np_link resets.
+	int rc = np_tcp_start(role == NP_ROLE_HOST, port, &np.listen_fd, &np.wake, &np.thread, engine_thread);
+	if (rc != 0) {
+		if (rc == NP_TCP_START_SETUP)
+			reset_fields();
 		pthread_mutex_unlock(&np_mutex);
 		return -1;
 	}
-	np_net_set_nonblocking(wake[0]);
-	np_net_set_nonblocking(wake[1]);
-	np.wake_rd = wake[0];
-	np.wake_wr = wake[1];
-
 	np.phase = NP_CONNECTING;
 	np.started = true;
-	if (pthread_create(&np.thread, NULL, engine_thread, NULL) != 0) {
-		if (np.listen_fd >= 0)
-			close(np.listen_fd);
-		close(wake[0]);
-		close(wake[1]);
-		reset_fields();
-		pthread_mutex_unlock(&np_mutex);
-		return -1;
-	}
 	np.thread_started = true;
 	NP_LOG(role == NP_ROLE_HOST ? "hosting on port %u" : "joining on port %u", port);
 	pthread_mutex_unlock(&np_mutex);
@@ -1104,15 +981,7 @@ void np_shutdown(void) {
 		pthread_join(thread, NULL);
 
 	pthread_mutex_lock(&np_mutex);
-	if (np.sock >= 0)
-		close(np.sock);
-	if (np.listen_fd >= 0)
-		close(np.listen_fd);
-	if (np.wake_rd >= 0)
-		close(np.wake_rd);
-	if (np.wake_wr >= 0)
-		close(np.wake_wr);
-	free(np.out);
+	np_tcp_release(&np.sock, &np.listen_fd, &np.wake, &np.out);
 	free(np.state_buf);
 	reset_fields();
 	pthread_mutex_unlock(&np_mutex);

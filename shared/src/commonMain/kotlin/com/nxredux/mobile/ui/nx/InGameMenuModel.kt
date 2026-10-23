@@ -15,6 +15,7 @@ import com.nxredux.mobile.options.CoreOptionFilter
 import com.nxredux.mobile.options.FrontendOption
 import com.nxredux.mobile.options.FrontendOptions
 import com.nxredux.mobile.options.ShaderOptions
+import com.nxredux.mobile.settings.stepFrom
 import com.nxredux.mobile.shaders.ShaderParam
 
 enum class MenuAction { CONTINUE, QUIT, SAVE_AND_QUIT, QUIT_ONLY, LEAVE_NETPLAY, SAVE_FOR_CONSOLE, SAVE_FOR_GAME, RESTORE_DEFAULTS, RESET_SHADER_PARAMS }
@@ -411,11 +412,15 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
      */
     fun setFrontend(values: Map<String, String>, overlays: List<String>, locked: Set<String>, tag: String = "", overlayAvailable: Boolean = true) {
         val tagChanged = tag != frontendTag
+        val hadConsoleRows = consoleRows().isNotEmpty()
         frontendTag = tag
         this.overlayAvailable = overlayAvailable
         frontend = FrontendOptions.fromConfig(values, tag)
         this.overlays = overlays
         frontendLocked = locked
+        // A new lock set (Restore defaults, the Wii's sensors once known) or console may lock or free every Console
+        // Settings row: an open Options page offers the row only while it leads somewhere, never to an empty page.
+        if (consoleRows().isNotEmpty() != hadConsoleRows) rebuildOptions()
         refreshFrontendPages()
         if (tagChanged) fixPanel()   // the panel's header falls back to the console's logo
     }
@@ -500,8 +505,15 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         refreshRoot()
         if (!changed) return
         // Console Settings may come or go with its Bottom screen row (a console whose other rows are all locked).
-        state = state.copy(stack = state.stack.map { p -> if (p.kind == PageKind.Options) rebuilt(p, optionsPage()) else p })
+        rebuildOptions()
         refreshFrontendPages()
+    }
+
+    /** Open Options pages built again (Console Settings offered or not), keeping the selected row and the status footer. */
+    private fun rebuildOptions() {
+        state = state.copy(stack = state.stack.map { p ->
+            if (p.kind == PageKind.Options) rebuilt(p, optionsPage()).copy(footer = statusText()) else p
+        })
     }
 
     private fun changeDisc(delta: Int): MenuEffect? {
@@ -524,14 +536,8 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
 
     private fun playersPage() = MenuPage(
         PageKind.Players, PLAYERS_LABEL,
-        playerSlots.mapIndexed { i, s ->
-            val value = when {
-                s.key == null -> EMPTY
-                s.connected -> s.name
-                else -> "${s.name} (disconnected)"
-            }
-            MenuRow.Option("Player ${i + 1}", "$PLAYER_KEY_PREFIX$i", value)
-        },
+        // Worded as the game panel words a slot (one wording for both).
+        playerSlots.mapIndexed { i, s -> MenuRow.Option("Player ${i + 1}", "$PLAYER_KEY_PREFIX$i", GamePanelModel.playerValue(s)) },
         footer = PLAYERS_FOOTER,
     )
 
@@ -670,7 +676,7 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
     private fun stepTab(delta: Int) {
         val tabs = panelTabs()
         if (tabs.size < 2) return
-        val next = tabs[(tabs.indexOf(panelTab()) + delta).mod(tabs.size)]
+        val next = tabs.stepFrom(panelTab(), delta)
         val focus = when (state.panelFocus) {
             is PanelFocus.Item -> if (panelItemCount(next) > 0) PanelFocus.Item(0) else PanelFocus.Tabs
             else -> state.panelFocus
@@ -1115,7 +1121,6 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         const val PLAYER_KEY_PREFIX = "nx:player:"
         // Presses while the menu is open never claim a slot.
         const val PLAYERS_FOOTER = "Close the menu, then press a button\non a new controller to join."
-        private const val EMPTY = "Empty"
         const val CHEATS_LABEL = "Cheats"
         const val CHEATS_INFO = "Toggle cheats for this game"
         const val CHEAT_KEY_PREFIX = "cheat:"

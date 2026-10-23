@@ -1,6 +1,7 @@
 package com.nxredux.mobile.ui.nx
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -97,7 +98,9 @@ private const val MOST_PLAYED = "Most played"
  * section is selected. With the tab row hidden the body starts at the screen's top and the strip moves into a header
  * there ([homeStatsHeader]).
  *
- * [rows] are the Home tab's ([homeTabRows]) and [selectedIndex] indexes them. [view] says how many are the top section,
+ * [rows] are the Home tab's ([homeTabRows]) and [selection] indexes them, read only in small scopes (the scroll's
+ * follow, each tile's lit state; RowItems' pattern), so a selection step recomposes the scroll and the two tiles whose
+ * lit state changed, never the page, its board or its other tiles. [view] says how many are the top section,
  * the counts, and the frame and strip lines they were built for; the board comes from those, so rows built for an older
  * frame stay on their own board until the rebuild arrives. Navigation and focus memory live in AppState: this draws the
  * selection and the scroll. A tap opens an item ([nxTap]; a game or pinned tool takes a tap to select and one more to
@@ -109,7 +112,7 @@ private const val MOST_PLAYED = "Most played"
  */
 @Composable
 internal fun HomeScreen(
-    rows: List<MainRow>, selectedIndex: Int, view: HomeView,
+    rows: List<MainRow>, selection: () -> Int, view: HomeView,
     onSelect: (Int) -> Unit, onOpen: (Int) -> Unit, onLongPress: ((Int) -> Unit)?,
     onLayout: (HomeFrame) -> Unit,
     continueInfo: List<InfoLine>, pinInfo: (Int) -> List<InfoLine>, signedIn: Boolean,
@@ -144,15 +147,14 @@ internal fun HomeScreen(
         }
         // Continue's info, kept as one list while it is equal, so a focus move elsewhere lets the card skip.
         val contInfo = remember(continueInfo, signedIn) { timeOnly(homeInfo(continueInfo, signedIn)) }
-        val sel = selectedIndex
-        val tap by rememberUpdatedState(sel)
+        val tap by rememberUpdatedState(selection)   // read when a tap lands
         val select by rememberUpdatedState(onSelect)
         val open by rememberUpdatedState(onOpen)
         val tapOpens by rememberUpdatedState(LocalNxTapOpens.current)   // Continue, pinned games and pinned tools take two taps
         val longPress by rememberUpdatedState(onLongPress)
         fun Modifier.taps(i: Int, menu: Boolean): Modifier = pointerInput(i, menu && onLongPress != null) {
             detectTapGestures(
-                onTap = { nxTap(i, i == tap, tapOpens(i), select, open) },
+                onTap = { nxTap(i, i == tap(), tapOpens(i), select, open) },
                 onLongPress = if (menu && longPress != null) { _ -> longPress?.invoke(i) } else null,
             )
         }
@@ -162,19 +164,10 @@ internal fun HomeScreen(
         // from where it is (a drag included); a new board snaps; a rows swap on the same board (stats, recents) keeps
         // it ([homeScrollStep]).
         val tiles = b.rowGames + b.shelfTiles.size   // the row tiles the board has rects for: pins, then the shelves'
-        val selected = (sel - topCount).takeIf { it in pins.indices && it < tiles }?.let { homeScrollRect(b, it) }
         val pageH = b.pageH
         val scroll = remember { Animatable(0f) }
         val last = remember { arrayOfNulls<Any>(2) }   // the board and the selected rect the scroll last answered
-        LaunchedEffect(scroll, b, selected, pageH) {
-            val step = homeScrollStep(scroll.targetValue, last[0] as HomeBoard?, b, last[1] as HomeRect?, selected, pageH, h)
-            last[0] = b; last[1] = selected
-            when (step.move) {
-                HomeScrollMove.SNAP -> scroll.snapTo(step.to)
-                // KEEP re-issues the ease to its own target: a swap mid-move must not stop it halfway.
-                HomeScrollMove.EASE, HomeScrollMove.KEEP -> if (step.to != scroll.value) scroll.animateTo(step.to, tween(SCROLL_MS, easing = NxMenuEasing))
-            }
-        }
+        HomeScrollFollow(scroll, last, b, selection, topCount, pins.size, tiles, pageH, h)
         val maxScroll by rememberUpdatedState(max(0f, pageH - h))
         val scope = rememberCoroutineScope()
         val scrolled by remember(scroll) { derivedStateOf { scroll.value > 0.5f } }
@@ -218,14 +211,18 @@ internal fun HomeScreen(
                 }
                 rows.take(topCount).forEachIndexed { i, row ->
                     val at = b.top.getOrNull(i)?.rect ?: return@forEachIndexed
-                    val lit = i == sel
                     when (row) {
-                        is MainRow.Continue -> ContinueCard(row, lit, contInfo, portrait, Modifier.at(at).taps(i, menu = true))
-                        MainRow.PickAGame -> PickCard(lit, portrait, at.h, Modifier.at(at).taps(i, menu = tabMenu))
-                        is MainRow.PinnedTool -> (topTiles.getOrNull(i) as? GridTile.Tool)?.let { HomeToolSquare(it, lit, at.w, Modifier.at(at).taps(i, menu = true)) }
-                        is MainRow.MoreTools -> HomeMoreSquare(row.count, lit, at.w, Modifier.at(at).taps(i, menu = tabMenu))
+                        is MainRow.Continue -> { val m = Modifier.at(at).taps(i, menu = true); HomeLit(i, selection) { lit -> ContinueCard(row, lit, contInfo, portrait, m) } }
+                        MainRow.PickAGame -> { val m = Modifier.at(at).taps(i, menu = tabMenu); HomeLit(i, selection) { lit -> PickCard(lit, portrait, at.h, m) } }
+                        is MainRow.PinnedTool -> (topTiles.getOrNull(i) as? GridTile.Tool)?.let { t ->
+                            val m = Modifier.at(at).taps(i, menu = true); HomeLit(i, selection) { lit -> HomeToolSquare(t, lit, at.w, m) }
+                        }
+                        is MainRow.MoreTools -> { val m = Modifier.at(at).taps(i, menu = tabMenu); HomeLit(i, selection) { lit -> HomeMoreSquare(row.count, lit, at.w, m) } }
                         // An inline game (the wide and large faces) is a pinned game's tile at its rect, taps and all.
-                        is MainRow.Pin -> topTiles.getOrNull(i)?.let { HomePinTile(it, lit, { pinInfo(i) }, signedIn, portrait, Modifier.at(at).taps(i, menu = true), always = true) }
+                        is MainRow.Pin -> topTiles.getOrNull(i)?.let { t ->
+                            val m = Modifier.at(at).taps(i, menu = true)
+                            HomeLit(i, selection) { lit -> HomePinTile(t, lit, { pinInfo(i) }, signedIn, portrait, m, always = true) }
+                        }
                         else -> Unit
                     }
                 }
@@ -236,8 +233,9 @@ internal fun HomeScreen(
                     val i = topCount + k
                     val lines = if (k >= b.rowGames) 2 else null
                     val console = (row as? MainRow.Shelf)?.takeIf { it.shelf == HomeShelf.NEW || it.shelf == HomeShelf.NOT_STARTED }?.entry?.system?.displayName
-                    pinTiles.getOrNull(k)?.let {
-                        HomePinTile(it, i == sel, { pinInfo(i) }, signedIn, portrait, Modifier.at(homeBoardTile(b, k)).taps(i, menu = true), lines, console, always = row is MainRow.Pin)
+                    pinTiles.getOrNull(k)?.let { t ->
+                        val m = Modifier.at(homeBoardTile(b, k)).taps(i, menu = true)
+                        HomeLit(i, selection) { lit -> HomePinTile(t, lit, { pinInfo(i) }, signedIn, portrait, m, lines, console, always = row is MainRow.Pin) }
                     }
                 }
             }
@@ -262,6 +260,38 @@ internal fun HomeScreen(
             }
         }
     }
+}
+
+/**
+ * The scroll's answer to a new selection or board ([homeScrollStep]): the selected row tile's rect ([homeScrollRect]; the
+ * top section's none), eased or snapped to. Its own scope, as [FollowSelection]: only this reads [selection] for the
+ * scroll, so a step recomposes it alone. [last] holds the board and the selected rect the scroll last answered.
+ */
+@Composable
+private fun HomeScrollFollow(
+    scroll: Animatable<Float, AnimationVector1D>, last: Array<Any?>, b: HomeBoard, selection: () -> Int,
+    topCount: Int, pinCount: Int, tiles: Int, pageH: Float, h: Float,
+) {
+    val selected = (selection() - topCount).takeIf { it in 0 until pinCount && it < tiles }?.let { homeScrollRect(b, it) }
+    LaunchedEffect(scroll, b, selected, pageH) {
+        val step = homeScrollStep(scroll.targetValue, last[0] as HomeBoard?, b, last[1] as HomeRect?, selected, pageH, h)
+        last[0] = b; last[1] = selected
+        when (step.move) {
+            HomeScrollMove.SNAP -> scroll.snapTo(step.to)
+            // KEEP re-issues the ease to its own target: a swap mid-move must not stop it halfway.
+            HomeScrollMove.EASE, HomeScrollMove.KEEP -> if (step.to != scroll.value) scroll.animateTo(step.to, tween(SCROLL_MS, easing = NxMenuEasing))
+        }
+    }
+}
+
+/**
+ * [content] lit while [selection] is [i], through a derived state of its own: a selection step recomposes only the
+ * tiles whose lit state changed (the one left and the one reached), never the page or the others.
+ */
+@Composable
+private fun HomeLit(i: Int, selection: () -> Int, content: @Composable (lit: Boolean) -> Unit) {
+    val lit by remember(i, selection) { derivedStateOf { selection() == i } }
+    content(lit)
 }
 
 /** The room the header's strip leaves at its right for the Recent and Search icons (two 44 dp targets). */

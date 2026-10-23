@@ -6,6 +6,12 @@ import com.nxredux.mobile.storage.SaveFormat
 import com.nxredux.mobile.storage.SaveNaming
 import com.nxredux.mobile.storage.StateFormat
 
+/**
+ * The value [by] places from [current] in this list, wrapping (LEFT -1, RIGHT and A +1): every cycled setting steps
+ * through its values this way. A [current] not in the list counts as one before the first, so +1 lands on the first.
+ */
+fun <T> List<T>.stepFrom(current: T, by: Int): T = this[(indexOf(current) + by).mod(size)]
+
 /** The portrait virtual pad's palette: CHARCOAL (the dark default) or RETRO (light-grey body, magenta face buttons). */
 enum class PadTheme {
     CHARCOAL, RETRO;
@@ -21,7 +27,7 @@ enum class PadVibration(val label: String) {
     OFF("Off"), LIGHT("Light"), MEDIUM("Medium"), STRONG("Strong");
 
     /** The level [by] places on, wrapping (LEFT -1, RIGHT and A +1). */
-    fun step(by: Int): PadVibration = entries[(ordinal + by).mod(entries.size)]
+    fun step(by: Int): PadVibration = entries.stepFrom(this, by)
 
     companion object {
         val DEFAULT = LIGHT
@@ -40,7 +46,7 @@ enum class GameRumble(val label: String) {
     OFF("Off"), LIGHT("Light"), MEDIUM("Medium"), STRONG("Strong");
 
     /** The level [by] places on, wrapping (LEFT -1, RIGHT and A +1). */
-    fun step(by: Int): GameRumble = entries[(ordinal + by).mod(entries.size)]
+    fun step(by: Int): GameRumble = entries.stepFrom(this, by)
 
     companion object {
         val DEFAULT = MEDIUM
@@ -85,7 +91,7 @@ enum class ConsoleArt(val label: String) {
     CONTROLLER("Controller"), BACKGROUND("Background"), NONE("None");
 
     /** The value [by] places on, wrapping (LEFT -1, RIGHT and A +1). */
-    fun step(by: Int): ConsoleArt = entries[(ordinal + by).mod(entries.size)]
+    fun step(by: Int): ConsoleArt = entries.stepFrom(this, by)
 
     companion object {
         val DEFAULT = CONTROLLER
@@ -106,7 +112,7 @@ enum class GameListArt(val label: String) {
     val boxed: Boolean get() = this != SCREENSHOT && this != NONE
 
     /** The value [by] places on, wrapping (LEFT -1, RIGHT and A +1). */
-    fun step(by: Int): GameListArt = entries[(ordinal + by).mod(entries.size)]
+    fun step(by: Int): GameListArt = entries.stepFrom(this, by)
 
     companion object {
         val DEFAULT = SCREENSHOT
@@ -121,7 +127,7 @@ enum class BackdropArt(val label: String) {
     BOX3D("3D box art"), BOX2D("2D box art"), WHEEL("Wheel");
 
     /** The value [by] places on, wrapping (LEFT -1, RIGHT and A +1). */
-    fun step(by: Int): BackdropArt = entries[(ordinal + by).mod(entries.size)]
+    fun step(by: Int): BackdropArt = entries.stepFrom(this, by)
 
     companion object {
         val DEFAULT = BOX3D
@@ -140,7 +146,7 @@ enum class OptionTextSize(val label: String, val ofListLabel: Float) {
     LARGE("Large", 0.8f), SMALL("Small", 0.6f);
 
     /** The value [by] places on, wrapping (LEFT -1, RIGHT and A +1). */
-    fun step(by: Int): OptionTextSize = entries[(ordinal + by).mod(entries.size)]
+    fun step(by: Int): OptionTextSize = entries.stepFrom(this, by)
 
     companion object {
         val DEFAULT = LARGE
@@ -154,7 +160,7 @@ enum class SwitcherLayout(val label: String) {
     FULL("Full screen"), LIST("List");
 
     /** The value [by] places on, wrapping (LEFT -1, RIGHT and A +1). */
-    fun step(by: Int): SwitcherLayout = entries[(ordinal + by).mod(entries.size)]
+    fun step(by: Int): SwitcherLayout = entries.stepFrom(this, by)
 
     companion object {
         val DEFAULT = FULL

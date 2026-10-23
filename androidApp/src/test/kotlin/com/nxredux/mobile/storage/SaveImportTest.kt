@@ -282,6 +282,43 @@ class SaveImportTest {
         assertFalse(File(sd, "Saves/GBA/Game.sav").exists())
     }
 
+    /**
+     * A folder is listed once a run: each later save of the game still sees what the earlier ones landed and kept aside,
+     * so a second newer copy replaces the first's (both kept as backups) and an older third one is skipped.
+     */
+    @Test fun saves_of_one_game_in_one_run_see_each_others_writes() {
+        val sd = tmp.newFolder("sd")
+        file(sd, "Saves/GBA/Game.srm", "phone", t0 - 120_000)
+        file(sd, "Saves/GBA/Other.srm", "other", t0 - 120_000)
+        val bytes = zipOf(
+            Triple("Saves/GBA/Game.srm", "first", t0 - 60_000), Triple("Saves/MGBA/Game.gba.sav", "second", t0),
+            Triple("Saves/GBA/Game.sav", "older", t0 - 90_000), Triple("Saves/MGBA/New.srm", "new", t0),
+        )
+        val summary = SaveImporter(sd, { t0 }, naming = SaveNaming(SaveFormat.RETROARCH)).run(ZipImportFiles { ByteArrayInputStream(bytes) })
+        assertEquals("second", File(sd, "Saves/GBA/Game.srm").readText())
+        val backups = File(sd, "Saves/GBA").listFiles()!!.filter { SaveCopyRules.isBackupOf(it.name, "Game.srm") }.map { it.readText() }.toSet()
+        assertEquals(setOf("phone", "first"), backups)
+        assertEquals("new", File(sd, "Saves/GBA/New.srm").readText())
+        assertEquals("other", File(sd, "Saves/GBA/Other.srm").readText())
+        assertEquals(listOf(SkippedFile("Game.sav", SkipReason.PHONE_NEWER)), summary.skipped)
+        assertEquals(2, summary.replaced); assertEquals(3, summary.saves)
+    }
+
+    /** A replace that fails puts the phone save back; the next save of the game in the run finds it there again. */
+    @Test fun after_a_failed_replace_the_next_save_of_the_game_finds_the_phone_save() {
+        val sd = tmp.newFolder("sd")
+        file(sd, "Saves/GBA/Game.srm", "phone", t0 - 120_000)
+        val bytes = zipOf(Triple("Saves/GBA/Game.srm", "first", t0 - 60_000), Triple("Saves/MGBA/Game.srm", "second", t0))
+        var places = 0
+        val summary = SaveImporter(sd, { t0 }, rename = { a, b -> places++ > 0 && a.renameTo(b) })
+            .run(ZipImportFiles { ByteArrayInputStream(bytes) })
+        assertEquals("second", File(sd, "Saves/GBA/Game.srm").readText())
+        val backups = File(sd, "Saves/GBA").listFiles()!!.filter { SaveCopyRules.isBackupOf(it.name, "Game.srm") }.map { it.readText() }
+        assertEquals(listOf("phone"), backups)
+        assertEquals(listOf(SkippedFile("Game.srm", SkipReason.UNREADABLE)), summary.skipped)
+        assertEquals(1, summary.replaced)
+    }
+
     /** `Emerald.gba.sav` may be ROM `Emerald.gba.zip`'s Generic name: kept unless a phone copy tells the ROM. */
     @Test fun a_save_named_after_an_unknown_rom_file_keeps_its_name() {
         val src = tmp.newFolder("home"); val sd = tmp.newFolder("sd")

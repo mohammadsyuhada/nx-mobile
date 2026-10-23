@@ -134,6 +134,8 @@ add_library(libretrodroid SHARED
         utils/utils.h
         utils/jnistring.h
         utils/jnistring.cpp
+        utils/utf8.h
+        utils/utf8.cpp
         utils/libretrodroidexception.h
         utils/libretrodroidexception.cpp
         utils/rect.h
@@ -164,6 +166,8 @@ add_library(libretrodroid SHARED
         netplay/np_engine.c
         netplay/np_net.h
         netplay/np_net.c
+        netplay/np_tcp.h
+        netplay/np_tcp.c
         netplay/netplayhooks.h
         netplay/netplayhooks.cpp
         netplay/netplayjni.cpp

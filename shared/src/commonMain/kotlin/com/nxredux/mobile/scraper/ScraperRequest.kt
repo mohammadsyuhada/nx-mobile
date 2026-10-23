@@ -1,18 +1,24 @@
 package com.nxredux.mobile.scraper
 
-/** NX Redux `http.c` url_encode: alnum and -_.~ kept, space → '+', every other UTF-8 byte → %XX (uppercase). */
-fun ssEncode(s: String): String = buildString {
+/**
+ * UTF-8 percent-encoding: alnum and -_.~ kept, every other byte %XX (uppercase); a space is '+' when [spaceAsPlus]
+ * (a query value), else %20 (a path segment).
+ */
+fun percentEncode(s: String, spaceAsPlus: Boolean): String = buildString {
     for (b in s.encodeToByteArray()) {
         val c = b.toInt() and 0xFF
         val ch = c.toChar()
         when {
             ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '-' || ch == '_' || ch == '.' || ch == '~' -> append(ch)
-            ch == ' ' -> append('+')
+            ch == ' ' && spaceAsPlus -> append('+')
             else -> { append('%'); append(HEX[c shr 4]); append(HEX[c and 0xF]) }
         }
     }
 }
 private const val HEX = "0123456789ABCDEF"
+
+/** NX Redux `http.c` url_encode: [percentEncode] with space → '+'. */
+fun ssEncode(s: String): String = percentEncode(s, spaceAsPlus = true)
 
 /** Developer credentials (build-time) plus the user's optional ScreenScraper login. */
 data class ScraperAuth(

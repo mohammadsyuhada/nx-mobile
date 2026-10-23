@@ -148,7 +148,7 @@ jobjectArray toJavaStringArray(JNIEnv* env, const std::vector<std::string>& valu
     jclass stringClass = env->FindClass("java/lang/String");
     jobjectArray result = env->NewObjectArray(values.size(), stringClass, nullptr);
     for (size_t i = 0; i < values.size(); i++) {
-        jstring value = env->NewStringUTF(values[i].c_str());
+        jstring value = newSafeJString(env, values[i]);   // a core's option values and labels: any bytes
         env->SetObjectArrayElement(result, i, value);
         env->DeleteLocalRef(value);
     }
@@ -157,7 +157,7 @@ jobjectArray toJavaStringArray(JNIEnv* env, const std::vector<std::string>& valu
 }
 
 void setStringField(JNIEnv* env, jobject obj, jfieldID field, const std::string& value) {
-    jstring jValue = env->NewStringUTF(value.c_str());
+    jstring jValue = newSafeJString(env, value);   // a core's text: any bytes (Latin-1 labels)
     env->SetObjectField(obj, field, jValue);
     env->DeleteLocalRef(jValue);
 }
@@ -254,7 +254,7 @@ JNIEXPORT jobjectArray JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_ge
             env->SetObjectField(
                 jController,
                 jDescriptionField,
-                env->NewStringUTF(controllers[i][j].description.data()));
+                newSafeJString(env, controllers[i][j].description));
 
             env->SetObjectArrayElement(controllerArray, j, jController);
         }
@@ -381,8 +381,9 @@ JNIEXPORT jobjectArray JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_ac
     jobjectArray out = env->NewObjectArray((jsize) items.size(), cls, nullptr);
     for (jsize i = 0; i < (jsize) items.size(); i++) {
         auto& a = items[i];
-        jstring title = env->NewStringUTF(a.title.c_str()), desc = env->NewStringUTF(a.description.c_str()),
-                badge = env->NewStringUTF(a.badge.c_str()), progress = env->NewStringUTF(a.progress.c_str());
+        // The server's titles and descriptions: an emoji is common there.
+        jstring title = newSafeJString(env, a.title), desc = newSafeJString(env, a.description),
+                badge = newSafeJString(env, a.badge), progress = newSafeJString(env, a.progress);
         jobject item = env->NewObject(cls, ctor, (jint) a.id, title, desc, (jint) a.points, badge, (jint) a.state, (jlong) a.unlockTime,
                                       progress, (jfloat) a.percent, (jfloat) a.rarity, (jint) a.type, (jint) a.category);
         env->SetObjectArrayElement(out, i, item);
@@ -927,13 +928,14 @@ JNIEXPORT void JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_step(
             jmethodID sendCall = env->GetMethodID(cls, "sendAchievementServerCall", "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
             jmethodID sendEvent = env->GetMethodID(cls, "sendAchievementEvent", "(IILjava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;FLjava/lang/String;)V");
             for (auto& c : calls) {
-                jstring url = env->NewStringUTF(c.url.c_str()), post = env->NewStringUTF(c.postData.c_str()), type = env->NewStringUTF(c.contentType.c_str());
+                jstring url = newSafeJString(env, c.url), post = newSafeJString(env, c.postData), type = newSafeJString(env, c.contentType);
                 env->CallVoidMethod(glRetroView, sendCall, (jint) c.requestId, url, post, type);
                 env->DeleteLocalRef(url); env->DeleteLocalRef(post); env->DeleteLocalRef(type);
             }
             for (auto& e : events) {
-                jstring title = env->NewStringUTF(e.title.c_str()), desc = env->NewStringUTF(e.description.c_str()), badge = env->NewStringUTF(e.badge.c_str()),
-                        progress = env->NewStringUTF(e.progress.c_str()), extra = env->NewStringUTF(e.extra.c_str());
+                // The server's text (an emoji in a title): never straight to NewStringUTF.
+                jstring title = newSafeJString(env, e.title), desc = newSafeJString(env, e.description), badge = newSafeJString(env, e.badge),
+                        progress = newSafeJString(env, e.progress), extra = newSafeJString(env, e.extra);
                 env->CallVoidMethod(glRetroView, sendEvent, (jint) e.type, (jint) e.id, title, desc, badge, (jint) e.points, progress, (jfloat) e.percent, extra);
                 env->DeleteLocalRef(title); env->DeleteLocalRef(desc); env->DeleteLocalRef(badge); env->DeleteLocalRef(progress); env->DeleteLocalRef(extra);
             }
@@ -1263,7 +1265,7 @@ JNIEXPORT jstring JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_takeSha
     jclass obj
 ) {
     auto error = LibretroDroid::getInstance().takePresetError();
-    return error ? env->NewStringUTF(error->c_str()) : nullptr;
+    return error ? newSafeJString(env, *error) : nullptr;   // may quote a preset's file names and lines
 }
 
 JNIEXPORT jfloatArray JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_getGameGeometry(

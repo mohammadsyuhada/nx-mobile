@@ -1500,6 +1500,8 @@ class GameActivity : ComponentActivity() {
                     }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e   // lifecycleScope cancelled mid-copy (a back-out, a destroy): not a launch failure to report
         } catch (e: Exception) {
             fail("Cannot open $title: ${e.javaClass.simpleName}: ${e.message}")
             return
@@ -1773,8 +1775,11 @@ class GameActivity : ComponentActivity() {
     private fun fail(message: String, title: String = "Could not start the game") {
         NxLog.e(TAG_LOG, message)
         if (relaunching) return   // a late error from the Vulkan attempt: the recreated screen owns the launch now
+        // Destroyed without finishing: a recreation, whose new screen owns the launch (and its PendingLaunches entry), and
+        // a dialog on this dead window would throw BadTokenException.
+        if (isDestroyed && !isFinishing) return
         PendingLaunches.take(launchId)   // refused: the launcher must not record it
-        if (isFinishing || failShown) return   // observeErrors can report more than once: one dialog, never a stack
+        if (isFinishing || isDestroyed || failShown) return   // observeErrors can report more than once: one dialog, never a stack
         failShown = true
         rumbles.forEach { it.release() }
         // A controller's A only focuses the button (Android clicks on ENTER): A, B and BACK leave on release. A release
@@ -4226,9 +4231,21 @@ class GameActivity : ComponentActivity() {
     private fun formatSlotTime(ms: Long): String =
         java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.US).format(java.util.Date(ms))
 
+    /**
+     * Refuses a manual Save / Load ([saveToSlot], [loadFromSlot]) before the first frame or while the Resume load is still
+     * to land, as pressWiiHome and swapDisc do: a Save would capture the fresh boot over the user's slot (and move the
+     * pointer to it), and a Load would be overwritten by the resume's unserialize while the pointer says the loaded slot.
+     */
+    private fun slotsBusy(): Boolean {
+        if (gameReady && !resumePending) return false
+        toast("Still loading")
+        return true
+    }
+
     private fun saveToSlot(slot: Int) {
         val view = retroView ?: return
         val ss = saveStates ?: return
+        if (slotsBusy()) return
         captureThumbnail { bmp ->
             trackSlotJob(lifecycleScope.launch(Dispatchers.IO) {
                 val ok = runCatching {
@@ -4249,6 +4266,7 @@ class GameActivity : ComponentActivity() {
     private fun loadFromSlot(slot: Int) {
         val view = retroView ?: return
         val ss = saveStates ?: return
+        if (slotsBusy()) return
         // The read is in the job too, not on main: a state file is up to tens of MB (PSP and DC).
         trackSlotJob(lifecycleScope.launch(Dispatchers.IO) {
             val read = runCatching { ss.readState(slot) }

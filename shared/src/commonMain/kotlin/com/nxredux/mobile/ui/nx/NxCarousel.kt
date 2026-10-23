@@ -1,37 +1,25 @@
 package com.nxredux.mobile.ui.nx
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -40,7 +28,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,7 +36,6 @@ import com.nxredux.mobile.ui.INFO_SEPARATOR
 import com.nxredux.mobile.ui.InfoLine
 import kotlin.math.min
 
-private const val SLIDE_MS = 300        // the row's slide and scale
 private const val CAPTION_GAP = 16f     // dp between the centre tile's bottom edge and the caption
 /** The Carousel caption's info rows ([carouselCaptionRows]): the time and trophies, then the next goal. */
 private const val CAROUSEL_INFO_ROWS = 2
@@ -115,13 +101,8 @@ fun NxCarousel(
         val spare = (maxHeight.value - (top + g.itemH + room) - CAPTION_SPARE_MARGIN).coerceAtLeast(0f)
 
         val count = tiles.size
-        // The animated position, in items; a new screen (a tab switch, even to an equal list) or a new list snaps to its
-        // selection instead of sliding. The selection itself is read only by FollowSelection, the items and the caption.
-        val pos = remember(layoutKey, tiles) { Animatable(selectionNow(selectedIndex, count).toFloat()) }
-        FollowSelection(pos, selectedIndex, count, SLIDE_MS)
-        // While a finger drags the row: the position it shows (NaN otherwise, the animated one).
-        val dragPos = remember(pos) { mutableFloatStateOf(Float.NaN) }
-        val at = rememberShownPosition(pos, dragPos)
+        // The animated position, in items ([rememberRowPosition]: a new screen or a new list snaps).
+        val pos = rememberRowPosition(selectedIndex, count, layoutKey, tiles)
 
         // The tiles centred in the box, not the reserved block ([rowNeighbourTop], [rowSelectedTop]): a
         // neighbour by itself, the selection with its caption as drawn, the caption's height gliding with the slide (a
@@ -139,52 +120,20 @@ fun NxCarousel(
         val bandTop = min(nbTop, rowSelectedTop(area, g.itemH, CAPTION_GAP, room - CAPTION_GAP + spare))
         val bandH = nbTop + g.itemH - bandTop
 
-        val taps = rememberItemTaps(selectedIndex, count, onSelect, onOpen, onLongPress)
         val hasLongPress = onLongPress != null
         val logoInset = remember(g) { rowLogoInset(g) }
         val toolSize = carouselToolSize(g)
+        val stats = captionInfo.takeIf { gameList }
 
-        Box(Modifier.fillMaxWidth().offset(y = bandTop.dp).height(bandH.dp)
-                .horizontalSwipe(
-                    key = pos, value = pos, live = dragPos, perDp = -1f / rowSwipeStep(g),
-                    lo = 0f, hi = (count - 1).toFloat(), give = 0.5f, ms = SLIDE_MS,
-                    target = { start, drag, velocity ->
-                        val i = rowSwipeTarget(start, drag, velocity, count, g)
-                        i to i.toFloat()
-                    },
-                    onSelect = { taps.swipeSelect(it) },
-                    toValue = { rowSwipeDelta(it, g) }, slope = { rowSwipeSlope(it, g) },
-                )
-        ) {
-            CarouselItems(tiles, selectedIndex, at, g, nbTop, bandTop, selTop, logoInset, toolSize, portrait, taps, hasLongPress, badge, lit, cardInfo, captionInfo.takeIf { gameList })
+        // The window spans the target too, and the selection is lit while [lit] says so.
+        NxRow(count, selectedIndex, pos, g, bandTop, bandH, onSelect, onOpen, onLongPress, litSelection = lit) { i, isLit, at, taps ->
+            CarouselItem(tiles[i], i, isLit, at, g, nbTop, bandTop, selTop, logoInset, toolSize, portrait, taps, hasLongPress, badge(i), cardInfo, stats)
         }
 
-        if (cardInfo == null) CarouselCaption(
-            captionTitle, if (gameList) NoTileInfo else captionInfo, glide, nameStyle, infoStyle, gutter, avail, availPx, spare, selTop, g.itemH, colors.listText,
+        if (cardInfo == null) RowCaption(
+            captionTitle, if (gameList) NoTileInfo else captionInfo, glide, nameStyle, 2, infoStyle, gutter, avail, availPx, spare,
+            selTop, g.itemH + CAPTION_GAP, colors.listText,
         )
-    }
-}
-
-/**
- * The Carousel's items: the ones near the target and the current position, one hidden past each end
- * ([rowComposeWindow]), keyed by recycled slots ([ItemSlots]); recomposes only when the selection or that window moves,
- * and each [CarouselItem] skips unless its lit state or its item changed.
- */
-@Composable
-private fun BoxScope.CarouselItems(
-    tiles: List<GridTile>, selectedIndex: () -> Int, at: () -> Float, g: RowGeometry, nbTop: Float, bandTop: Float,
-    selTop: () -> Float, logoInset: Pair<Float, Float>, toolSize: ToolTileSize, portrait: Boolean, taps: ItemTaps, hasLongPress: Boolean,
-    badge: (Int) -> String?, lit: () -> Boolean, cardInfo: ((Int) -> List<InfoLine>)?, stats: (() -> List<InfoLine>)?,
-) {
-    val count = tiles.size
-    val sel = selectedIndex().coerceIn(0, tiles.lastIndex)
-    val lightSel = lit()
-    val atPos by remember(at, count) { derivedStateOf { rowComposeWindow(at(), count) } }
-    val atTarget = rowComposeWindow(sel.toFloat(), count)
-    val window = minOf(atPos.first, atTarget.first)..maxOf(atPos.last, atTarget.last)
-    val slots = remember { ItemSlots() }.of(window)
-    for (i in window) {
-        key(slots.getValue(i)) { CarouselItem(tiles[i], i, lightSel && i == sel, at, g, nbTop, bandTop, selTop, logoInset, toolSize, portrait, taps, hasLongPress, badge(i), cardInfo, stats) }
     }
 }
 
@@ -207,14 +156,8 @@ private fun BoxScope.CarouselItem(
                 scaleY = r.scale
                 alpha = if (r.visible) r.alpha.coerceIn(0f, 1f) else 0f
             }
-            .pointerInput(i, hasLongPress) {
-                // The window spans the target too: during a slide an item rowItem hides must not take a touch.
-                fun shown() = rowItem(RowStyle.CAROUSEL, i - shownAt(), geometry).visible
-                detectTapGestures(
-                    onTap = { if (shown()) taps.tap(i) },
-                    onLongPress = if (hasLongPress) { _ -> if (shown()) taps.longPress(i) } else null,
-                )
-            },
+            // The window spans the target too: during a slide an item rowItem hides must not take a touch.
+            .shownItemTaps(i, taps, hasLongPress) { rowItem(RowStyle.CAROUSEL, i - shownAt(), geometry).visible },
     ) {
         // A game list's selected card holds the stats ([stats], the selection's), shaded as the Grid's; its name is below.
         NxMenuTile(
@@ -231,36 +174,6 @@ private fun BoxScope.CarouselItem(
                 .graphicsLayer { alpha = rowItem(RowStyle.CAROUSEL, i - at(), g).dim }
                 .background(colors.background),
         )
-    }
-}
-
-/**
- * The Carousel's caption, centred under the selected tile ([selTop]): [captionTitle] and its info rows, fitted, then
- * measured as drawn so the tiles are placed right on the first frame ([GlideCaptionHeight] glides [glide] to it). Too
- * long for the width, "Next: <name>" takes the room under the reserve, down to the body's bottom less a margin
- * ([spare]). Reads the caption itself, so a selection step recomposes only this and the items.
- */
-@Composable
-private fun CarouselCaption(
-    captionTitle: () -> String?, captionInfo: () -> List<InfoLine>, glide: CaptionGlide,
-    nameStyle: TextStyle, infoStyle: TextStyle, gutter: Dp, avail: Dp, availPx: Int, spare: Float,
-    selTop: () -> Float, itemH: Float, textColor: androidx.compose.ui.graphics.Color,
-) {
-    val title = captionTitle()
-    val info = captionInfo()
-    val infoRows = carouselCaptionRows(title, info)
-    val fitted = rememberFittedCaptionRows(infoRows, infoStyle, 12.dp, avail, spare.dp)
-    val drawn = rememberCaptionDrawnHeight(title, nameStyle, 2, fitted, infoStyle, availPx)
-    GlideCaptionHeight(glide, drawn, SLIDE_MS)
-    if (title != null) {
-        Column(
-            Modifier.fillMaxWidth().offset { IntOffset(0, (selTop() + itemH + CAPTION_GAP).dp.roundToPx()) }
-                .padding(horizontal = gutter).wrapContentWidth().captionTap(),   // the tap target is the text, not the strip
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(title, color = textColor, maxLines = 2, overflow = TextOverflow.Ellipsis, style = nameStyle)
-            CaptionFittedRows(fitted, infoStyle, 12.dp)
-        }
     }
 }
 

@@ -1,16 +1,20 @@
-# nx-mobile - netplay engine and link host tests. GPL-3.0-or-later.
+# nx-mobile - netplay engine, link and shared TCP host tests. GPL-3.0-or-later.
 # Run through `make -C libretrodroid/src/test/native/netplay test`.
 CC ?= cc
 OUT := out
 SRC := ../../../main/cpp/netplay
 CFLAGS := -std=c11 -Wall -Wextra -O1 -pthread -I$(SRC)
-all: $(OUT)/test_engine $(OUT)/test_link
+NET := $(SRC)/np_net.c $(SRC)/np_tcp.c
+NET_H := $(SRC)/np_net.h $(SRC)/np_tcp.h
+all: $(OUT)/test_engine $(OUT)/test_link $(OUT)/test_tcp
 $(OUT):
 	mkdir -p $(OUT)
-$(OUT)/test_engine: test_engine.c $(SRC)/np_engine.c $(SRC)/np_net.c $(SRC)/np_engine.h $(SRC)/np_net.h | $(OUT)
-	$(CC) $(CFLAGS) -o $@ test_engine.c $(SRC)/np_engine.c $(SRC)/np_net.c
-$(OUT)/test_link: test_link.c $(SRC)/np_link.c $(SRC)/np_net.c $(SRC)/np_link.h $(SRC)/np_net.h | $(OUT)
-	$(CC) $(CFLAGS) -o $@ test_link.c $(SRC)/np_link.c $(SRC)/np_net.c
+$(OUT)/test_engine: test_engine.c $(SRC)/np_engine.c $(NET) $(SRC)/np_engine.h $(NET_H) | $(OUT)
+	$(CC) $(CFLAGS) -o $@ test_engine.c $(SRC)/np_engine.c $(NET)
+$(OUT)/test_link: test_link.c $(SRC)/np_link.c $(NET) $(SRC)/np_link.h $(NET_H) | $(OUT)
+	$(CC) $(CFLAGS) -o $@ test_link.c $(SRC)/np_link.c $(NET)
+$(OUT)/test_tcp: test_tcp.c $(NET) $(NET_H) | $(OUT)
+	$(CC) $(CFLAGS) -o $@ test_tcp.c $(NET)
 test: all
 	sh run.sh
 clean:

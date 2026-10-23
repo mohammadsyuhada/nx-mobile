@@ -24,8 +24,10 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DeviceSyncControllerTest {
+    // Every run goes through the parse and plan hops ([DeviceSyncController]'s work context): named, on the test's
+    // dispatcher, so the pages, files and virtual time are what they are with no hop at all.
     private fun TestScope.rig(p: FakeSyncPlatform = FakeSyncPlatform()) =
-        DeviceSyncController(backgroundScope as CoroutineScope, p) { testScheduler.currentTime }.also { it.open() }
+        DeviceSyncController(backgroundScope as CoroutineScope, p, work = kotlinx.coroutines.CoroutineName("work")) { testScheduler.currentTime }.also { it.open() }
 
     private fun DeviceSyncController.press(vararg b: NxButton) = b.forEach { onButton(it) }
     private val handheld = "192.168.1.10"
@@ -244,6 +246,23 @@ class DeviceSyncControllerTest {
         c.pick(SyncLink.WIFI); c.press(NxButton.A); runCurrent()
         p.socket.from(handheld, "HELLO_TRIMUI_SYNC:$handheld:c"); runCurrent()
         advanceTimeBy(3_600_500); runCurrent()
+        assertEquals(DeviceSyncPage.Failed(SyncLink.WIFI, DeviceSyncText.SERVER_TIMEOUT), c.page.value)
+        assertEquals(listOf("stop"), p.serverCalls)
+    }
+
+    /** The hour is of silence: daemon lines and the peer's messages each push it back, so a long transfer is never cut. */
+    @Test fun the_server_wait_is_an_idle_timeout() = runTest {
+        val p = FakeSyncPlatform()
+        val c = serving(p)
+        advanceTimeBy(3_000_000); runCurrent()
+        p.logLine!!("2026/10/14 23:28:27 [1] roms recv GB/Big.gb")
+        advanceTimeBy(3_000_000); runCurrent()   // 100 min since the start, 50 since the line
+        assertEquals(SyncRole.SERVER, (c.page.value as DeviceSyncPage.Syncing).role)
+        p.socket.from(handheld, SyncWire.READY); runCurrent()   // a peer message counts too
+        advanceTimeBy(3_000_000); runCurrent()
+        assertEquals(SyncRole.SERVER, (c.page.value as DeviceSyncPage.Syncing).role)
+        assertEquals(emptyList(), p.serverCalls)
+        advanceTimeBy(700_000); runCurrent()   // then an hour of silence
         assertEquals(DeviceSyncPage.Failed(SyncLink.WIFI, DeviceSyncText.SERVER_TIMEOUT), c.page.value)
         assertEquals(listOf("stop"), p.serverCalls)
     }

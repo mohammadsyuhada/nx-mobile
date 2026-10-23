@@ -31,7 +31,7 @@ enum class AccentPreset(val id: String, val label: String, val rgb: Int, val onR
     val hex: String get() = rgb.toString(16).padStart(6, '0')
 
     /** The preset [step] places after this one, wrapping (Settings' LEFT is -1, RIGHT and A +1). */
-    fun step(step: Int): AccentPreset = entries[(ordinal + step).mod(entries.size)]
+    fun step(step: Int): AccentPreset = entries.stepFrom(this, step)
 
     companion object {
         val DEFAULT = WHITE
@@ -66,7 +66,7 @@ sealed class SecondaryAccent(val id: String, val label: String) {
     }
 
     /** The value [step] places after this one in [entries], wrapping (Settings' LEFT is -1, RIGHT and A +1). */
-    fun step(step: Int): SecondaryAccent = entries[(entries.indexOf(this) + step).mod(entries.size)]
+    fun step(step: Int): SecondaryAccent = entries.stepFrom(this, step)
 
     companion object {
         private const val AUTO_BRIGHTNESS = 0.45

@@ -81,15 +81,19 @@ class LibraryScanner(
     private val arcadeSets: () -> ArcadeSets = { ArcadeSets.EMPTY },
     private val naomiSets: () -> NaomiSets = { NaomiSets.EMPTY },
     /**
-     * Where the scan's pure work runs (building and sorting the lists, and the set tables): the app passes its compute
-     * dispatcher so none of it lands on the main thread. Null keeps the list work on the caller's context (the set
-     * tables still load on `Dispatchers.Default`).
+     * Where [scan], [scanOutsideRoms] and [readArt] run: the app passes its compute dispatcher, so the work between tree
+     * reads (resolving each file, parsing sheets, `systems.txt` and `map.txt`, building the art maps and the lists) never
+     * lands on the main thread, while each read still hops to the source's own I/O context. Null keeps it all on the
+     * caller's context (the set tables still load on `Dispatchers.Default`).
      */
     private val compute: CoroutineContext? = null,
     /** A CD CHD's sectors for the disc probe (Android's libchdr); null places only GD and DVD CHDs. */
     private val chdSectors: com.nxredux.mobile.library.disc.ChdSectors? = null,
 ) {
     private val art = ArtworkResolver(source)
+
+    /** The typed `.media` maps the last scan and [readArt] read, for [readArt]'s `reuse` ([ArtworkResolver.SubArtMaps]). */
+    private val artMaps = ArtworkResolver.SubArtMaps()
 
     private class HomeFolder(val folderName: String, val displayName: String, val artRef: ContentRef?, val bgRef: ContentRef?)
 
@@ -98,7 +102,19 @@ class LibraryScanner(
         val box3d: Map<String, ContentRef>, val box2d: Map<String, ContentRef>, val screenshot: Map<String, ContentRef>,
         val grid: Map<String, ContentRef>, val hero: Map<String, ContentRef>, val names: Map<String, String>,
         val wheel: Map<String, ContentRef> = emptyMap(), val mix: Map<String, ContentRef> = emptyMap(),
-    )
+    ) {
+        /**
+         * A game's art of every kind: the file named for [key] (a disc folder's name, else the file's base name), else
+         * for [base]. The one place an art kind is mapped: the scan and [readArt] both read it.
+         */
+        fun artFor(key: String, base: String): ArtRefs {
+            fun Map<String, ContentRef>.of(): String? = (this[key] ?: this[base])?.value
+            return ArtRefs(
+                boxart = box3d.of(), box2d = box2d.of(), screenshot = screenshot.of(), grid = grid.of(), hero = hero.of(),
+                wheel = wheel.of(), mix = mix.of(),
+            )
+        }
+    }
 
     /**
      * The whole library: the home's `Roms/<System (TAG)>/` folders (a file's `systems.txt` entry may move it to another
@@ -111,7 +127,9 @@ class LibraryScanner(
      * volume reports mounted): it is listed again after [REMOUNT_RETRY_MILLIS], and when that fails too it is kept as
      * offline once more ([LibraryIndex.lateMount]); a second such scan reports it. A listing the provider hides
      * ([ListingUnavailable]) fails the whole scan: the caller keeps its index. Each folder is listed once per scan
-     * ([ScanReads]); tree reads stay on the caller's context, the CPU work runs on [compute].
+     * ([ScanReads]); the whole walk runs on [compute] (the source's reads switch to its I/O context themselves). Each disc
+     * sheet's and peeked zip's head is read once and kept in [LibraryIndex.heads]: a later scan reuses it while the file's
+     * size and modified time are unchanged ([HeadReads]).
      */
     suspend fun scan(
         home: ContentRef,
@@ -119,14 +137,16 @@ class LibraryScanner(
         defaultTags: Map<String, String>,
         previous: LibraryIndex? = null,
         onExtraFailed: suspend (ExtraFolder, Throwable) -> Unit = { _, _ -> },
-    ): LibraryIndex {
+    ): LibraryIndex = onCompute {
         val byTag = LinkedHashMap<String, MutableList<IndexedFile>>()
         val unassigned = ArrayList<IndexedFile>()
         val homeFolders = HashMap<String, HomeFolder>()
         val reads = ScanReads(source, sidecars, home)
-        indexHome(reads, byTag, homeFolders, defaultTags)
+        artMaps.clear()   // refilled with every typed folder this scan lists
+        val heads = HeadReads(source, previous?.heads.orEmpty())
+        indexHome(reads, heads, byTag, homeFolders, defaultTags)
         val probes = DiscProbes(com.nxredux.mobile.library.disc.DiscProbe(source, chdSectors), previous?.probes.orEmpty())
-        val loose = LooseResolver(source, reads, { console -> console.defaultTagFor(defaultTags[console.id]) }, probes::consoleOf)
+        val loose = LooseResolver(source, reads, { console -> console.defaultTagFor(defaultTags[console.id]) }, probes::consoleOf, heads)
         val scanned = ArrayList<ExtraFolder>()
         val offline = ArrayList<String>()
         val lateMount = ArrayList<String>()
@@ -152,7 +172,9 @@ class LibraryScanner(
                 }
                 continue
             }
-            if (files.isEmpty()) previous?.let { hiddenRootCheck(extra, it) }
+            // Only a root that listed nothing can be a hidden one: an extra whose games moved away but whose folders stay
+            // lists those folders, so it is a really empty extra (the listing is cached, so this costs no read).
+            if (files.isEmpty() && previous != null && reads.list(extra.ref).isEmpty()) hiddenRootCheck(extra, previous)
             scanned += extra
             for (f in files) {
                 val ix = IndexedFile(f.entry, f.folder, extra.id, f.relativeDir, f.lookupFolder, f.lookupDir)
@@ -175,24 +197,25 @@ class LibraryScanner(
             )
         }
         if (unassigned.isNotEmpty()) systems += IndexedSystem(tag = "", displayName = UNASSIGNED, unassigned = true, games = indexGames(reads, unassigned, lookups, null, sets, extraNames))
-        return withContext(compute ?: EmptyCoroutineContext) {
-            LibraryIndex(
-                LibraryIndex.VERSION, home.value, scanned.map { IndexedExtra(it.id, it.ref.value) }, defaultTags, systems.inLibraryOrder(), offline, lateMount,
-                probes = probes.used,
-            )
-        }
+        LibraryIndex(
+            LibraryIndex.VERSION, home.value, scanned.map { IndexedExtra(it.id, it.ref.value) }, defaultTags, systems.inLibraryOrder(), offline, lateMount,
+            probes = probes.used, heads = heads.used,
+        )
     }
+
+    /** [block] on [compute] (the caller's context when null): see [compute]. */
+    private suspend fun <T> onCompute(block: suspend () -> T): T = withContext(compute ?: EmptyCoroutineContext) { block() }
 
     /**
      * The home's files outside `Roms/` (and the home's other own folders, a card root's system ones: [HOME_SKIP]), resolved as an extra folder's
      * are: console from folder names, then file type, then a disc's contents; a tag of null is a file nothing places.
      * Setup moves the placed ones into `Roms/` ([RomMover.planLoose]); they are never listed where they lie.
      */
-    suspend fun scanOutsideRoms(home: ContentRef, defaultTags: Map<String, String>): List<LooseFile> {
+    suspend fun scanOutsideRoms(home: ContentRef, defaultTags: Map<String, String>): List<LooseFile> = onCompute {
         val reads = ScanReads(source, sidecars, null)
         val probes = DiscProbes(com.nxredux.mobile.library.disc.DiscProbe(source, chdSectors), emptyList())
         val defaultTag = { console: Console -> console.defaultTagFor(defaultTags[console.id]) }
-        return LooseResolver(source, reads, defaultTag, probes::consoleOf).scan(home, OUTSIDE_SOURCE, skipTop = HOME_SKIP).map { f ->
+        LooseResolver(source, reads, defaultTag, probes::consoleOf).scan(home, OUTSIDE_SOURCE, skipTop = HOME_SKIP).map { f ->
             if (f.tag == null || outsidePlaced(f, defaultTag)) f else f.copy(tag = null)
         }
     }
@@ -211,8 +234,8 @@ class LibraryScanner(
     }
 
     /**
-     * An extra that listed nothing while [previous] had games in it: its root may be hidden by the provider (a tree root
-     * has no parent to check). One previous game's first path segment is looked up by name; still there means the listing
+     * An extra whose root listed nothing at all while [previous] had games in it: its root may be hidden by the provider (a
+     * tree root has no parent to check). One previous game's first path segment is looked up by name; still there means the listing
      * lied, so the scan fails with [ListingUnavailable] and the caller keeps the old index.
      */
     private suspend fun hiddenRootCheck(extra: ExtraFolder, previous: LibraryIndex) {
@@ -221,7 +244,7 @@ class LibraryScanner(
         if (source.child(extra.ref, segment) != null) throw ListingUnavailable(extra.ref.value)
     }
 
-    private suspend fun indexHome(reads: ScanReads, byTag: MutableMap<String, MutableList<IndexedFile>>, homeFolders: MutableMap<String, HomeFolder>, defaultTags: Map<String, String>) {
+    private suspend fun indexHome(reads: ScanReads, heads: HeadReads, byTag: MutableMap<String, MutableList<IndexedFile>>, homeFolders: MutableMap<String, HomeFolder>, defaultTags: Map<String, String>) {
         val roms = reads.home?.dir(listOf("Roms")) ?: return
         val systemFolders = reads.list(roms)
         val rootArt = art.mediaMap(systemFolders, reads::list)
@@ -246,7 +269,7 @@ class LibraryScanner(
             byTag.getOrPut(own) { ArrayList() }   // an empty skeleton folder is still indexed (count 0)
             val sidecar = reads.sidecars.read(Recents.HOME, relativeDir, children)
             val files = children.filter { !it.isDirectory && !Names.isHidden(it.name) }
-            val hidden = DiscSheet.hiddenIn(files) { source.readHead(it.ref, DiscSheet.HEAD_BYTES) }
+            val hidden = DiscSheet.hiddenNamed(files, heads::sheetNames)
             val discs = CoreRegistry.forTag(own)?.extensions?.let { "m3u" in it || "cue" in it || "gdi" in it } == true
             for (c in children) {
                 if (Names.isHidden(c.name)) continue
@@ -310,7 +333,7 @@ class LibraryScanner(
      * A game's name is its `map.txt` alias as written, else (as the Brick) its arcade title through [Names.plainTitle]
      * (fbneo's table, or flycast's for a DC zip/7z) or its file name through [Names.plainName]; plain names that collide in
      * the list show their stems instead ([disambiguated]). [extraNames] maps an extra's id to the name the user sees for it.
-     * The lookups read the trees; building the list from them runs on [compute].
+     * Runs on [compute] with the rest of the scan.
      */
     private suspend fun indexGames(
         reads: ScanReads, files: List<IndexedFile>, lookups: MutableMap<ContentRef, FolderLookup>, tag: String?, scanSets: ScanSets, extraNames: Map<String, String>,
@@ -319,7 +342,7 @@ class LibraryScanner(
         val core = tag?.let { CoreRegistry.forTag(it)?.id }
         val sets = if (core == ARCADE_CORE && files.isNotEmpty()) scanSets.get() else ArcadeSets.EMPTY
         val naomi = if (core == NAOMI_CORE && files.any { Names.isArchive(it.entry.name) }) scanSets.naomi() else NaomiSets.EMPTY
-        return withContext(compute ?: EmptyCoroutineContext) { buildGames(files, lookups, tag, core, sets, naomi, extraNames) }
+        return buildGames(files, lookups, tag, core, sets, naomi, extraNames)
     }
 
     private fun buildGames(
@@ -345,13 +368,9 @@ class LibraryScanner(
                 source = f.sourceId, dir = f.relativeDir, file = name, ref = f.entry.ref.value, folder = f.folder.value,
                 name = alias ?: (if (arcade) sets.title(base)?.let(Names::plainTitle) else null)
                     ?: (if (naomiSet) naomi.title(base)?.let(Names::plainTitle) else null) ?: Names.plainName(key),
-                boxart = (look.box3d[key] ?: look.box3d[base])?.value, box2d = (look.box2d[key] ?: look.box2d[base])?.value,
-                screenshot = (look.screenshot[key] ?: look.screenshot[base])?.value,
-                grid = (look.grid[key] ?: look.grid[base])?.value, hero = (look.hero[key] ?: look.hero[base])?.value,
-                wheel = (look.wheel[key] ?: look.wheel[base])?.value, mix = (look.mix[key] ?: look.mix[base])?.value,
                 lookupDir = f.lookupDir,
                 firstSeen = f.entry.lastModified,   // the file's date; withFirstSeen keeps a known game's
-            )
+            ).withArt(look.artFor(key, base))
             plain += alias == null
         }
         // An extra folder's copy of a home game (the same file name, any case) is left out: the home copy is the one
@@ -452,10 +471,12 @@ class LibraryScanner(
      * Only the typed folders: an untyped `.media/<name>.png` (NX Redux's old mix) is not a game's art. The 2D box is
      * `boxart2d/`, else the legacy `box2d/` per name.
      */
-    private suspend fun mediaLookup(media: List<Entry>, names: Map<String, String>) = FolderLookup(
-        art.subArtMap(media, "boxart"), art.subArtMap(media, "box2d") + art.subArtMap(media, "boxart2d"), art.subArtMap(media, "screenshot"),
-        art.subArtMap(media, "grid"), art.subArtMap(media, "hero"), names, art.subArtMap(media, "wheel"), art.subArtMap(media, "mix"),
-    )
+    private suspend fun mediaLookup(media: List<Entry>, names: Map<String, String>, reuse: Boolean = false): FolderLookup {
+        suspend fun sub(name: String) = art.subArtMap(media, name, artMaps, reuse)
+        return FolderLookup(
+            sub("boxart"), sub("box2d") + sub("boxart2d"), sub("screenshot"), sub("grid"), sub("hero"), names, sub("wheel"), sub("mix"),
+        )
+    }
 
     /**
      * An extra-folder game's art in the home mirror `<home>/Roms/.sources/<id>/<lookupDir>/.media` (where the scraper
@@ -463,10 +484,10 @@ class LibraryScanner(
      * Each segment is looked up once per scan ([ScanReads.home]): before any scraping there is no `.sources/<id>`, and
      * that extra's folders then cost no mirror lookups at all.
      */
-    private suspend fun mirrorLookup(reads: ScanReads, sourceId: String, dir: String): FolderLookup? {
+    private suspend fun mirrorLookup(reads: ScanReads, sourceId: String, dir: String, reuse: Boolean = false): FolderLookup? {
         val segments = listOf("Roms", Sidecars.SOURCES, sourceId) + dir.split('/').filter { it.isNotEmpty() } + ".media"
         val dir = reads.home?.dir(segments) ?: return null
-        return mediaLookup(reads.list(dir), emptyMap())
+        return mediaLookup(reads.list(dir), emptyMap(), reuse)
     }
 
     /**
@@ -474,9 +495,12 @@ class LibraryScanner(
      * as [scan] reads it, the rest of the index untouched: art deleted or added outside the app since the scan. Only the
      * `.media` folders of the folders holding games are listed (looked up by name, not by listing the game folder), each
      * once. A folder that won't list (an extra gone offline) keeps its games' art; a hidden listing ([ListingUnavailable])
-     * throws, and the caller keeps its index. Keyed as [artKey].
+     * throws, and the caller keeps its index. Keyed as [artKey]. With [reuse], a typed subfolder whose modified time is
+     * what the last scan or read saw is not listed again ([ArtworkResolver.SubArtMaps]): each `.media` is still listed
+     * (its listing gives those times), but an unchanged library costs one listing per folder, not up to nine. Runs on
+     * [compute].
      */
-    suspend fun readArt(index: LibraryIndex): Map<ArtKey, ArtRefs> {
+    suspend fun readArt(index: LibraryIndex, reuse: Boolean = false): Map<ArtKey, ArtRefs> = onCompute {
         val home = ContentRef(index.home)
         val reads = ScanReads(source, sidecars, home)
         val roots = mapOf(Recents.HOME to reads.home) + index.extras.associate { it.id to DirWalk(source, ContentRef(it.ref)) }
@@ -487,21 +511,16 @@ class LibraryScanner(
             val look = try {
                 val root = roots[sourceId] ?: continue
                 val media = root.dir(dir.split('/').filter { it.isNotEmpty() } + ".media")
-                val own = media?.let { mediaLookup(reads.list(it), emptyMap()) } ?: NO_LOOKUP
-                if (sourceId == Recents.HOME) own else withMirror(own, mirrorLookup(reads, sourceId, dir))
+                val own = media?.let { mediaLookup(reads.list(it), emptyMap(), reuse) } ?: NO_LOOKUP
+                if (sourceId == Recents.HOME) own else withMirror(own, mirrorLookup(reads, sourceId, dir, reuse))
             } catch (e: CancellationException) { throw e } catch (e: ListingUnavailable) { throw e } catch (e: Throwable) { continue }
             for (g in games) {
                 val base = Names.stripExtension(g.file)
                 val key = if (g.lookupDir != g.dir) g.dir.substringAfterLast('/') else base   // a disc folder's game: its folder's name
-                out[artKey(g)] = ArtRefs(
-                    boxart = (look.box3d[key] ?: look.box3d[base])?.value, box2d = (look.box2d[key] ?: look.box2d[base])?.value,
-                    screenshot = (look.screenshot[key] ?: look.screenshot[base])?.value,
-                    grid = (look.grid[key] ?: look.grid[base])?.value, hero = (look.hero[key] ?: look.hero[base])?.value,
-                    wheel = (look.wheel[key] ?: look.wheel[base])?.value, mix = (look.mix[key] ?: look.mix[base])?.value,
-                )
+                out[artKey(g)] = look.artFor(key, base)
             }
         }
-        return out
+        out
     }
 
     companion object {

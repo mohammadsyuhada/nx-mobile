@@ -1,5 +1,7 @@
 package com.nxredux.mobile.achievements
 
+import kotlinx.serialization.DeserializationStrategy
+
 class RaStoreException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
 /** Files under `sd/.userdata/`; paths are relative to that root. Android writes atomically and fsyncs appends. */
@@ -17,6 +19,13 @@ interface RaStore {
     suspend fun list(dir: String): List<String>
     suspend fun exists(path: String): Boolean
 }
+
+/**
+ * The JSON file at [path] read with [deserializer] ([RaJson.parse]): null when absent or unreadable as [T]. A store
+ * failure ([RaStoreException]) is thrown as [RaStore.read] throws it: each caller decides whether to catch it.
+ */
+suspend fun <T> RaStore.readJson(path: String, deserializer: DeserializationStrategy<T>): T? =
+    read(path)?.decodeToString()?.let { RaJson.parse(deserializer, it) }
 
 object RaPaths {
     /** The store root below the SD stand-in: the per-app account tree [ACCOUNT] and the shared game tree [SHARED] (nx-redux `.userdata/shared/.ra`). */

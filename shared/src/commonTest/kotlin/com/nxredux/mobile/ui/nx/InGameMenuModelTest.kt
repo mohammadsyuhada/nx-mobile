@@ -1125,6 +1125,21 @@ class InGameMenuModelTest {
         assertEquals(listOf("Frontend", "Shaders", "Core Options", "Cheats", "Save Changes"), m.state.page.rows.map { it.label })
     }
 
+    // A new lock set while Options is open (Save Changes → Restore defaults, the Wii's sensors once known) brings the
+    // Console Settings row back, or takes it away, so it never opens an empty page; the status footer stays.
+    @Test fun a_new_lock_set_rebuilds_the_open_options_page() {
+        val m = model()   // plainLocked: the plain console's only row locked
+        m.select(3); m.activate(3)                                         // Options
+        assertEquals(listOf("Frontend", "Shaders", "Core Options", "Cheats", "Save Changes"), m.state.page.rows.map { it.label })
+        val footer = m.state.page.footer
+        m.setFrontend(FrontendOptions.defaults(plainTag), emptyList(), emptySet(), plainTag)
+        assertEquals(listOf("Console Settings", "Frontend", "Shaders", "Core Options", "Cheats", "Save Changes"), m.state.page.rows.map { it.label })
+        assertEquals(footer, m.state.page.footer)
+        m.setFrontend(FrontendOptions.defaults(plainTag), emptyList(), plainLocked, plainTag)
+        assertEquals(listOf("Frontend", "Shaders", "Core Options", "Cheats", "Save Changes"), m.state.page.rows.map { it.label })
+        assertEquals(footer, m.state.page.footer)
+    }
+
     @Test fun console_settings_open_on_only_bottom_screen_closes_when_the_display_goes() {
         val m = model()   // plainLocked: the plain console's only row locked
         m.setSecondScreen(connected = true, on = true)

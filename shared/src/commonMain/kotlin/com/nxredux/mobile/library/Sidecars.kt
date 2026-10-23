@@ -17,6 +17,16 @@ class Sidecars(private val source: RomsSource, private val store: SidecarStore, 
     private suspend fun textIn(dir: ContentRef?, name: String): String? =
         dir?.let { source.child(it, name) }?.takeIf { !it.isDirectory }?.let { source.readText(it.ref) }
 
+    /**
+     * [name] in [dir] for a rewrite: "" when it is not there (or there is no [dir]), null when the read failed: it threw, or
+     * the file is there but gave no text (SAF reports a failed read as null). A write never replaces a file it could not
+     * read, as [Collections.readOrNull]: a rewrite from such a file would keep only the one line set.
+     */
+    private suspend fun textToRewrite(dir: ContentRef?, name: String): String? = try {
+        val f = dir?.let { source.child(it, name) }?.takeIf { !it.isDirectory }
+        if (f == null) "" else source.readText(f.ref)
+    } catch (e: CancellationException) { throw e } catch (e: Throwable) { null }
+
     /** `.sources/<id>/<relativeDir segments>` below the home's `Roms`. */
     private fun copyPath(sourceId: String, relativeDir: String): List<String> =
         listOf(SOURCES, sourceId) + relativeDir.split('/').filter { it.isNotEmpty() }
@@ -80,22 +90,31 @@ class Sidecars(private val source: RomsSource, private val store: SidecarStore, 
             merged(sourceId, relativeDir, MAP_TXT, MapTxt::parse, own(listing, MAP_TXT)) { copy(sourceId, relativeDir) }
     }
 
-    /** Sets [file] -> [tag] over what [read] returns, written through [upsert]. */
-    suspend fun set(sourceId: String, folder: ContentRef, relativeDir: String, file: String, tag: String): Boolean =
-        upsert(sourceId, relativeDir, SidecarTxt.FILE, folder) { SidecarTxt.with(SidecarTxt.render(read(sourceId, folder, relativeDir)), file, tag) }
+    /**
+     * Sets [file] -> [tag] over what [read] returns, written through [upsert]. False, with nothing written, when the file the
+     * write would replace (a home folder's own, an extra's home copy) is there but could not be read ([textToRewrite]).
+     */
+    suspend fun set(sourceId: String, folder: ContentRef, relativeDir: String, file: String, tag: String): Boolean {
+        val home = sourceId == Recents.HOME
+        val own = if (home) textToRewrite(folder, SidecarTxt.FILE) ?: return false else textIn(folder, SidecarTxt.FILE)
+        val copy = if (home) null else textToRewrite(copyDir(sourceId, relativeDir), SidecarTxt.FILE) ?: return false
+        return upsert(sourceId, relativeDir, SidecarTxt.FILE, folder) { stored ->
+            val merged = listOfNotNull(own, copy, stored).fold(emptyMap<String, String>()) { acc, t -> acc + SidecarTxt.parse(t) }
+            SidecarTxt.with(SidecarTxt.render(merged), file, tag)
+        }
+    }
 
     /**
      * Rename: sets [key] -> [name] in the app's `map.txt` for [lookupDir] (a home folder's own file, merged with the user's
      * other aliases; an extra's `.sources` copy). [key] is the file name, or a disc folder's name. False when neither
-     * the home nor the store took it.
+     * the home nor the store took it, or the `map.txt` it would replace is there but could not be read ([textToRewrite]).
      */
     suspend fun setName(sourceId: String, lookupDir: String, key: String, name: String): Boolean {
         val folder = if (sourceId == Recents.HOME) homeFolder(lookupDir) ?: return false else null
+        val mine = textToRewrite(folder ?: copyDir(sourceId, lookupDir), MAP_TXT) ?: return false
         return upsert(sourceId, lookupDir, MAP_TXT, folder) { current ->
-            val own = folder?.let { textIn(it, MAP_TXT) }?.let(MapTxt::parse) ?: emptyMap()
-            val copy = if (folder == null) textIn(copyDir(sourceId, lookupDir), MAP_TXT)?.let(MapTxt::parse) ?: emptyMap() else emptyMap()
             val stored = current?.let(MapTxt::parse) ?: emptyMap()
-            MapTxt.with(MapTxt.render(own + copy + stored), key, name)
+            MapTxt.with(MapTxt.render(MapTxt.parse(mine) + stored), key, name)
         }
     }
 

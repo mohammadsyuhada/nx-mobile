@@ -178,6 +178,40 @@ class SidecarsTest {
         assertFalse(Sidecars(homeWithGb(), MemorySidecarStore()) { null }.setName(Recents.HOME, "Roms/Game Boy (GB)", "Tetris.gb", "X"))
     }
 
+    // A sidecar that is there but gives no text (SAF reports a failed read as null) is not an empty one: a rewrite from it
+    // would replace every other line with the one set, so the write is dropped and the caller told.
+    @Test fun set_never_rewrites_a_home_systems_txt_it_could_not_read() = runTest {
+        val dir = "Home/Roms/Game Boy Advance (GBA)"
+        val src = FakeRomsSource(
+            dirs = mapOf("Home" to listOf("Roms"), "Home/Roms" to listOf("Game Boy Advance (GBA)"), dir to listOf("Mario.gba", "Zelda.gba", "systems.txt")),
+            texts = mapOf("$dir/systems.txt" to "Zelda.gba\tMGBA\n"),
+        )
+        src.unreadable += "$dir/systems.txt"
+        val store = MemorySidecarStore()
+        assertFalse(Sidecars(src, store) { home }.set(Recents.HOME, ContentRef(dir), "Roms/Game Boy Advance (GBA)", "Mario.gba", "MGBA"))
+        assertEquals(emptyList(), src.written)
+        assertEquals("Zelda.gba\tMGBA\n", src.textAt("$dir/systems.txt"))
+        assertTrue(store.map.isEmpty())
+    }
+
+    @Test fun set_never_rewrites_an_extras_home_copy_it_could_not_read() = runTest {
+        val src = source(withCopy = true).apply { unreadable += "Home/Roms/.sources/e1/systems.txt" }
+        assertFalse(Sidecars(src, MemorySidecarStore()) { home }.set("e1", loose, "", "a.chd", "PCE"))
+        assertEquals(emptyList(), src.written)
+        assertEquals("c.chd\tPCE\n", src.textAt("Home/Roms/.sources/e1/systems.txt"))
+    }
+
+    @Test fun set_name_never_rewrites_a_map_txt_it_could_not_read() = runTest {
+        val src = homeWithGb(texts = mapOf("Home/Roms/Game Boy (GB)/map.txt" to "Zelda.gb\tLink's Awakening\n")).apply { unreadable += "Home/Roms/Game Boy (GB)/map.txt" }
+        val store = MemorySidecarStore()
+        assertFalse(Sidecars(src, store) { home }.setName(Recents.HOME, "Roms/Game Boy (GB)", "Tetris.gb", "Tetris DX"))
+        assertEquals("Zelda.gb\tLink's Awakening\n", src.textAt("Home/Roms/Game Boy (GB)/map.txt"))
+        assertTrue(store.map.isEmpty())
+        val extra = source(withCopy = true).apply { unreadable += "Home/Roms/.sources/e1/map.txt" }
+        assertFalse(Sidecars(extra, MemorySidecarStore()) { home }.setName("e1", "", "a.chd", "Alpha Prime"))
+        assertEquals("b.chd\tBravo\n", extra.textAt("Home/Roms/.sources/e1/map.txt"))
+    }
+
     @Test fun the_store_lists_its_files_per_folder() = runTest {
         val store = MemorySidecarStore()
         store.write("home", "Collections", "RPGs.txt", "/Roms/A (A)/a.gb\n")

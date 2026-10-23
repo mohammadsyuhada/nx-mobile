@@ -47,6 +47,15 @@ class FolderMergeTest {
         assertEquals(mapOf("/Roms/Game Boy Advance (MGBA)/K.gba" to "/Roms/Game Boy Advance (GBA)/K.gba"), moved)
     }
 
+    // Main's map.txt is there but gives no text: carrying the lines over would replace it with only them, so the lines stay
+    // in the other folder (which then keeps its map.txt, and so is not removed).
+    @Test fun lines_are_not_carried_into_a_main_map_txt_that_could_not_be_read() = runTest {
+        val src = source().apply { unreadable += "$gba/map.txt" }
+        FolderMerge(src, ContentRef("H")).merge(index, splitFolders(index), LinkedHashMap(), { _, _ -> }) { false }
+        assertEquals("A.gba\tAdvance\n", src.textAt("$gba/map.txt"))
+        assertEquals("K.gba\tKirby\nT.gba\tTetris\n", src.textAt("$mgba/map.txt"))
+    }
+
     // A plain subfolder of the other folder (no disc sheet) holding several games moves once, as a folder, and every game
     // in it gets its line.
     @Test fun a_subfolder_of_several_games_moves_once_and_each_game_gets_its_line() = runTest {

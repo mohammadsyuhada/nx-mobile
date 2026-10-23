@@ -30,7 +30,7 @@ object RaRomRecord {
 /** A cached game's library pointer: mobile's `game.json`, else the `rom.txt` a handheld wrote (Device Sync brings it). */
 object RaGamePointers {
     suspend fun read(store: RaStore, hash: String): RaGamePointer? =
-        store.read(RaPaths.game(hash))?.decodeToString()?.let { RaJson.parse(RaGamePointer.serializer(), it) }
+        store.readJson(RaPaths.game(hash), RaGamePointer.serializer())
             ?: store.read(RaPaths.romRecord(hash))?.decodeToString()?.let(RaRomRecord::pointer)
 
     /** Writes `game.json` and, for a home game, `rom.txt` (prefetch: the walked entry is authoritative). */

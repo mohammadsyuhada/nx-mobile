@@ -3816,6 +3816,34 @@ class AppStateTest {
         assertNull(tetris().boxartRef)
     }
 
+    // Coming back lists only the art folders whose modified time moved since the scan read them: none on a return with
+    // nothing changed; a deletion (which bumps its folder's time) is still dropped.
+    @Test fun coming_back_lists_only_the_art_folders_that_changed() = runTest {
+        val gb = "Home/Roms/Game Boy (GB)/.media"
+        val fake = FakeRomsSource(dirs = mapOf(
+            "Home" to listOf("Roms"),
+            "Home/Roms" to listOf("Game Boy (GB)"),
+            "Home/Roms/Game Boy (GB)" to listOf("Tetris.gb", ".media"),
+            gb to listOf("boxart", "screenshot"),
+            "$gb/boxart" to listOf("Tetris.png"),
+            "$gb/screenshot" to listOf("Tetris.png"),
+        )).apply { stamps["$gb/boxart"] = 1_000L; stamps["$gb/screenshot"] = 1_000L }
+        val src = CountingRomsSource(fake)
+        val st = state(MemorySettings(ContentRef("Home")), src)
+        st.load(); advanceUntilIdle()
+        fun tetris() = assertIs<Screen.Systems>(st.screen.value).systems.first { it.tag == "GB" }.games.single()
+        src.calls.clear()
+        st.onForeground(); advanceUntilIdle()
+        assertTrue(src.calls.listings().none { it.startsWith("listChildren:$gb/") }, "${src.calls}")
+        fake.delete("$gb/boxart/Tetris.png")
+        fake.stamps["$gb/boxart"] = 2_000L
+        src.calls.clear()
+        st.onForeground(); advanceUntilIdle()
+        assertEquals(listOf("listChildren:$gb/boxart"), src.calls.listings().filter { it.startsWith("listChildren:$gb/") })
+        assertNull(tetris().boxartRef)
+        assertEquals(ContentRef("$gb/screenshot/Tetris.png"), tetris().screenshotRef)
+    }
+
     @Test fun a_throwing_sidecar_write_reports_and_closes_the_menu_without_moving_the_game() = runTest {
         var failing = false
         val throwing = object : RomsSource by source {
@@ -10644,6 +10672,22 @@ class AppStateTest {
         state.onButton(NxButton.B)                                       // Reset to defaults is on Layouts itself
         state.select(rows().indexOfFirst { it.kind == SettingsKind.RESET_DEFAULTS }); state.onButton(NxButton.A)
         assertTrue(settings.showNewShelf && settings.showNotStartedShelf)
+    }
+
+    // Reset to defaults rebuilds Home as the single rows do: the shelf hidden by its row comes back on Home, not only in the setting.
+    @Test fun reset_to_defaults_rebuilds_home_with_the_shelves_back() = runTest {
+        val settings = MemorySettings(ContentRef("Home"))
+        val state = state(settings)
+        state.load(); advanceUntilIdle()
+        state.onHomeLayout(FOLD); advanceUntilIdle()
+        state.openSettings(SettingsSection.LAYOUT_HOME)
+        fun rows() = assertIs<Screen.Settings>(state.screen.value).rows
+        state.select(rows().indexOfFirst { it.shelf == HomeShelf.NOT_STARTED }); state.onButton(NxButton.RIGHT); advanceUntilIdle()
+        assertEquals(emptyList(), state.homeView.value.shelves)
+        state.onButton(NxButton.B)                                       // Layouts
+        state.select(rows().indexOfFirst { it.kind == SettingsKind.RESET_DEFAULTS }); state.onButton(NxButton.A); advanceUntilIdle()
+        assertTrue(settings.showNotStartedShelf)
+        assertEquals(listOf(HomeShelf.NOT_STARTED to 3), state.homeView.value.shelves)   // Home rebuilt with it
     }
 
     @Test fun the_shelf_rows_show_only_with_the_home_tab() = runTest {

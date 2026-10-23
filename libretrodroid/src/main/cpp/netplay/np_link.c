@@ -27,6 +27,7 @@
 
 #include "np_link.h"
 #include "np_net.h"
+#include "np_tcp.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -74,7 +75,8 @@ static struct {
 	struct in_addr peer_addr;
 	char own_mode[NL_MODE_MAX + 1];	 // host: its READY payload
 	char host_mode[NL_MODE_MAX + 1]; // client: the host's, from READY
-	int listen_fd, sock, wake_rd, wake_wr;
+	int listen_fd, sock;
+	np_wake wake;
 	nl_state phase;
 	nl_reason reason;
 	int hs;
@@ -84,8 +86,7 @@ static struct {
 	uint64_t ready_at; // when this connection's READY completed
 	bool rx_data;	   // any SIO_DATA on this connection (host: the joiner is committed)
 	bool rejoin;	   // host, network thread: the joiner left early; run_session takes it back (never seen unlocked)
-	uint8_t* out;
-	size_t out_len, out_off, out_cap;
+	np_outq out;
 	uint64_t out_since; // when the queue last stopped moving (0: moving or empty)
 	// reader
 	uint8_t hdr[NL_HDR_SIZE];
@@ -124,7 +125,8 @@ static uint64_t elapsed(uint64_t now, uint64_t since) {
 
 static void reset_fields(void) {
 	memset(&nl, 0, sizeof(nl));
-	nl.listen_fd = nl.sock = nl.wake_rd = nl.wake_wr = -1;
+	nl.listen_fd = nl.sock = -1;
+	np_wake_init(&nl.wake);
 	nl.phase = NL_IDLE;
 }
 
@@ -141,17 +143,7 @@ static bool is_linked(void) {
 }
 
 static void wake_thread(void) {
-	if (nl.wake_wr >= 0) {
-		uint8_t b = 1;
-		ssize_t r = write(nl.wake_wr, &b, 1);
-		(void)r;
-	}
-}
-
-static void drain_wake(int fd) {
-	uint8_t buf[64];
-	while (read(fd, buf, sizeof(buf)) > 0) {
-	}
+	np_wake_poke(&nl.wake);
 }
 
 static const char* reason_name(nl_reason r) {
@@ -164,30 +156,9 @@ static const char* reason_name(nl_reason r) {
 	}
 }
 
+// Capped at NL_OUT_MAX pending: a peer that stops reading ends the session (send_packet) instead of growing it.
 static bool queue_bytes(const void* data, size_t n) {
-	if (nl.out_off == nl.out_len)
-		nl.out_off = nl.out_len = 0;
-	size_t pending = nl.out_len - nl.out_off;
-	if (pending + n > NL_OUT_MAX)
-		return false;
-	if (nl.out_len + n > nl.out_cap && nl.out_off > 0) {
-		memmove(nl.out, nl.out + nl.out_off, pending);
-		nl.out_len = pending;
-		nl.out_off = 0;
-	}
-	if (nl.out_len + n > nl.out_cap) {
-		size_t cap = nl.out_cap ? nl.out_cap : 4096;
-		while (cap < nl.out_len + n)
-			cap *= 2;
-		uint8_t* p = realloc(nl.out, cap);
-		if (!p)
-			return false;
-		nl.out = p;
-		nl.out_cap = cap;
-	}
-	memcpy(nl.out + nl.out_len, data, n);
-	nl.out_len += n;
-	return true;
+	return np_outq_push(&nl.out, data, n, NL_OUT_MAX);
 }
 
 static void end_session(nl_state st, nl_reason why, bool send_disconnect) {
@@ -221,24 +192,21 @@ static bool send_packet(uint8_t cmd, const void* data, uint16_t size, uint16_t c
 
 // Non-blocking: writes what the socket takes now. Both threads call it, under the lock.
 static void flush_queue(int fd, uint64_t now) {
-	while (nl.out_off < nl.out_len) {
-		ssize_t w = np_net_send_some(fd, nl.out + nl.out_off, nl.out_len - nl.out_off);
-		if (w > 0) {
-			nl.out_off += (size_t)w;
-			nl.last_tx = now;
-			nl.out_since = 0;
-			continue;
-		}
-		if (w == 0) {
-			if (nl.out_since == 0)
-				nl.out_since = now;
-			return;
-		}
-		nl.out_off = nl.out_len;
-		end_session(NL_ENDED, NL_REASON_IO, false);
-		return;
+	bool wrote;
+	np_outq_result res = np_outq_flush(&nl.out, fd, &wrote);
+	if (wrote) {
+		nl.last_tx = now;
+		nl.out_since = 0;
 	}
-	nl.out_since = 0;
+	if (res == NP_OUTQ_FULL) {
+		if (nl.out_since == 0)
+			nl.out_since = now;
+	} else if (res == NP_OUTQ_ERROR) {
+		nl.out.off = nl.out.len;
+		end_session(NL_ENDED, NL_REASON_IO, false);
+	} else {
+		nl.out_since = 0;
+	}
 }
 
 static uint16_t local_id(void) {
@@ -451,7 +419,7 @@ static void check_timers(uint64_t now) {
 		end_session(NL_ENDED, NL_REASON_IO, false);
 		return;
 	}
-	if (nl.role == NL_ROLE_HOST && nl.out_off == nl.out_len && elapsed(now, nl.last_tx) >= NL_HEARTBEAT_MS)
+	if (nl.role == NL_ROLE_HOST && !np_outq_pending(&nl.out) && elapsed(now, nl.last_tx) >= NL_HEARTBEAT_MS)
 		send_packet(NL_CMD_HEARTBEAT, NULL, 0, 0);
 }
 
@@ -463,62 +431,19 @@ static bool should_quit(void) {
 	return nl.stop || !is_live();
 }
 
-// Host: accepts only the wizard's peer (gbalink.c allowed_ip); anyone else is closed and the host keeps listening.
-static int accept_one(int listen_fd, int wake_fd, struct in_addr peer) {
-	for (;;) {
-		pthread_mutex_lock(&nl_mutex);
-		bool quit = should_quit();
-		pthread_mutex_unlock(&nl_mutex);
-		if (quit)
-			return -1;
-		struct pollfd p[2] = {{listen_fd, POLLIN, 0}, {wake_fd, POLLIN, 0}};
-		int r = poll(p, 2, 100);
-		if (r < 0 && errno != EINTR)
-			return -1;
-		if (p[1].revents & POLLIN)
-			drain_wake(wake_fd);
-		if (p[0].revents & POLLIN) {
-			struct sockaddr_in from;
-			socklen_t from_len = sizeof(from);
-			memset(&from, 0, sizeof(from));
-			int fd = accept(listen_fd, (struct sockaddr*)&from, &from_len);
-			if (fd < 0)
-				continue;
-			if (from.sin_family != AF_INET || from.sin_addr.s_addr != peer.s_addr) {
-				char got[INET_ADDRSTRLEN] = "?";
-				inet_ntop(AF_INET, &from.sin_addr, got, sizeof(got));
-				NP_LOG("link: refused a connection from %s (not the agreed peer)", got);
-				close(fd);
-				continue;
-			}
-			np_net_configure_tcp(fd);
-			if (np_net_set_nonblocking(fd) != 0) {
-				close(fd);
-				continue;
-			}
-			return fd;
-		}
-	}
+// np_tcp's loops ask between waits, taking the mutex themselves.
+static bool quit_locked(void) {
+	pthread_mutex_lock(&nl_mutex);
+	bool quit = should_quit();
+	pthread_mutex_unlock(&nl_mutex);
+	return quit;
 }
 
 static int connect_peer(const char* ip, uint16_t port, int wake_fd) {
-	for (int attempt = 0; attempt < NL_CONNECT_ATTEMPTS; attempt++) {
-		pthread_mutex_lock(&nl_mutex);
-		bool quit = should_quit();
-		pthread_mutex_unlock(&nl_mutex);
-		if (quit)
-			return -1;
-		int fd = np_net_connect(ip, port, NL_CONNECT_TIMEOUT_MS, wake_fd);
-		if (fd >= 0)
-			return fd;
-		if (fd == -2) {
-			drain_wake(wake_fd);
-			continue;
-		}
-		struct pollfd p = {wake_fd, POLLIN, 0};
-		if (poll(&p, 1, NL_CONNECT_RETRY_MS) > 0)
-			drain_wake(wake_fd);
-	}
+	int fd = np_tcp_connect_retry(ip, port, wake_fd, NL_CONNECT_ATTEMPTS, NL_CONNECT_TIMEOUT_MS, NL_CONNECT_RETRY_MS,
+								  quit_locked);
+	if (fd != NP_TCP_CONNECT_GAVE_UP)
+		return fd;
 	pthread_mutex_lock(&nl_mutex);
 	NP_LOG("link: could not reach %s:%u", ip, port);
 	end_session(NL_FAILED, NL_REASON_CONNECT, false);
@@ -530,7 +455,7 @@ static int connect_peer(const char* ip, uint16_t port, int wake_fd) {
 static void drop_joiner(int fd) {
 	nl.sock = -1;
 	nl.hs = HS_NONE;
-	nl.out_off = nl.out_len = 0;
+	np_outq_clear(&nl.out);
 	nl.out_since = 0;
 	reset_reader();
 	close(fd);
@@ -565,7 +490,7 @@ static int run_session(int fd, int wake_fd) {
 			return 1;
 		}
 		bool quit = should_quit();
-		bool want_out = nl.out_off < nl.out_len;
+		bool want_out = np_outq_pending(&nl.out);
 		pthread_mutex_unlock(&nl_mutex);
 		if (quit)
 			return 0;
@@ -579,7 +504,7 @@ static int run_session(int fd, int wake_fd) {
 			return 0;
 		}
 		if (p[1].revents & POLLIN)
-			drain_wake(wake_fd);
+			np_wake_drain(wake_fd);
 
 		if (p[0].revents & (POLLIN | POLLHUP | POLLERR)) {
 			ssize_t n = recv(fd, rx_scratch, sizeof(rx_scratch), 0);
@@ -614,23 +539,21 @@ static int run_session(int fd, int wake_fd) {
 	}
 }
 
-// Send what is still queued (DISCONNECT) for a moment, then close.
+// close_session's flush step (network thread, takes the lock).
+static bool flush_pending(int fd) {
+	pthread_mutex_lock(&nl_mutex);
+	flush_queue(fd, now_ms());
+	bool pending = np_outq_pending(&nl.out);
+	pthread_mutex_unlock(&nl_mutex);
+	return pending;
+}
+
+// Send what is still queued (DISCONNECT) for a moment, then close. No linger for the peer's FIN (the engine has one).
 static void close_session(int fd) {
-	uint64_t t0 = np_net_now_ms();
-	for (;;) {
-		pthread_mutex_lock(&nl_mutex);
-		flush_queue(fd, now_ms());
-		bool pending = nl.out_off < nl.out_len;
-		pthread_mutex_unlock(&nl_mutex);
-		if (!pending || np_net_now_ms() - t0 >= NL_FINAL_FLUSH_MS)
-			break;
-		struct pollfd p = {fd, POLLOUT, 0};
-		poll(&p, 1, NL_POLL_MS);
-	}
-	shutdown(fd, SHUT_WR);
+	np_tcp_final_flush(fd, flush_pending, NL_FINAL_FLUSH_MS, NL_POLL_MS, 0, NULL, 0);
 	pthread_mutex_lock(&nl_mutex);
 	nl.sock = -1;
-	nl.out_off = nl.out_len = 0;
+	np_outq_clear(&nl.out);
 	pthread_mutex_unlock(&nl_mutex);
 	close(fd);
 }
@@ -643,7 +566,7 @@ static void* link_thread(void* arg) {
 	memcpy(ip, nl.peer_ip, sizeof(ip));
 	struct in_addr peer = nl.peer_addr;
 	uint16_t port = nl.port;
-	int wake_fd = nl.wake_rd;
+	int wake_fd = nl.wake.rd;
 	pthread_mutex_unlock(&nl_mutex);
 
 	for (;;) {
@@ -653,7 +576,9 @@ static void* link_thread(void* arg) {
 		pthread_mutex_unlock(&nl_mutex);
 		if (role == NL_ROLE_HOST && listen_fd < 0)
 			return NULL;
-		int fd = role == NL_ROLE_HOST ? accept_one(listen_fd, wake_fd, peer) : connect_peer(ip, port, wake_fd);
+		// Host: only the wizard's peer (gbalink.c allowed_ip); anyone else is closed and the host keeps listening.
+		int fd = role == NL_ROLE_HOST ? np_tcp_accept_from(listen_fd, wake_fd, peer, quit_locked, "link: ")
+									  : connect_peer(ip, port, wake_fd);
 		if (fd < 0)
 			return NULL;
 		pthread_mutex_lock(&nl_mutex);
@@ -705,8 +630,7 @@ int nl_start(nl_role role, const char* peer_ip, uint16_t port, const char* mode,
 	nl.role = role;
 	nl.port = port;
 	nl.clock = clock;
-	if (!peer_ip || strlen(peer_ip) >= sizeof(nl.peer_ip) || inet_pton(AF_INET, peer_ip, &nl.peer_addr) != 1 ||
-		(mode && strlen(mode) > NL_MODE_MAX)) {
+	if (!np_tcp_parse_peer(peer_ip, sizeof(nl.peer_ip), &nl.peer_addr) || (mode && strlen(mode) > NL_MODE_MAX)) {
 		NP_LOG("link: bad address or mode");
 		reset_fields();
 		pthread_mutex_unlock(&nl_mutex);
@@ -715,37 +639,14 @@ int nl_start(nl_role role, const char* peer_ip, uint16_t port, const char* mode,
 	memcpy(nl.peer_ip, peer_ip, strlen(peer_ip) + 1);
 	if (mode)
 		memcpy(nl.own_mode, mode, strlen(mode) + 1);
-	if (role == NL_ROLE_HOST) {
-		nl.listen_fd = np_net_listen(port);
-		if (nl.listen_fd < 0) {
-			reset_fields();
-			pthread_mutex_unlock(&nl_mutex);
-			return -1;
-		}
-	}
-	int wake[2];
-	if (pipe(wake) != 0) {
-		if (nl.listen_fd >= 0)
-			close(nl.listen_fd);
+	// The thread takes nl_mutex first, so it sees the phase set below. Any failure resets the fields.
+	if (np_tcp_start(role == NL_ROLE_HOST, port, &nl.listen_fd, &nl.wake, &nl.thread, link_thread) != 0) {
 		reset_fields();
 		pthread_mutex_unlock(&nl_mutex);
 		return -1;
 	}
-	np_net_set_nonblocking(wake[0]);
-	np_net_set_nonblocking(wake[1]);
-	nl.wake_rd = wake[0];
-	nl.wake_wr = wake[1];
 	nl.phase = NL_CONNECTING;
 	nl.started = true;
-	if (pthread_create(&nl.thread, NULL, link_thread, NULL) != 0) {
-		if (nl.listen_fd >= 0)
-			close(nl.listen_fd);
-		close(wake[0]);
-		close(wake[1]);
-		reset_fields();
-		pthread_mutex_unlock(&nl_mutex);
-		return -1;
-	}
 	nl.thread_started = true;
 	NP_LOG(role == NL_ROLE_HOST ? "link: hosting on port %u" : "link: joining on port %u", port);
 	pthread_mutex_unlock(&nl_mutex);
@@ -925,15 +826,7 @@ void nl_shutdown(void) {
 		pthread_join(thread, NULL);
 
 	pthread_mutex_lock(&nl_mutex);
-	if (nl.sock >= 0)
-		close(nl.sock);
-	if (nl.listen_fd >= 0)
-		close(nl.listen_fd);
-	if (nl.wake_rd >= 0)
-		close(nl.wake_rd);
-	if (nl.wake_wr >= 0)
-		close(nl.wake_wr);
-	free(nl.out);
+	np_tcp_release(&nl.sock, &nl.listen_fd, &nl.wake, &nl.out);
 	reset_fields();
 	pthread_mutex_unlock(&nl_mutex);
 }

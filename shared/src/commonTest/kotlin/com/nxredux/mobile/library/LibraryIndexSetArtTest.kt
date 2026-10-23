@@ -29,4 +29,12 @@ class LibraryIndexSetArtTest {
     @Test fun setArtUnknownGameReturnsSameInstance() {
         assertSame(index, index.setArt(g1.copy(file = "Ghost.gb"), ArtRefs(boxart = "b")))
     }
+
+    /** Every art kind round-trips through [ArtRefs]: a kind added to one side but not the other fails here. */
+    @Test fun gameWithArtRoundTripsEveryKind() {
+        val all = ArtRefs(boxart = "b", box2d = "c", screenshot = "s", grid = "g", hero = "h", wheel = "w", mix = "m")
+        val g = g1.withArt(all)
+        assertEquals(all, g.artRefs)
+        assertEquals(g1, g.withArt(ArtRefs()))   // other fields kept, every kind cleared (g1 has none)
+    }
 }

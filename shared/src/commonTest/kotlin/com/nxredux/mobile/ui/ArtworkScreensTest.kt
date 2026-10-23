@@ -133,6 +133,7 @@ class ArtworkScreensTest {
         arcade: com.nxredux.mobile.library.ArcadeSets? = null, onHost: (com.nxredux.mobile.scraper.ArtworkHost) -> Unit = {},
         sgdb: Boolean = false, libretro: Boolean = false, tgdbUserKey: String? = null, tgdb: Boolean = false,
         onboardingAt: OnboardingStep? = null,   // onboarding to do, resumed at this step
+        store: com.nxredux.mobile.storage.MemoryLibraryIndexStore = com.nxredux.mobile.storage.MemoryLibraryIndexStore(),
     ): Rig {
         val source = FakeRomsSource(
             dirs = mapOf(
@@ -174,7 +175,7 @@ class ArtworkScreensTest {
         }
         val state = AppState(
             AppDeps(
-                settings, source, Runner, Picker, artwork = factory, privateFiles = files,
+                settings, source, Runner, Picker, artwork = factory, privateFiles = files, indexStore = store,
                 launcher = apps?.let(::Launcher), androidArtStore = artStore, compute = UnconfinedTestDispatcher(testScheduler),
                 arcadeSets = { arcade ?: com.nxredux.mobile.library.ArcadeSets.EMPTY },
             ),
@@ -323,6 +324,58 @@ class ArtworkScreensTest {
         val games = assertNotNull(host).libraryGames()
         assertEquals("Street Fighter II: The World Warrior (World 910522)", games.single { it.tag == "FBN" }.datTitle)
         assertNull(games.single { it.fileName == "Tetris.gb" }.datTitle)
+    }
+
+    private fun storedBoxes(store: com.nxredux.mobile.storage.MemoryLibraryIndexStore): Set<String> =
+        assertNotNull(com.nxredux.mobile.library.LibraryIndexCodec.decode(assertNotNull(store.text))).systems.flatMap { it.games }.mapNotNull { it.boxart }.toSet()
+
+    // Art results reach the index at once but are written and shown in batches: a Reset or a fetch of thousands of games
+    // would otherwise rewrite the whole index file and rebuild the menu once per game.
+    @Test fun art_results_are_written_once_they_stop_coming_and_none_is_lost() = runTest {
+        var host: com.nxredux.mobile.scraper.ArtworkHost? = null
+        val store = com.nxredux.mobile.storage.MemoryLibraryIndexStore()
+        rig(onHost = { host = it }, store = store)
+        val h = assertNotNull(host)
+        val games = h.allLibraryGames()
+        val writes = store.writes
+        val boxes = HashSet<String>()
+        repeat(5) { round ->
+            games.forEachIndexed { i, g -> h.applyArt(g.gamePath, com.nxredux.mobile.library.ArtRefs(boxart = "r$round-$i.png")) }
+        }
+        games.indices.mapTo(boxes) { "r4-$it.png" }
+        assertEquals(writes, store.writes)                                                  // 20 results, nothing written yet
+        assertTrue(h.allLibraryGames().all { it.art.boxart in boxes }, "${h.allLibraryGames().map { it.art }}")   // but in memory at once
+        advanceUntilIdle()                                                                  // they stopped coming: one write for all
+        assertEquals(writes + 1, store.writes)
+        assertEquals(boxes, storedBoxes(store))
+    }
+
+    @Test fun art_results_that_keep_coming_are_still_written_now_and_then_and_at_the_jobs_end() = runTest {
+        var host: com.nxredux.mobile.scraper.ArtworkHost? = null
+        val store = com.nxredux.mobile.storage.MemoryLibraryIndexStore()
+        rig(onHost = { host = it }, store = store)
+        val h = assertNotNull(host)
+        val games = h.allLibraryGames()
+        val writes = store.writes
+        repeat(40) { i ->
+            h.applyArt(games[i % games.size].gamePath, com.nxredux.mobile.library.ArtRefs(boxart = "b$i.png"))
+            advanceTimeBy(1_000)   // one a second: never a quiet pause
+        }
+        assertTrue(store.writes - writes in 1..4, "${store.writes - writes} writes for 40 results")
+        h.flushArt()                                                                        // the job's end
+        assertEquals((36 until 40).map { "b$it.png" }.toSet(), storedBoxes(store))
+    }
+
+    @Test fun a_scan_meanwhile_writes_the_waiting_art_with_its_index() = runTest {
+        var host: com.nxredux.mobile.scraper.ArtworkHost? = null
+        val store = com.nxredux.mobile.storage.MemoryLibraryIndexStore()
+        val r = rig(onHost = { host = it }, store = store)
+        val h = assertNotNull(host)
+        h.applyArt(h.allLibraryGames().first().gamePath, com.nxredux.mobile.library.ArtRefs(boxart = "x.png"))
+        val writes = store.writes
+        r.state.rescan()
+        advanceUntilIdle()
+        assertEquals(writes + 1, store.writes)   // the scan's write; the waiting art is not written over it afterwards
     }
 
     @Test fun fetch_by_console_starts_that_console_and_shows_progress() = runTest {

@@ -20,6 +20,8 @@
 #include <jni.h>
 #include <cstdio>
 
+#include "utils/jnistring.h"
+
 namespace libretrodroid {
 
 std::mutex CoreLog::lock;
@@ -60,27 +62,6 @@ std::vector<std::string> CoreLog::recent() {
 
 }
 
-namespace {
-
-/** Well-formed UTF-8 of 1 to 3 byte sequences (4-byte ones differ in modified UTF-8, so they count as malformed). */
-bool isWellFormedUtf8(const std::string& s) {
-    size_t i = 0;
-    while (i < s.size()) {
-        auto c = (unsigned char) s[i];
-        size_t extra;
-        if (c < 0x80) extra = 0;
-        else if ((c & 0xE0) == 0xC0 && c >= 0xC2) extra = 1;
-        else if ((c & 0xF0) == 0xE0) extra = 2;
-        else return false;
-        if (i + extra >= s.size()) return false;
-        for (size_t k = 1; k <= extra; k++) if (((unsigned char) s[i + k] & 0xC0) != 0x80) return false;
-        i += extra + 1;
-    }
-    return true;
-}
-
-}
-
 extern "C" {
 
 JNIEXPORT jobjectArray JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_getRecentCoreErrors(
@@ -91,10 +72,8 @@ JNIEXPORT jobjectArray JNICALL Java_com_swordfish_libretrodroid_LibretroDroid_ge
     jclass stringClass = env->FindClass("java/lang/String");
     jobjectArray result = env->NewObjectArray((jsize) lines.size(), stringClass, nullptr);
     for (size_t i = 0; i < lines.size(); i++) {
-        // NewStringUTF wants (modified) UTF-8: a line that isn't well-formed has its non-ASCII bytes turned into '?'.
-        std::string safe = lines[i];
-        if (!isWellFormedUtf8(safe)) for (char& c : safe) if ((unsigned char) c >= 0x80) c = '?';
-        jstring s = env->NewStringUTF(safe.c_str());
+        // A core's bytes: newSafeJString keeps an emoji and turns only the bytes that start no sequence into '?'.
+        jstring s = newSafeJString(env, lines[i]);
         env->SetObjectArrayElement(result, (jsize) i, s);
         env->DeleteLocalRef(s);
     }

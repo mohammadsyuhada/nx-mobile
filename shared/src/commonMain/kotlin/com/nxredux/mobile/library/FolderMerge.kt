@@ -139,7 +139,9 @@ class FolderMerge(private val source: RomsSource, private val home: ContentRef) 
         val lines = text.lines().filter { it.isNotBlank() }
         val (going, staying) = lines.partition { it.substringBefore('\t').lowercase() in names }
         if (going.isEmpty()) return
-        val mine = source.child(to, file)?.let { source.readText(it.ref) }.orEmpty()
+        // Main's file there but unreadable is not an empty one: writing would replace it with only the carried lines, so
+        // they stay in [from] (whose folder then keeps the file, and so is not removed).
+        val mine = source.child(to, file)?.let { source.readText(it.ref) ?: return } ?: ""
         val have = mine.lines().map { it.substringBefore('\t').lowercase() }.toSet()
         val add = going.filter { it.substringBefore('\t').lowercase() !in have }
         if (add.isNotEmpty() && !source.writeText(to, file, mine.trimEnd('\n').let { if (it.isEmpty()) "" else "$it\n" } + add.joinToString("\n") + "\n")) return

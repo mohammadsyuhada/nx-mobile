@@ -414,6 +414,36 @@ class DeviceSyncToolTest {
         assertTrue(r.source.listings > before)
     }
 
+    // Leaving the tool by Home, not B, still scans: the menu showing again takes the pending ROMs.
+    @Test fun roms_arriving_in_the_tool_rescan_when_it_is_left_by_home() = runTest {
+        val r = rig(); r.openDeviceSync()
+        receiveRoms(r)
+        val before = r.source.listings
+        r.state.goHome()
+        advanceUntilIdle()
+        assertTrue(r.source.listings > before)
+        assertIs<Screen.Systems>(r.state.screen.value)
+        val after = r.source.listings
+        r.state.openTools(); advanceUntilIdle()
+        assertEquals(after, r.source.listings)   // spent
+    }
+
+    // The sync ends while a game list is open: no scan under the list, one when the menu shows again.
+    @Test fun roms_arriving_under_a_game_list_rescan_when_the_menu_shows_again() = runTest {
+        val r = rig(); r.openDeviceSync()
+        r.state.goHome()
+        val systems = assertIs<Screen.Systems>(r.state.screen.value).tabs.flatMap { it.rows }.flatMap { (it as? MainRow.System)?.systems.orEmpty() }
+        r.state.openSystem(systems.first { it.tag == "GB" })
+        assertIs<Screen.Games>(r.state.screen.value)
+        val before = r.source.listings
+        receiveRoms(r)
+        assertIs<Screen.Games>(r.state.screen.value)
+        assertEquals(before, r.source.listings)
+        r.state.onButton(NxButton.B)
+        advanceUntilIdle()
+        assertTrue(r.source.listings > before)
+    }
+
     @Test fun refusal_rules_cover_both_transfers() {
         assertEquals("Close the running game first, then import.", SaveTransferRules.importRefusal(gameScreenAlive = true, syncing = true))
         assertEquals("Device Sync is running… please wait", SaveTransferRules.importRefusal(gameScreenAlive = false, syncing = true))

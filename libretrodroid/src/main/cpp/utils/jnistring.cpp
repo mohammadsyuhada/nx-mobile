@@ -17,6 +17,10 @@
 
 #include "jnistring.h"
 
+#include <cstring>
+
+#include "utf8.h"
+
 JniString::JniString(JNIEnv *env, jstring javaString) :
     env(env), javaString(javaString) {
     nativeString = env->GetStringUTFChars(javaString, 0);
@@ -32,4 +36,12 @@ const char* JniString::cString() {
 
 std::string JniString::stdString() {
     return std::string(nativeString);
+}
+
+jstring newSafeJString(JNIEnv* env, const char* s) {
+    if (s == nullptr) return env->NewStringUTF("");
+    size_t n = std::strlen(s);
+    if (libretrodroid::Utf8::isJniSafe(s, n)) return env->NewStringUTF(s);
+    std::u16string wide = libretrodroid::Utf8::toUtf16(s, n);
+    return env->NewString(reinterpret_cast<const jchar*>(wide.data()), (jsize) wide.size());
 }

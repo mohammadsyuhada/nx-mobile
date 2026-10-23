@@ -14,6 +14,8 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Runnable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlin.coroutines.ContinuationInterceptor
 import kotlinx.coroutines.test.runTest
 
 class LibraryScannerTest {
@@ -172,6 +174,45 @@ class LibraryScannerTest {
         assertEquals("$gb/boxart/Zelda.png", games.getValue("Zelda.gb").boxart)
         assertNull(games.getValue("Kirby.gb").boxart)
         assertEquals(index.systems.single().games.map { it.file }, fresh.systems.single().games.map { it.file })   // order kept
+    }
+
+    // Coming back to the app (reuse): a typed art folder whose modified time is what the scan saw is not listed again;
+    // one whose time moved (a file added or deleted bumps it) is, and so is one whose provider reports no time. Without
+    // reuse (opening Artwork) every folder is listed. The art read is the same either way.
+    @Test fun read_art_with_reuse_lists_only_the_art_folders_that_changed() = runTest {
+        val gb = "H/Roms/Game Boy (GB)/.media"
+        val fake = FakeRomsSource(dirs = mapOf(
+            "H" to listOf("Roms"),
+            "H/Roms" to listOf("Game Boy (GB)"),
+            "H/Roms/Game Boy (GB)" to listOf("Tetris.gb", "Zelda.gb", ".media"),
+            gb to listOf("boxart", "screenshot", "grid"),
+            "$gb/boxart" to listOf("Tetris.png"),
+            "$gb/screenshot" to listOf("Tetris.png"),
+            "$gb/grid" to listOf("Tetris.png"),
+        )).apply { stamps["$gb/boxart"] = 1_000L; stamps["$gb/screenshot"] = 1_000L }   // grid: no time
+        val src = CountingRomsSource(fake)
+        val scanner = LibraryScanner(src, Sidecars(src, MemorySidecarStore()) { ContentRef("H") })
+        val index = scanner.scan(ContentRef("H"), emptyList(), emptyMap())
+        fun subListings() = src.calls.filter { it.startsWith("listChildren:$gb/") }.toSet()
+
+        src.calls.clear()
+        assertTrue(index.withArt(scanner.readArt(index, reuse = true)) === index)
+        assertEquals(setOf("listChildren:$gb/grid"), subListings())   // only the folder with no time
+
+        assertTrue(fake.writeText(ContentRef("$gb/boxart"), "Zelda.png", ""))
+        fake.stamps["$gb/boxart"] = 2_000L
+        src.calls.clear()
+        val fresh = index.withArt(scanner.readArt(index, reuse = true))
+        assertEquals(setOf("listChildren:$gb/boxart", "listChildren:$gb/grid"), subListings())
+        assertEquals("$gb/boxart/Zelda.png", fresh.systems.single().games.single { it.file == "Zelda.gb" }.boxart)
+
+        src.calls.clear()
+        assertTrue(fresh.withArt(scanner.readArt(fresh, reuse = true)) === fresh)   // the changed folder's new map is kept
+        assertEquals(setOf("listChildren:$gb/grid"), subListings())
+
+        src.calls.clear()
+        assertTrue(fresh.withArt(scanner.readArt(fresh)) === fresh)
+        assertEquals(setOf("listChildren:$gb/boxart", "listChildren:$gb/screenshot", "listChildren:$gb/grid"), subListings())
     }
 
     @Test fun readsEveryTypedFolder() = runTest {
@@ -394,6 +435,31 @@ class LibraryScannerTest {
         assertEquals(listOf(""), previous.systems.flatMap { it.games }.filter { it.source == "x" && it.file == "Tetris.gb" }.map { it.dir })
         src.listingFault = ListingFault.EMPTY
         assertFailsWith<ListingUnavailable> { scanner.scan(home, listOf(x), emptyMap(), previous) }
+    }
+
+    @Test fun an_extra_root_that_suddenly_lists_empty_while_its_subfolder_games_are_there_fails_the_scan() = runTest {
+        val x = ExtraFolder("x", ContentRef("sd/X"))
+        val src = FakeRomsSource(mapOf("Home" to listOf("Roms"), "Home/Roms" to emptyList(), "sd/X" to listOf("GBA"), "sd/X/GBA" to listOf("Kirby.gba")))
+        val scanner = LibraryScanner(src, Sidecars(src, MemorySidecarStore()) { home })
+        val previous = scanner.scan(home, listOf(x), emptyMap())
+        assertTrue(previous.systems.flatMap { it.games }.any { it.source == "x" && it.file == "Kirby.gba" })
+        src.listingFault = ListingFault.EMPTY
+        assertFailsWith<ListingUnavailable> { scanner.scan(home, listOf(x), emptyMap(), previous) }
+    }
+
+    @Test fun an_extra_whose_games_moved_away_but_whose_folders_stay_scans_as_empty() = runTest {
+        // Move into Roms carries the files off and leaves GBA/ and SNES/ behind: the root lists, so the provider hides nothing.
+        val x = ExtraFolder("x", ContentRef("sd/X"))
+        val before = FakeRomsSource(mapOf(
+            "Home" to listOf("Roms"), "Home/Roms" to emptyList(),
+            "sd/X" to listOf("GBA", "SNES"), "sd/X/GBA" to listOf("Kirby.gba"), "sd/X/SNES" to listOf("Mario.sfc"),
+        ))
+        val previous = LibraryScanner(before, Sidecars(before, MemorySidecarStore()) { home }).scan(home, listOf(x), emptyMap())
+        assertEquals(2, previous.systems.flatMap { it.games }.count { it.source == "x" })
+        val after = FakeRomsSource(mapOf("Home" to listOf("Roms"), "Home/Roms" to emptyList(), "sd/X" to listOf("GBA", "SNES"), "sd/X/GBA" to emptyList(), "sd/X/SNES" to emptyList()))
+        val index = LibraryScanner(after, Sidecars(after, MemorySidecarStore()) { home }).scan(home, listOf(x), emptyMap(), previous)
+        assertEquals(listOf(IndexedExtra("x", "sd/X")), index.extras)
+        assertTrue(index.systems.flatMap { it.games }.none { it.source == "x" })
     }
 
     @Test fun a_really_empty_extra_stays_empty() = runTest {
@@ -681,5 +747,39 @@ class LibraryScannerTest {
         val index = LibraryScanner(src, compute = compute).scan(ContentRef("H"), emptyList(), emptyMap())
         assertEquals(listOf("Tetris.gb"), index.systems.single().games.map { it.file })
         assertTrue(dispatched > 0)
+    }
+
+    // The whole walk runs on the compute context, not only the list building: every tree read of a scan and of readArt
+    // is asked from it (a platform source then hops to its I/O context and comes back there), so the work between reads
+    // (resolving files, parsing sheets and sidecars, the art maps) never lands on the caller's thread.
+    @Test fun the_walk_and_the_art_read_run_on_the_compute_context() = runTest {
+        val compute = object : CoroutineDispatcher() {
+            override fun dispatch(context: CoroutineContext, block: Runnable) = Dispatchers.Default.dispatch(context, block)
+        }
+        val elsewhere = ArrayList<String>()
+        val fake = FakeRomsSource(
+            dirs = mapOf(
+                "H" to listOf("Roms"), "H/Roms" to listOf("Game Boy (GB)", "Sony PlayStation (PS)"),
+                "H/Roms/Game Boy (GB)" to listOf("Tetris.gb", "map.txt", ".media"), "H/Roms/Game Boy (GB)/.media" to listOf("boxart"),
+                "H/Roms/Game Boy (GB)/.media/boxart" to listOf("Tetris.png"),
+                "H/Roms/Sony PlayStation (PS)" to listOf("Crash.cue", "Crash.bin"), "sd/x" to listOf("w.gba"),
+            ),
+            texts = mapOf("H/Roms/Game Boy (GB)/map.txt" to "Tetris.gb\tTetris DX\n", "H/Roms/Sony PlayStation (PS)/Crash.cue" to "FILE \"Crash.bin\" BINARY\n"),
+        )
+        val src = object : RomsSource by fake {
+            suspend fun check(call: String) {
+                if (currentCoroutineContext()[ContinuationInterceptor] !== compute) elsewhere += call
+            }
+            override suspend fun listChildren(dir: ContentRef): List<Entry> { check("list ${dir.value}"); return fake.listChildren(dir) }
+            override suspend fun child(dir: ContentRef, name: String): Entry? { check("child $name"); return fake.child(dir, name) }
+            override suspend fun readText(file: ContentRef): String? { check("text ${file.value}"); return fake.readText(file) }
+            override suspend fun readHead(file: ContentRef, max: Int): ByteArray? { check("head ${file.value}"); return fake.readHead(file, max) }
+        }
+        val scanner = LibraryScanner(src, Sidecars(src, MemorySidecarStore()) { ContentRef("H") }, compute = compute)
+        val index = scanner.scan(ContentRef("H"), listOf(ExtraFolder("x1", ContentRef("sd/x"))), emptyMap())
+        assertEquals(setOf("Tetris DX", "Crash", "w"), index.systems.flatMap { s -> s.games.map { it.name } }.toSet())
+        scanner.readArt(index)
+        scanner.scanOutsideRoms(ContentRef("H"), emptyMap())
+        assertEquals(emptyList(), elsewhere)
     }
 }

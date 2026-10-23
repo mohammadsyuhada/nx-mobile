@@ -1,11 +1,8 @@
 package com.nxredux.mobile.ui.nx
 
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.nxredux.mobile.ui.HomeStrip
@@ -54,21 +51,6 @@ internal fun HomeMinimalScreen(
         names, selection, hints, onSelect, onOpen, onLongPress, onHint, bodyAlpha, selected, modifier, top = top,
         hideHints = chrome.emptyBarRoom, leaving = leaving,
     ) {
-        if (pageStrip != null) {
-            BoxWithConstraints(Modifier.fillMaxWidth().graphicsLayer { alpha = bodyAlpha() }) {
-                HomeStripLines(
-                    pageStrip, stripLines, gutter.value, inkTop - capTop,
-                    width = maxWidth.value - 2 * gutter.value, lh = homeStripLineH(frame), pitch = homeStripPitch(frame),
-                )
-            }
-        }
-        if (header != null && shownStrip != null) {
-            BoxWithConstraints(Modifier.fillMaxWidth().graphicsLayer { alpha = bodyAlpha() }) {
-                HomeStripLines(
-                    shownStrip, header.lines, gutter.value, header.stripTop,
-                    width = maxWidth.value - 2 * gutter.value - HOME_HEADER_ICONS_ROOM, lh = homeStripLineH(frame), pitch = homeStripPitch(frame),
-                )
-            }
-        }
+        HomeStripOverlay(shownStrip, pageStrip, header, stripLines, inkTop, capTop, frame, gutter, bodyAlpha)
     }
 }

@@ -1,13 +1,11 @@
 package com.nxredux.mobile.scraper
 
+import com.nxredux.mobile.scraper.LenientJson.int
+import com.nxredux.mobile.scraper.LenientJson.str
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.intOrNull
 
 data class TgdbGame(val id: Int, val title: String, val platform: Int?)
 
@@ -64,11 +62,8 @@ object Tgdb {
     /** The name searched and matched: the shown name without bracketed text (region, revision, dump tags). */
     fun queryName(name: String): String = name.replace(BRACKETS, "").trim().ifEmpty { name.trim() }
 
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-    private fun parse(body: String?): JsonObject? = body?.let { runCatching { json.parseToJsonElement(it) as? JsonObject }.getOrNull() }
+    private fun parse(body: String?): JsonObject? = LenientJson.parseObject(body)
     private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
-    private fun JsonElement?.int(): Int? = (this as? JsonPrimitive)?.let { it.intOrNull ?: it.content.toIntOrNull() }
-    private fun JsonElement?.str(): String? = (this as? JsonPrimitive)?.takeIf { it.isString }?.content
 
     /** `remaining_monthly_allowance` + `extra_allowance` of an answer; null when absent. */
     private fun left(o: JsonObject): Int? {
@@ -179,11 +174,12 @@ class TheGamesDbSource(
     override fun knows(ref: LibraryGameRef): Boolean = !ref.android && Tgdb.platforms(ref.tag, ref.fileName) != null
 
     private val pacer = Pacer(RATE_MS, now, sleep)
+    private val calls = PacedGet(pacer, http, sleep, TRIES, BACKOFF, BUSY_WAIT_MS)
     private val lock = Mutex()
     private var _left: Int? = null
     private var leftKey: String? = null
     /** A stop met on a game's screenshot call after its box was found: that game keeps its box, the next call stops. */
-    private var pendingStop: String? = null
+    private val pendingStop = PendingStop()
 
     /** The last game asked about: its key and path, its match (null = none) and its logos once read (null = not read). */
     private class Last(val key: String, val gamePath: String, val game: TgdbGame?, val logos: List<ArtHit>?)
@@ -210,7 +206,8 @@ class TheGamesDbSource(
 
     /** The free allowance read at the start of a job; a failed read leaves the last known value. */
     override suspend fun startJob() {
-        lock.withLock { pendingStop = null; last = null }
+        pendingStop.clear()
+        lock.withLock { last = null }
         allowance()
     }
 
@@ -224,7 +221,7 @@ class TheGamesDbSource(
 
     override suspend fun find(ref: LibraryGameRef, wanted: Set<ArtSlot>): List<ArtHit> {
         val k = key().ifEmpty { return emptyList() }
-        lock.withLock { pendingStop }?.let { throw SourceStop(it) }
+        pendingStop.throwIfHeld()
         val platforms = Tgdb.platforms(ref.tag, ref.fileName) ?: return emptyList()
         if (wanted == setOf(ArtSlot.WHEEL)) {
             val known = lock.withLock { last?.takeIf { it.key == k && it.gamePath == ref.gamePath } }
@@ -248,11 +245,7 @@ class TheGamesDbSource(
         val withLogos = ArtSlot.SCREENSHOT in wanted && ArtSlot.WHEEL in wanted
         val types = listOfNotNull("screenshot".takeIf { ArtSlot.SCREENSHOT in wanted }, "clearlogo".takeIf { withLogos })
         if (types.isNotEmpty()) {
-            val body = try { api(Tgdb.images(k, game.id, types)) } catch (e: SourceStop) {
-                if (hits.isEmpty()) throw e
-                lock.withLock { pendingStop = e.note }
-                return hits
-            }
+            val body = try { api(Tgdb.images(k, game.id, types)) } catch (e: SourceStop) { pendingStop.hold(e, hits); return hits }
             val images = Tgdb.parseImages(body)
             setLeft(images.left)
             val mine = images.images[game.id].orEmpty()
@@ -281,19 +274,9 @@ class TheGamesDbSource(
         ArtHit(slot, Tgdb.imageUrl(base, img.filename), ArtOrigin(SourceId.TGDB, game.id.toString(), img.id.toString()))
 
     /** A paced, counted call: stops first when the allowance is spent; the body of a 200, null for other answers. */
-    private suspend fun api(url: String): String? {
-        var failures = 0
-        var busy = false
-        while (true) {
-            left()?.let { if (it <= STOP_AT) throw SourceStop(LIMIT_REACHED) }
-            val r = pacer.paced { http.get(url) }
-            when {
-                r.status == -1 -> { if (failures == TRIES - 1) throw JobPause(ScrapeEngine.NO_CONNECTION); sleep(BACKOFF[failures++]) }
-                r.status == 403 -> throw SourceStop(LIMIT_REACHED)   // bad API key or the cap (the API's only 403s)
-                r.status == 429 || r.status >= 500 -> { if (busy) throw SourceStop(UNAVAILABLE); busy = true; sleep(BUSY_WAIT_MS) }
-                r.status == 200 -> return r.body?.decodeToString()
-                else -> return null
-            }
-        }
-    }
+    private suspend fun api(url: String): String? = calls.get(
+        url, busyNote = { UNAVAILABLE },
+        stop = { if (it == 403) LIMIT_REACHED else null },   // bad API key or the cap (the API's only 403s)
+        before = { left()?.let { if (it <= STOP_AT) throw SourceStop(LIMIT_REACHED) } },
+    )?.decodeToString()
 }
