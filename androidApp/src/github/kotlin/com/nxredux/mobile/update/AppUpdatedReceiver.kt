@@ -36,6 +36,8 @@ class AppUpdatedReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        // Only our own update: not adb, a browser sideload or another updater (the controller clears it on its first check).
+        if (AndroidUpdatePlatform.pendingUpdate(context) != BuildConfig.VERSION_NAME.removeSuffix("-dev")) return
         try {
             context.startActivity(launchIntent(context).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (e: Exception) {

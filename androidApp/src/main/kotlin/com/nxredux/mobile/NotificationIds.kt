@@ -16,12 +16,15 @@ object NotificationIds {
     /** Device Sync ([com.nxredux.mobile.sync.DeviceSyncService]). */
     const val DEVICE_SYNC = 4103
 
-    /** The in-app update's download and install wait (the github flavor's com.nxredux.mobile.update.AppUpdateService). */
+    /** The in-app update's download (the github flavor's com.nxredux.mobile.update.AppUpdateService). */
     const val APP_UPDATE = 4104
 
     /** The one-shot "NX Redux updated to <version>" notice after a self-update (the github flavor's com.nxredux.mobile.update.AppUpdatedReceiver). */
     const val APP_UPDATED = 4105
 
+    /** What a downloaded update's install waits for, a plain notification (the github flavor's com.nxredux.mobile.update.AndroidUpdatePlatform). */
+    const val APP_UPDATE_WAIT = 4106
+
     /** All of them, for the test that keeps them distinct. */
-    val all: List<Int> = listOf(SCRAPE, RA_DOWNLOAD, DEVICE_SYNC, APP_UPDATE, APP_UPDATED)
+    val all: List<Int> = listOf(SCRAPE, RA_DOWNLOAD, DEVICE_SYNC, APP_UPDATE, APP_UPDATED, APP_UPDATE_WAIT)
 }

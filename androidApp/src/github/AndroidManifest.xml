@@ -3,9 +3,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- API 31+: lets the installer of record update its own app without the confirm screen (USER_ACTION_NOT_REQUIRED). -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
 
     <application>
-        <!-- Keeps an update's download and its install wait alive off screen. -->
+        <!-- Keeps an update's download alive off screen. -->
         <service
             android:name="com.nxredux.mobile.update.AppUpdateService"
             android:foregroundServiceType="dataSync"

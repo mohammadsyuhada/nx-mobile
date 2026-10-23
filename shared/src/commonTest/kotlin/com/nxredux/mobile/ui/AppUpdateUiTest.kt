@@ -108,6 +108,7 @@ class AppUpdateUiTest {
         override var lastSuccess = 0L
         override var lastFailure = 0L
         override var silenced: String? = null
+        override var pendingUpdate: String? = null
         override suspend fun fetchLatest(): String { fetches++; feedError?.let { throw it }; return feed }
         override suspend fun download(release: AppRelease, onProgress: (done: Long, total: Long) -> Unit): UpdateFile {
             downloads++
@@ -120,9 +121,10 @@ class AppUpdateUiTest {
         override fun busyReason(): String? = busy
         override fun canInstall() = true
         override fun askInstallPermission() {}
-        override fun install(file: UpdateFile, onResult: (UpdateInstallResult) -> Unit) {}
+        override fun install(file: UpdateFile, clear: () -> Boolean, onResult: (UpdateInstallResult) -> Unit) {}
         override fun resumeInstall() = true
         override fun keepAlive(active: Boolean, text: String?) {}
+        override fun showWaiting(reason: String?) {}
     }
 
     private class Rig(val state: AppState, val updater: UpdateController, val platform: FakePlatform, val settings: Settings)

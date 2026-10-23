@@ -243,7 +243,7 @@ jobs:
           echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
       - name: Test
-        run: ./gradlew :shared:testAndroidHostTest :libretrodroid:testDebugUnitTest :androidApp:testGithubDebugUnitTest
+        run: ./gradlew :shared:testAndroidHostTest :libretrodroid:testDebugUnitTest :androidApp:testGithubDebugUnitTest :androidApp:compilePlayReleaseKotlin
 
       - name: Build
         env:

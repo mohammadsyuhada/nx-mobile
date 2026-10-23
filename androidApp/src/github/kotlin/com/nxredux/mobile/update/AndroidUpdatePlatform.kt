@@ -1,13 +1,21 @@
 package com.nxredux.mobile.update
 
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.nxredux.mobile.BuildConfig
+import com.nxredux.mobile.LaunchActivity
+import com.nxredux.mobile.NotificationIds
 import com.nxredux.mobile.NxApplication
 import com.nxredux.mobile.achievements.RaDownloadService
 import com.nxredux.mobile.runner.GameActivity
@@ -71,7 +79,8 @@ class AndroidUpdatePlatform(private val app: Context, private val scope: Corouti
             val dir = File(app.cacheDir, "update").apply { mkdirs() }
             val name = release.apkUrl.substringAfterLast('/').substringBefore('?').ifEmpty { "update.apk" }
             val target = File(dir, name)
-            val part = File(dir, "$name.part")
+            // Its own name per attempt: a cancelled download stalled in a read deletes only its own file when it ends.
+            val part = File(dir, "$name.${System.nanoTime()}.part")
             try {
                 val conn = open(release.apkUrl, "application/octet-stream")
                 try {
@@ -148,7 +157,7 @@ class AndroidUpdatePlatform(private val app: Context, private val scope: Corouti
     private var session: Int? = null
 
     /** Writes [file] into a PackageInstaller session on IO, then commits it on Main; [onResult] is called on Main. */
-    override fun install(file: UpdateFile, onResult: (UpdateInstallResult) -> Unit) {
+    override fun install(file: UpdateFile, clear: () -> Boolean, onResult: (UpdateInstallResult) -> Unit) {
         val installer = app.packageManager.packageInstaller
         session = WRITING
         scope.launch {
@@ -165,7 +174,7 @@ class AndroidUpdatePlatform(private val app: Context, private val scope: Corouti
             }
             val id = written.first
             session = id
-            UpdateInstallReceiver.expect(id) { result ->
+            UpdateInstallReceiver.expect(id, clear) { result ->
                 if (result != UpdateInstallResult.STARTED && session == id) session = null
                 onResult(result)
             }
@@ -236,6 +245,34 @@ class AndroidUpdatePlatform(private val app: Context, private val scope: Corouti
 
     override fun keepAlive(active: Boolean, text: String?) = AppUpdateService.update(app, active, text)
 
+    /** On the download's channel, under its own id ([NotificationIds.APP_UPDATE_WAIT]) so the service's stop can't remove it. */
+    override fun showWaiting(reason: String?) {
+        val nm = app.getSystemService(NotificationManager::class.java) ?: return
+        if (reason == null) { nm.cancel(NotificationIds.APP_UPDATE_WAIT); return }
+        // API 33+ needs the runtime grant; without it the About row still says what the install waits for.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(app, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
+        if (nm.getNotificationChannel(WAIT_CHANNEL_ID) == null) {
+            nm.createNotificationChannel(NotificationChannel(WAIT_CHANNEL_ID, "App update", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Shows an app update download"
+            })
+        }
+        val open = Intent(app, LaunchActivity::class.java).setAction(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val notice = NotificationCompat.Builder(app, WAIT_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle("NX Redux update")
+            .setContentText(reason)
+            .setContentIntent(PendingIntent.getActivity(app, 0, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+            .setOnlyAlertOnce(true)
+            .build()
+        try {
+            nm.notify(NotificationIds.APP_UPDATE_WAIT, notice)
+        } catch (e: SecurityException) {   // the grant was revoked between the check and the post
+            NxLog.w(TAG, "wait notice refused")
+        }
+    }
+
     override var lastSuccess: Long
         get() = prefs.getLong("last_success", 0L)
         set(value) { prefs.edit().putLong("last_success", value).apply() }
@@ -248,6 +285,10 @@ class AndroidUpdatePlatform(private val app: Context, private val scope: Corouti
         get() = prefs.getString("silenced", null)
         set(value) { prefs.edit().putString("silenced", value).apply() }
 
+    override var pendingUpdate: String?
+        get() = pendingUpdate(app)
+        set(value) { prefs.edit().putString(PENDING_KEY, value).apply() }
+
     /** A GET with the cheat database's timeouts; [accept]: the Accept header. */
     private fun open(url: String, accept: String): HttpURLConnection = (URL(url).openConnection() as HttpURLConnection).apply {
         requestMethod = "GET"
@@ -258,11 +299,19 @@ class AndroidUpdatePlatform(private val app: Context, private val scope: Corouti
         setRequestProperty("User-Agent", userAgent)
     }
 
-    private companion object {
-        const val TAG = "NxUpdate"
+    companion object {
+        private const val PENDING_KEY = "pending_update"
+
+        /** The version an in-app update is installing, for [AppUpdatedReceiver]: its notice is for our own updates only. */
+        fun pendingUpdate(context: Context): String? =
+            context.getSharedPreferences("app_update", Context.MODE_PRIVATE).getString(PENDING_KEY, null)
+
+        private const val TAG = "NxUpdate"
         /** [session] while the APK is written; PackageInstaller's ids are positive. */
-        const val WRITING = -1
-        const val CHUNK = 64 * 1024
-        const val PROGRESS_STEP = 256 * 1024L
+        private const val WRITING = -1
+        private const val CHUNK = 64 * 1024
+        private const val PROGRESS_STEP = 256 * 1024L
+        /** The same channel as [AppUpdateService]'s, created here too in case the wait outlives a channel reset. */
+        private const val WAIT_CHANNEL_ID = "app-update"
     }
 }

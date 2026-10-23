@@ -7,7 +7,7 @@ import com.nxredux.mobile.KeepAliveService
 import com.nxredux.mobile.NotificationIds
 
 /**
- * The foreground service (type dataSync) that keeps an update's download and its install wait alive, with its
+ * The foreground service (type dataSync) that keeps an update's download alive (the install wait has a plain notice), with its
  * notification (Cancel stops it through [AppUpdates]). Driven only through [update], as
  * [com.nxredux.mobile.sync.DeviceSyncService] is.
  */
@@ -28,7 +28,7 @@ class AppUpdateService : KeepAliveService<String>() {
     override val channel = Channel(CHANNEL_ID, CHANNEL_NAME, CHANNEL_DESCRIPTION)
     override val actions = listOf(Action("Cancel", "com.nxredux.mobile.update.CANCEL", 1) { AppUpdates.current()?.cancel() })
 
-    /** Stop the download or the wait (as Cancel) and the service. */
+    /** Stop the download (as Cancel) and the service. */
     override fun onTimedOut() { AppUpdates.current()?.cancel() }
 
     override fun NotificationCompat.Builder.content(progress: String?): NotificationCompat.Builder =

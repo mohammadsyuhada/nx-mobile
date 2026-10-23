@@ -31,20 +31,31 @@ interface UpdatePlatform {
     fun canInstall(): Boolean
     /** Opens the system screen that allows installs from this app. */
     fun askInstallPermission()
-    fun install(file: UpdateFile, onResult: (UpdateInstallResult) -> Unit)
+    /**
+     * Installs [file]; [clear] says, when the confirm screen is due, whether nothing holds the install any more (a game
+     * started while the APK was copied in). Not clear: the session waits for [resumeInstall] on a free main menu.
+     */
+    fun install(file: UpdateFile, clear: () -> Boolean, onResult: (UpdateInstallResult) -> Unit)
     /**
      * The main menu showed while [install]'s session has no answer (the confirm screen left by Home, or its launch
      * blocked): reopens the confirm screen when the session still waits on it. False when the session is gone, which
      * this abandons; no result follows for it then.
      */
     fun resumeInstall(): Boolean
-    /** Keeps the process alive with a notification showing [text] while [active]. */
+    /** Keeps the process alive with a notification showing [text] while [active]; for the download only. */
     fun keepAlive(active: Boolean, text: String?)
+    /** A plain notification saying what a downloaded install waits for; null removes it. */
+    fun showWaiting(reason: String?)
     /** Epoch millis of the last good / failed check, 0 for never; persisted. */
     var lastSuccess: Long
     var lastFailure: Long
     /** The version the user answered Not now for; persisted. */
     var silenced: String?
+    /**
+     * The version Update was pressed for, until the update ends here or a check answers; persisted, so a process that died
+     * meanwhile (the install-permission screen, low memory) checks on its first main menu and asks again.
+     */
+    var pendingUpdate: String?
 }
 
 /** A downloaded APK. */
@@ -93,6 +104,8 @@ class UpdateController(
     private var awaitingPermission = false
     /** This download already opened the install-permission screen; the user is asked once per download. */
     private var asked = false
+    /** Update asked for the install permission before downloading; the next [onMainMenu] downloads once it is allowed. */
+    private var permissionFor: AppRelease? = null
 
     private val busy: Boolean
         get() = _state.value.let { it is UpdateState.Checking || it is UpdateState.Downloading || it is UpdateState.Waiting || it is UpdateState.Installing }
@@ -101,6 +114,7 @@ class UpdateController(
     fun onMainMenu() {
         val s = _state.value
         if (s is UpdateState.Installing) {
+            if (waitReason() != null) return   // a game or a job came up since the commit: the confirm screen waits for a free menu
             if (!platform.resumeInstall()) { dropFile(); finish(UpdateState.Available(s.release)) }
             return
         }
@@ -113,7 +127,14 @@ class UpdateController(
             finish(UpdateState.Available(s.release))
             return
         }
-        if (busy || !UpdatePolicy.checkDue(now(), platform.lastSuccess, platform.lastFailure)) return
+        permissionFor?.let { r ->
+            permissionFor = null
+            if (s != UpdateState.Available(r)) return@let
+            if (platform.canInstall()) download(r) else platform.pendingUpdate = null   // refused: About's Update to row asks again
+            return
+        }
+        if (busy) return
+        if (platform.pendingUpdate == null && !UpdatePolicy.checkDue(now(), platform.lastSuccess, platform.lastFailure)) return
         check(automatic = true)
     }
 
@@ -132,6 +153,20 @@ class UpdateController(
         } ?: return
         _popup.value = null
         asked = false
+        permissionFor = null
+        platform.pendingUpdate = release.version
+        if (!platform.canInstall()) {
+            // Asked before the download, so a restart while the user is on that screen costs no download.
+            asked = true
+            permissionFor = release
+            _state.value = UpdateState.Available(release)
+            platform.askInstallPermission()
+            return
+        }
+        download(release)
+    }
+
+    private fun download(release: AppRelease) {
         _state.value = UpdateState.Downloading(release, 0L, release.apkSize)
         platform.keepAlive(true, downloadingText(0L, release.apkSize))
         job = scope.launch {
@@ -192,11 +227,14 @@ class UpdateController(
                 LatestRelease.Unusable   // offline, rate-limited or a portal page: all the same to the user
             }
             if (latest == LatestRelease.Unusable) {
+                // An update left by a dead process retries on the failure backoff, not every menu.
+                if (platform.pendingUpdate != null) { platform.pendingUpdate = null; platform.lastSuccess = 0L }
                 platform.lastFailure = now()
                 _state.value = UpdateState.Failed("Couldn't reach GitHub", null)
                 return@launch
             }
             platform.lastSuccess = now()
+            platform.pendingUpdate = null
             // GitHub answered; a release without this build's APK has nothing newer to offer.
             val release = (latest as? LatestRelease.Found)?.release
             if (release == null) {
@@ -239,11 +277,11 @@ class UpdateController(
         }
         val installing = UpdateState.Installing(release)
         finish(installing)
-        platform.install(downloaded) { result ->
+        platform.install(downloaded, clear = { waitReason() == null }) { result ->
             // A late answer, after onMainMenu found the session gone, is for an install that already ended.
             if (result == UpdateInstallResult.STARTED || _state.value != installing) return@install
             dropFile()
-            _state.value = if (result == UpdateInstallResult.CANCELLED) UpdateState.Available(release) else UpdateState.Failed("Update failed", release)
+            finish(if (result == UpdateInstallResult.CANCELLED) UpdateState.Available(release) else UpdateState.Failed("Update failed", release))
         }
     }
 
@@ -259,15 +297,22 @@ class UpdateController(
         return other ?: if (host == "") READY_REASON else null
     }
 
+    /**
+     * Waits without the foreground service: a wait can last hours (a game, the app in the background), which would spend the
+     * app's daily dataSync allowance. A process that dies meanwhile asks again through [UpdatePlatform.pendingUpdate].
+     */
     private fun waitFor(release: AppRelease, downloaded: UpdateFile, reason: String) {
         _state.value = UpdateState.Waiting(release, downloaded, reason)
-        platform.keepAlive(true, reason)
+        platform.keepAlive(false, null)
+        platform.showWaiting(reason)
     }
 
-    /** Leaves the foreground: the state no longer needs the process kept alive. */
+    /** Leaves the download or the wait; offering the release again (or failing) ends the pending update. */
     private fun finish(state: UpdateState) {
         _state.value = state
         platform.keepAlive(false, null)
+        platform.showWaiting(null)
+        if (state is UpdateState.Available || state is UpdateState.Failed) platform.pendingUpdate = null
     }
 
     private fun dropFile() {

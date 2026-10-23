@@ -34,6 +34,8 @@ private class FakeUpdatePlatform(override val dev: Boolean = false) : UpdatePlat
     val installs = ArrayList<String>()
     val keepAlives = ArrayList<Pair<Boolean, String?>>()
     var installResult: ((UpdateInstallResult) -> Unit)? = null
+    var installClear: (() -> Boolean)? = null
+    val waits = ArrayList<String?>()
     /** What `resumeInstall` answers: the session still waits on its confirm screen. */
     var installPending = true
     var resumes = 0
@@ -41,6 +43,7 @@ private class FakeUpdatePlatform(override val dev: Boolean = false) : UpdatePlat
     override var lastSuccess = 0L
     override var lastFailure = 0L
     override var silenced: String? = null
+    override var pendingUpdate: String? = null
 
     override suspend fun fetchLatest(): String { fetches++; feedError?.let { throw it }; return feed }
     override suspend fun download(release: AppRelease, onProgress: (done: Long, total: Long) -> Unit): UpdateFile {
@@ -54,9 +57,12 @@ private class FakeUpdatePlatform(override val dev: Boolean = false) : UpdatePlat
     override fun busyReason(): String? = busy
     override fun canInstall(): Boolean = installAllowed
     override fun askInstallPermission() { permissionAsks++ }
-    override fun install(file: UpdateFile, onResult: (UpdateInstallResult) -> Unit) { installs += file.path; installResult = onResult }
+    override fun install(file: UpdateFile, clear: () -> Boolean, onResult: (UpdateInstallResult) -> Unit) {
+        installs += file.path; installClear = clear; installResult = onResult
+    }
     override fun resumeInstall(): Boolean { resumes++; return installPending }
     override fun keepAlive(active: Boolean, text: String?) { keepAlives += active to text }
+    override fun showWaiting(reason: String?) { waits += reason }
 }
 
 private fun releaseJson(tag: String, digest: String? = null): String {
@@ -189,7 +195,7 @@ class UpdateControllerTest {
         assertEquals(RELEASE, waiting.release)
         assertEquals("/cache/update.apk", waiting.file.path)
         assertEquals("Close your game to install", waiting.reason)
-        assertEquals(true to "Close your game to install", fake.keepAlives.last())
+        assertEquals("Close your game to install", fake.waits.last())
         assertTrue(fake.installs.isEmpty())
         fake.busy = null
         c.onMainMenu()
@@ -229,28 +235,32 @@ class UpdateControllerTest {
         assertTrue(fake.installs.isEmpty())
     }
 
-    @Test fun no_install_permission_asks_once_then_installs_when_granted() = runTest {
+    @Test fun no_install_permission_asks_before_downloading_then_downloads_when_granted() = runTest {
         val fake = FakeUpdatePlatform().apply { installAllowed = false }
         val c = downloaded(fake)
         assertEquals(1, fake.permissionAsks)
-        assertEquals("Allow installs from NX Redux to update", assertIs<UpdateState.Waiting>(c.state.value).reason)
-        advanceTimeBy(10_000L)
-        assertEquals(1, fake.permissionAsks)   // the poll never asks again
+        assertEquals(UpdateState.Available(RELEASE), c.state.value)
+        assertEquals(0, fake.digests)   // nothing downloaded yet
+        assertEquals("0.4.0", fake.pendingUpdate)
         fake.installAllowed = true
         c.onMainMenu()
         assertEquals(listOf("/cache/update.apk"), fake.installs)
         assertEquals(UpdateState.Installing(RELEASE), c.state.value)
+        assertEquals(1, fake.permissionAsks)
     }
 
-    @Test fun permission_still_refused_goes_back_to_available() = runTest {
+    @Test fun permission_still_refused_stays_available_without_a_download() = runTest {
         val fake = FakeUpdatePlatform().apply { installAllowed = false }
         val c = downloaded(fake)
         c.onMainMenu()
         assertEquals(1, fake.permissionAsks)
         assertEquals(UpdateState.Available(RELEASE), c.state.value)
-        assertEquals(listOf("/cache/update.apk"), fake.discarded)
+        assertTrue(fake.discarded.isEmpty())
         assertTrue(fake.installs.isEmpty())
-        assertEquals(false, fake.keepAlives.last().first)
+        assertNull(fake.pendingUpdate)
+        c.onMainMenu()   // the answer was taken: no check, no second ask
+        assertEquals(1, fake.permissionAsks)
+        assertEquals(1, fake.fetches)
     }
 
     @Test fun a_loaded_game_outranks_an_open_netplay_sheet() = runTest {
@@ -265,10 +275,10 @@ class UpdateControllerTest {
         assertEquals("Close Netplay to install", assertIs<UpdateState.Waiting>(c.state.value).reason)
     }
 
-    @Test fun a_wait_for_a_game_still_asks_for_the_install_permission() = runTest {
-        val fake = FakeUpdatePlatform().apply { busy = "Close your game to install"; installAllowed = false }
+    @Test fun a_permission_revoked_during_a_wait_is_asked_for_once() = runTest {
+        val fake = FakeUpdatePlatform().apply { busy = "Close your game to install" }
         val c = downloaded(fake)
-        assertEquals(0, fake.permissionAsks)
+        fake.installAllowed = false
         fake.busy = null
         c.onMainMenu()
         assertEquals(1, fake.permissionAsks)
@@ -279,12 +289,75 @@ class UpdateControllerTest {
         assertTrue(fake.installs.isEmpty())
     }
 
-    @Test fun each_download_asks_for_the_permission_again() = runTest {
+    @Test fun each_update_asks_for_the_permission_again() = runTest {
         val fake = FakeUpdatePlatform().apply { installAllowed = false }
         val c = downloaded(fake)
         c.onMainMenu()   // still refused: Available
         c.update()
         assertEquals(2, fake.permissionAsks)
+    }
+
+    @Test fun a_wait_drops_the_foreground_service_and_shows_its_reason() = runTest {
+        val fake = FakeUpdatePlatform().apply { busy = "Close your game to install" }
+        val c = downloaded(fake)
+        assertIs<UpdateState.Waiting>(c.state.value)
+        assertEquals(false to null, fake.keepAlives.last())
+        assertEquals("Close your game to install", fake.waits.last())
+        fake.busy = null
+        advanceTimeBy(2_001L)
+        assertEquals(UpdateState.Installing(RELEASE), c.state.value)
+        assertNull(fake.waits.last())
+    }
+
+    @Test fun the_confirm_screen_is_held_while_a_game_starts_during_the_copy() = runTest {
+        val fake = FakeUpdatePlatform()
+        downloaded(fake)
+        assertTrue(fake.installClear!!())
+        fake.busy = "Close your game to install"
+        assertEquals(false, fake.installClear!!())
+    }
+
+    @Test fun an_unanswered_install_waits_for_a_free_menu_to_reopen() = runTest {
+        val fake = FakeUpdatePlatform()
+        val c = downloaded(fake)
+        fake.installResult!!(UpdateInstallResult.STARTED)
+        fake.busy = "Close your game to install"   // a game left loaded behind the menu
+        c.onMainMenu()
+        assertEquals(0, fake.resumes)
+        assertEquals(UpdateState.Installing(RELEASE), c.state.value)
+        fake.busy = null
+        c.onMainMenu()
+        assertEquals(1, fake.resumes)
+    }
+
+    @Test fun a_pending_update_from_a_dead_process_asks_again_on_the_first_menu() = runTest {
+        val fake = FakeUpdatePlatform().apply { lastSuccess = NOW - 1_000L; pendingUpdate = "0.4.0" }
+        val c = controller(fake)
+        c.onMainMenu()
+        assertEquals(1, fake.fetches)
+        assertEquals(RELEASE, c.popup.value)
+        assertNull(fake.pendingUpdate)
+    }
+
+    @Test fun a_pending_update_with_github_unreachable_falls_back_to_the_retry_backoff() = runTest {
+        val fake = FakeUpdatePlatform().apply { lastSuccess = NOW - 1_000L; pendingUpdate = "0.4.0"; feedError = RuntimeException("offline") }
+        val c = controller(fake)
+        c.onMainMenu()
+        assertNull(fake.pendingUpdate)
+        assertEquals(0L, fake.lastSuccess)
+        c.onMainMenu()   // within the backoff
+        assertEquals(1, fake.fetches)
+    }
+
+    @Test fun a_cancelled_install_ends_the_pending_update() = runTest {
+        val fake = FakeUpdatePlatform()
+        val c = downloaded(fake)
+        assertEquals("0.4.0", fake.pendingUpdate)
+        fake.installResult!!(UpdateInstallResult.CANCELLED)
+        assertNull(fake.pendingUpdate)
+        c.onMainMenu()   // not due: no re-check, no popup
+        assertEquals(1, fake.fetches)
+        assertNull(c.popup.value)
     }
 
     @Test fun a_cancelled_install_is_available_again() = runTest {
