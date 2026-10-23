@@ -28,6 +28,7 @@ import com.nxredux.mobile.update.UpdateState
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -185,6 +186,20 @@ class AppUpdateUiTest {
         assertIs<UpdateState.Downloading>(r.updater.state.value)
     }
 
+    @Test fun up_and_down_on_the_popup_scroll_its_notes() = runTest {
+        val r = rig()
+        pastGuard()
+        val steps = ArrayList<Int>()
+        val seen = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.state.updateScroll.collect { steps += it } }
+        r.state.onButton(NxButton.DOWN)
+        r.state.onButton(NxButton.DOWN)
+        r.state.onButton(NxButton.UP)
+        assertEquals(listOf(1, 1, -1), steps)
+        assertNotNull(r.state.updatePopup.value)                           // scrolling answers nothing
+        assertEquals(0, r.platform.downloads)
+        seen.cancel()
+    }
+
     @Test fun b_on_the_popup_silences_the_version() = runTest {
         val r = rig()
         pastGuard()
@@ -281,7 +296,12 @@ class AppUpdateUiTest {
         assertNull(r.state.updatePopup.value)                               // About's check never pops up
 
         p.downloadGate = CompletableDeferred()
-        r.pressUpdateRow()                                                  // Available: Update
+        r.pressUpdateRow()                                                  // Available: the confirm first
+        assertEquals("0.4.0", r.state.updateConfirm.value?.version)
+        assertEquals(0, p.downloads)
+        pastGuard()
+        r.state.onButton(NxButton.A)                                        // its Update
+        assertNull(r.state.updateConfirm.value)
         assertEquals("Downloading 50%", r.updateRow()?.label)
         assertEquals(listOf(Hint(NxButton.B, "Back")), settingsHints(assertIs<Screen.Settings>(r.state.screen.value).rows, r.state.selection.value.index))
         r.pressUpdateRow()                                                  // Downloading: nothing
@@ -302,14 +322,38 @@ class AppUpdateUiTest {
         r.openAbout()
         p.downloadGate = CompletableDeferred<Unit>().apply { completeExceptionally(IllegalStateException("cut")) }
         r.pressUpdateRow()                                                  // check
-        r.pressUpdateRow()                                                  // Update to 0.4.0: fails
+        r.pressUpdateRow(); pastGuard(); r.state.onButton(NxButton.A)     // Update to 0.4.0, confirmed: fails
         assertEquals("Update failed", r.updateRow()?.label)
         assertEquals(listOf(Hint(NxButton.B, "Back"), Hint(NxButton.A, "Update")), settingsHints(assertIs<Screen.Settings>(r.state.screen.value).rows, r.state.selection.value.index))
         p.downloadGate = CompletableDeferred()
-        r.pressUpdateRow()                                                  // Failed with a release: Update
+        r.pressUpdateRow()                                                  // Failed with a release: the confirm
+        assertEquals("0.4.0", r.state.updateConfirm.value?.version)
+        pastGuard(); r.state.onButton(NxButton.A)
         assertEquals(2, p.downloads)
         assertEquals(1, p.fetches)
         assertEquals("Downloading 50%", r.updateRow()?.label)
+    }
+
+    @Test fun the_update_confirm_cancels_and_ignores_the_press_that_opened_it() = runTest {
+        val p = FakePlatform()
+        val r = rig(p, load = false)
+        r.openAbout()
+        r.pressUpdateRow()                                                  // check: Update to 0.4.0
+        r.pressUpdateRow()                                                  // the confirm
+        r.state.onButton(NxButton.A)                                        // a second A straight after: ignored
+        assertNotNull(r.state.updateConfirm.value)
+        assertEquals(0, p.downloads)
+        pastGuard()
+        r.state.onButton(NxButton.B)                                        // Cancel
+        assertNull(r.state.updateConfirm.value)
+        assertEquals(0, p.downloads)
+        assertIs<UpdateState.Available>(r.updater.state.value)
+        assertNull(p.silenced)                                              // Cancel is not Not now
+        r.pressUpdateRow(); pastGuard()
+        assertTrue(r.state.back())                                          // Back cancels too, and leaves Settings open
+        assertNull(r.state.updateConfirm.value)
+        assertIs<Screen.Settings>(r.state.screen.value)
+        assertEquals(0, p.downloads)
     }
 
     // --- The host's install gate ---

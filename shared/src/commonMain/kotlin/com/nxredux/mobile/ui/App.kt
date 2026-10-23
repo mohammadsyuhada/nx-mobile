@@ -3,6 +3,7 @@ package com.nxredux.mobile.ui
 import coil3.ImageLoader
 import coil3.compose.AsyncImagePainter
 import coil3.compose.setSingletonImageLoaderFactory
+import com.nxredux.mobile.update.AppRelease
 import com.nxredux.mobile.ui.nx.LocalMinimalPage
 import com.nxredux.mobile.ui.nx.MinimalMorph
 import com.nxredux.mobile.ui.nx.MinimalPage
@@ -237,9 +238,8 @@ fun App(state: AppState, onPadEvent: (PadEvent) -> Unit = {}) {
                             }
                             // A newer release, asked once a day at most over the menu; Not now silences that version.
                             updatePopup?.let { r ->
-                                val text = "NX Redux ${r.version}" + if (r.notes.isNotBlank()) "\n\n${r.notes}" else ""
-                                NxDialog("Update available", text, onConfirm = { state.answerUpdate(true) }, confirmLabel = "Update",
-                                    onCancel = { state.answerUpdate(false) }, cancelLabel = "Not now", scrimDismisses = false)
+                                NxDialog("Update available", updateText(r), onConfirm = { state.answerUpdate(true) }, confirmLabel = "Update",
+                                    onCancel = { state.answerUpdate(false) }, cancelLabel = "Not now", scrimDismisses = false, scrollSteps = state.updateScroll)
                             }
                             PageOverlays(state, chooser, error, notice, valueAnchor)
                         }
@@ -343,10 +343,22 @@ private fun pageTransition(motion: NavMotion): ContentTransform {
     }
 }
 
-/** The touch value chooser, the Problem dialog and the notice, over the focused page (a tool's on the top screen: [MenuTopScreen]). */
+/** An update dialog's body: the version line, then the release's first paragraph when it has one. */
+private fun updateText(r: AppRelease): String = "NX Redux ${r.version}" + if (r.notes.isNotBlank()) "\n\n${r.notes}" else ""
+
+/**
+ * The touch value chooser, About's update confirm, the Problem dialog and the notice, over the focused page (a tool's on
+ * the top screen: [MenuTopScreen]).
+ */
 @Composable
 internal fun BoxScope.PageOverlays(state: AppState, chooser: ValueChooser?, error: String?, notice: String?, valueAnchor: NxValueAnchor) {
     chooser?.let { c -> NxValueDropdown(c.labels, c.selected, valueAnchor.bounds, onPick = state::chooseValue, onDismiss = state::closeChooser) }
+    // About's Update to: here, so it shows on whichever screen Settings is on (the top one in dual screen).
+    val updateConfirm by state.updateConfirm.collectAsState()
+    updateConfirm?.let { r ->
+        NxDialog("Update to ${r.version}", updateText(r), onConfirm = { state.answerUpdateConfirm(true) }, confirmLabel = "Update",
+            onCancel = { state.answerUpdateConfirm(false) }, cancelLabel = "Cancel", scrimDismisses = false, scrollSteps = state.updateScroll)
+    }
     error?.let { NxDialog("Problem", it, onConfirm = state::dismissError) }
     notice?.let {
         Text(

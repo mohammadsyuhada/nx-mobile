@@ -171,7 +171,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -759,6 +761,12 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     val androidGamesAsk: StateFlow<AndroidGamesAsk?> = _androidGamesAsk.asStateFlow()
     private var androidAskGuard: Job? = null   // active for [ANDROID_ASK_GUARD_MILLIS] after the dialog shows: its answers are ignored
     private var updateAskGuard: Job? = null   // as [androidAskGuard], for the update dialog (declared first: [updatePopup] may set it while built)
+    private val _updateScroll = MutableSharedFlow<Int>(extraBufferCapacity = 8)
+    /** The update dialog's (or About's confirm's) d-pad up (-1) / down (+1), for notes taller than the dialog. */
+    val updateScroll: SharedFlow<Int> = _updateScroll
+    private val _updateConfirm = MutableStateFlow<AppRelease?>(null)
+    /** About's Update to: the release's notes with Update / Cancel before anything downloads; null when not showing. */
+    val updateConfirm: StateFlow<AppRelease?> = _updateConfirm.asStateFlow()
     /**
      * The updater's Update available dialog over the main menu (A Update, B Not now); null when not showing. It waits behind
      * the Android games question, a Problem dialog and a context menu, and shows on the main menu only (not over onboarding).
@@ -6156,8 +6164,24 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
             if (button == NxButton.A) answerAndroidGames(true) else if (button == NxButton.B) answerAndroidGames(false)
             return
         }
-        if (updatePopupShows()) {   // the update dialog: A Update, B Not now
-            if (button == NxButton.A) answerUpdate(true) else if (button == NxButton.B) answerUpdate(false)
+        if (_updateConfirm.value != null) {   // About's confirm: A Update, B Cancel, up / down scroll long notes
+            when (button) {
+                NxButton.A -> answerUpdateConfirm(true)
+                NxButton.B -> answerUpdateConfirm(false)
+                NxButton.UP -> _updateScroll.tryEmit(-1)
+                NxButton.DOWN -> _updateScroll.tryEmit(1)
+                else -> Unit
+            }
+            return
+        }
+        if (updatePopupShows()) {   // the update dialog: A Update, B Not now, up / down scroll long notes
+            when (button) {
+                NxButton.A -> answerUpdate(true)
+                NxButton.B -> answerUpdate(false)
+                NxButton.UP -> _updateScroll.tryEmit(-1)
+                NxButton.DOWN -> _updateScroll.tryEmit(1)
+                else -> Unit
+            }
             return
         }
         if (_screen.value is Screen.AndroidGamesStep) {   // setup's step: the d-pad moves between Yes and Not now, A chooses, B goes back
@@ -6267,6 +6291,7 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     fun back(): Boolean {
         if (_chooser.value != null) { closeChooser(); return true }   // a touch chooser: Back closes it
         if (_androidGamesAsk.value != null) { answerAndroidGames(false); return true }   // the dialog's B: Not now
+        if (_updateConfirm.value != null) { answerUpdateConfirm(false); return true }   // About's confirm: Cancel
         if (updatePopupShows()) { answerUpdate(false); return true }   // the update dialog's B: Not now
         netplay?.takeIf { it.page.value != null }?.let { it.onButton(NxButton.B); return true }   // the Netplay sheet: its own B
         switcherJob?.cancel()   // B while the switcher loads abandons it
@@ -6463,6 +6488,20 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
         if (yes) u.update() else u.notNow()
     }
 
+    /** About's confirm: Update downloads (the controller ignores it if the release is no longer on offer); Cancel just closes it. */
+    fun answerUpdateConfirm(yes: Boolean) {
+        if (_updateConfirm.value == null || updateAskGuard?.isActive == true) return
+        _updateConfirm.value = null
+        if (yes) deps.updater?.update()
+    }
+
+    /** Opens About's confirm for [release], guarded as the popup is: the A that opened it can't also answer it. */
+    private fun confirmUpdate(release: AppRelease) {
+        _updateConfirm.value = release
+        updateAskGuard?.cancel()
+        updateAskGuard = scope.launch { delay(ANDROID_ASK_GUARD_MILLIS) }
+    }
+
     /**
      * The host is going away (its activity destroyed): the process-wide updater stops asking it, unless a newer instance
      * took over. With no host, an install waits as off the main menu ("Ready to install") until a menu shows again.
@@ -6483,8 +6522,8 @@ class AppState(private val deps: AppDeps, private val scope: CoroutineScope) {
     private fun appUpdateRowA(u: UpdateController) {
         when (val s = u.state.value) {
             UpdateState.Idle, is UpdateState.UpToDate -> u.checkNow()
-            is UpdateState.Failed -> if (s.release == null) u.checkNow() else u.update()
-            is UpdateState.Available -> u.update()
+            is UpdateState.Failed -> if (s.release == null) u.checkNow() else confirmUpdate(s.release)
+            is UpdateState.Available -> confirmUpdate(s.release)
             else -> Unit
         }
     }

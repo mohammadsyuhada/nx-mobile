@@ -17,16 +17,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.Flow
 
 /**
  * A confirm (with [onCancel]: B cancels, A confirms) or an info dialog (A or a scrim tap dismisses), in the shared modal
- * frame. [scrimDismisses] false: a scrim tap does nothing (an answer the user must choose).
+ * frame. [scrimDismisses] false: a scrim tap does nothing (an answer the user must choose). [scrollSteps]: the host's
+ * d-pad up / down for a text taller than the room ([NxModal]).
  */
 @Composable
-fun NxDialog(title: String, text: String, onConfirm: () -> Unit, confirmLabel: String = "OK", onCancel: (() -> Unit)? = null, cancelLabel: String = "Cancel", scrimDismisses: Boolean = true) {
+fun NxDialog(
+    title: String, text: String, onConfirm: () -> Unit, confirmLabel: String = "OK", onCancel: (() -> Unit)? = null, cancelLabel: String = "Cancel",
+    scrimDismisses: Boolean = true, scrollSteps: Flow<Int>? = null,
+) {
     val colors = LocalNxColors.current
     NxModal(
         caption = title, kind = if (onCancel != null) ModalKind.CONFIRM else ModalKind.INFO, confirmLabel = confirmLabel, cancelLabel = cancelLabel, scrimDismisses = scrimDismisses,
+        scrollSteps = scrollSteps,
         onButton = { if (it == NxButton.B) onCancel?.invoke() else onConfirm() },
     ) {
         Text(text, color = colors.listText, fontFamily = LocalNxFont.current, fontSize = NxTextSizes.dialogBody * nxTextScale())
