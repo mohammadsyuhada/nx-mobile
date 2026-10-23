@@ -42,7 +42,8 @@ class UpdateInstallReceiver : BroadcastReceiver() {
                 val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java)
                 if (confirm == null) { finish(id, w, UpdateInstallResult.FAILED, "no confirm intent"); return }
                 try {
-                    // The install only starts while the main menu shows: the app is in the foreground, so the launch is allowed.
+                    // The install is only committed while an activity is started (busyReason waits on NxApplication.foreground),
+                    // so a visible app may launch this. Leaving the app in the moment between commit and status can still block it.
                     context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 } catch (e: Exception) {
                     finish(id, w, UpdateInstallResult.FAILED, "confirm screen refused (${e::class.java.simpleName})")

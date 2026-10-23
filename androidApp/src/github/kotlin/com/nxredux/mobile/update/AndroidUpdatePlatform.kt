@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import com.nxredux.mobile.BuildConfig
+import com.nxredux.mobile.NxApplication
 import com.nxredux.mobile.achievements.RaDownloadService
 import com.nxredux.mobile.runner.GameActivity
 import com.nxredux.mobile.scraper.ScrapeService
@@ -28,14 +29,16 @@ import java.security.MessageDigest
 
 /**
  * Why the app can't be replaced now, in the Global Constraints order (the host's Netplay reason comes before all but the
- * game, from [UpdateController.hostBusy]); null when nothing would be lost. Pure, for the test.
+ * game, from [UpdateController.hostBusy]); null when nothing would be lost. Last, [foreground] false waits as "Ready to
+ * install": Android blocks a hidden app's confirm screen silently, so the install starts once the user is back. Pure, for the test.
  */
-internal fun busyReason(game: Boolean, sync: Boolean, art: Boolean, ra: Boolean, cheats: Boolean): String? = when {
+internal fun busyReason(game: Boolean, sync: Boolean, art: Boolean, ra: Boolean, cheats: Boolean, foreground: Boolean): String? = when {
     game -> "Close your game to install"
     sync -> "Waiting for Device Sync to finish"
     art -> "Waiting for artwork to finish"
     ra -> "Waiting for the achievements download to finish"
     cheats -> "Waiting for the cheat database to finish"
+    !foreground -> UpdateController.READY_REASON
     else -> null
 }
 
@@ -119,13 +122,14 @@ class AndroidUpdatePlatform(private val app: Context, private val scope: Corouti
 
     override fun discard(file: UpdateFile) { File(file.path).delete() }
 
-    /** Main thread only: reads GameActivity's sessions and the keep-alive services' state. */
+    /** Main thread only: reads GameActivity's sessions, the keep-alive services' state and the started activities. */
     override fun busyReason(): String? = busyReason(
         game = GameActivity.gameScreenAlive,
         sync = DeviceSyncService.active,
         art = ScrapeService.active,
         ra = RaDownloadService.active,
         cheats = CheatDbService.busy(),
+        foreground = NxApplication.foreground,
     )
 
     override fun canInstall(): Boolean = app.packageManager.canRequestPackageInstalls()

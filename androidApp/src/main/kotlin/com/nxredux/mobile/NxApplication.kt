@@ -1,6 +1,8 @@
 package com.nxredux.mobile
 
+import android.app.Activity
 import android.app.Application
+import android.os.Bundle
 import com.nxredux.mobile.settings.AndroidAppSettings
 import com.nxredux.mobile.tools.CheatsRoot
 import com.swordfish.libretrodroid.NxLog
@@ -12,8 +14,28 @@ import java.io.File
  * storage into the home folder, and clears an earlier run's in-app update download.
  */
 class NxApplication : Application() {
+    companion object {
+        // Main thread only: the lifecycle callbacks run there.
+        private var startedActivities = 0
+
+        /**
+         * Some activity of the app is started (visible). Android lets a visible app open activities from the background
+         * (the updater's install confirm screen, from its receiver); a hidden one is blocked silently. Main thread only.
+         */
+        val foreground: Boolean get() = startedActivities > 0
+    }
+
     override fun onCreate() {
         super.onCreate()
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityStarted(activity: Activity) { startedActivities++ }
+            override fun onActivityStopped(activity: Activity) { startedActivities = (startedActivities - 1).coerceAtLeast(0) }
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+            override fun onActivityResumed(activity: Activity) {}
+            override fun onActivityPaused(activity: Activity) {}
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+            override fun onActivityDestroyed(activity: Activity) {}
+        })
         // Off the main thread, as both touch storage: drops an earlier run's update download (its .part, or an APK the
         // installer already took or the user cancelled), then starts moving older private cheats into the home folder.
         Thread({
