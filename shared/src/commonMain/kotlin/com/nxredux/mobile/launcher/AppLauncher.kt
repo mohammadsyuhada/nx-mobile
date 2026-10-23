@@ -13,6 +13,11 @@ interface AppLauncher {
     fun label(id: String): String?
     /** [id]'s launcher icon as a full-colour picture; null when it has none or is gone. Runs off the main thread. */
     suspend fun icon(id: String): ImageBitmap?
+    /**
+     * [id]'s icon as a shape alone, framed like the built-in tool glyphs ([IconSilhouette]), for a tool tile to tint;
+     * null when it has no logo apart from its background (the tile draws the generic app glyph). Off the main thread.
+     */
+    suspend fun silhouette(id: String): ImageBitmap? = null
     /** Starts [id]; false when it cannot be started. */
     fun launch(id: String): Boolean
     /** This app is the default home app right now. */

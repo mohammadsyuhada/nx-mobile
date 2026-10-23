@@ -9,6 +9,9 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.drawable.AdaptiveIconDrawable
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -53,13 +56,42 @@ class AndroidAppLauncher(private val activity: ComponentActivity, private val re
     override suspend fun icon(id: String): ImageBitmap? = withContext(Dispatchers.IO) {
         val c = component(id) ?: return@withContext null
         runCatching {
-            val drawable = runCatching { pm.getActivityIcon(c) }.getOrElse { pm.getApplicationIcon(c.packageName) }
+            val drawable = launcherIcon(c)
             val bitmap = Bitmap.createBitmap(ICON_PX, ICON_PX, Bitmap.Config.ARGB_8888)
             drawable.setBounds(0, 0, ICON_PX, ICON_PX)
             drawable.draw(Canvas(bitmap))
             bitmap.asImageBitmap()
         }.getOrNull()
     }
+
+    /**
+     * An adaptive icon's themed-icon layer (API 33+), else its foreground without the background, as [ICON_PX] of
+     * white on clear framed by [IconSilhouette]; null for a legacy icon, which has no layer apart from its plate.
+     */
+    override suspend fun silhouette(id: String): ImageBitmap? = withContext(Dispatchers.IO) {
+        val c = component(id) ?: return@withContext null
+        runCatching {
+            val icon = launcherIcon(c) as? AdaptiveIconDrawable ?: return@runCatching null
+            val layer = (if (Build.VERSION.SDK_INT >= 33) icon.monochrome else null) ?: icon.foreground ?: return@runCatching null
+            // The layer drawn as the icon draws it: half as large again as the visible square, which shows its middle.
+            val shape = Bitmap.createBitmap(SHAPE_PX, SHAPE_PX, Bitmap.Config.ARGB_8888)
+            layer.setBounds(-SHAPE_PX / 4, -SHAPE_PX / 4, SHAPE_PX + SHAPE_PX / 4, SHAPE_PX + SHAPE_PX / 4)
+            layer.draw(Canvas(shape))
+            // The shape alone, white: the tile tints it like a glyph.
+            val pixels = IntArray(SHAPE_PX * SHAPE_PX).also { shape.getPixels(it, 0, SHAPE_PX, 0, 0, SHAPE_PX, SHAPE_PX) }
+            val alpha = IntArray(pixels.size) { IconSilhouette.shapeAlpha(pixels[it] ushr 24) }
+            shape.setPixels(IntArray(pixels.size) { (alpha[it] shl 24) or 0xFFFFFF }, 0, SHAPE_PX, 0, 0, SHAPE_PX, SHAPE_PX)
+            val frame = IconSilhouette.frame(alpha, SHAPE_PX) ?: return@runCatching null
+            val out = Bitmap.createBitmap(ICON_PX, ICON_PX, Bitmap.Config.ARGB_8888)
+            val k = ICON_PX / frame.side
+            val fit = Matrix().apply { setTranslate(-frame.x, -frame.y); postScale(k, k) }
+            Canvas(out).drawBitmap(shape, fit, Paint(Paint.FILTER_BITMAP_FLAG))
+            shape.recycle()
+            out.asImageBitmap()
+        }.getOrNull()
+    }
+
+    private fun launcherIcon(c: ComponentName) = runCatching { pm.getActivityIcon(c) }.getOrElse { pm.getApplicationIcon(c.packageName) }
 
     /**
      * Dual mode's top screen, where an app opens ([topScreenDisplay], set by MainActivity): another display's id, this
@@ -124,5 +156,6 @@ class AndroidAppLauncher(private val activity: ComponentActivity, private val re
     private companion object {
         const val OUYA_GAME = "tv.ouya.intent.category.GAME"   // an OUYA-era game activity: a game even without the category or flag
         const val ICON_PX = 192   // sharp at the menu tiles' 48-60 dp tool icons on a 3x screen; Home's large faint one scales it up
+        const val SHAPE_PX = 288  // the visible square a silhouette is cut from: its logo, about two thirds of it, still fills ICON_PX
     }
 }
