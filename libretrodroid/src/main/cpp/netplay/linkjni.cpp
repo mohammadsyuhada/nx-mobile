@@ -61,7 +61,7 @@ JNIEXPORT jstring JNICALL Java_com_swordfish_libretrodroid_LibretroNetplay_linkH
     try {
         char mode[NL_MODE_MAX + 1];
         if (nl_host_mode(mode, sizeof(mode)) != 1) return nullptr;
-        return env->NewStringUTF(mode);
+        return newSafeJString(env, mode);   // the peer's bytes as they came off the network: any of them
     } catch (std::exception &exception) {
         LOGE("Error in link host mode: %s", exception.what());
         JavaUtils::throwRetroException(env, ERROR_GENERIC);

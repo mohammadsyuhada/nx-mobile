@@ -17,6 +17,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.nxredux.mobile.LaunchActivity
+import com.nxredux.mobile.NotificationIds
 import com.swordfish.libretrodroid.NxLog
 
 /** The notification's pure parts (unit-tested). */
@@ -44,7 +45,7 @@ class ScrapeService : Service() {
     companion object {
         private const val TAG = "NxScrapeService"
         private const val CHANNEL = "artwork"
-        private const val NOTIFICATION_ID = 4101
+        private const val NOTIFICATION_ID = NotificationIds.SCRAPE
         private const val ACTION_PAUSE = "com.nxredux.mobile.scraper.PAUSE"
         private const val ACTION_CANCEL = "com.nxredux.mobile.scraper.CANCEL"
 

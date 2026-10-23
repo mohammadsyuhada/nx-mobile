@@ -87,6 +87,9 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity-alias>
+        <!-- GameActivity absorbs every change a display move (DeX, a desktop window to another density), a settings change
+             (display size, font size, bold text, language) or a SIM swap can fire: a recreation is a full core reload and
+             ends a netplay session, and onConfigurationChanged already re-lays out the pad, overlays and menu. -->
         <activity
             android:name=".runner.GameActivity"
             android:exported="false"
@@ -94,7 +97,7 @@
             android:launchMode="singleTop"
             android:taskAffinity="${applicationId}.game"
             android:autoRemoveFromRecents="true"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection|colorMode|fontWeightAdjustment|grammaticalGender|touchscreen|mcc|mnc"
             android:theme="@style/Theme.NxMobile" />
 
         <!-- Dual mode: an app opened on the top screen's display starts from this invisible stand-in, which waits behind

@@ -32,6 +32,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.concurrent.Volatile
 
 /**
  * Tools → Device Sync: pairs with a handheld or a phone on the cable or Wi-Fi with the handheld's protocol
@@ -67,6 +68,11 @@ class DeviceSyncController(
     private var job: Job? = null
     /** The link of the latest run, for a Stop that comes while it is not yet on the Syncing page. */
     private var runLink = SyncLink.CABLE
+    /**
+     * When the serving daemon last logged a line ([serve]): its idle timeout runs from here. Written on the platform's
+     * log reader thread, read by the wait loop.
+     */
+    @Volatile private var serverActivity = 0L
     /**
      * A sync (any phase from Start to its end) is under way: no game may start, no import may run. Stays true through a
      * stopped run's cleanup, since a stopped server still delivers its last log lines.
@@ -926,7 +932,9 @@ class DeviceSyncController(
         me: Job, sock: SyncSocket, link: SyncLink, ownIp: String, peer: Peer, roms: Boolean, tally: MutableStateFlow<Tally>,
     ): DeviceSyncPage {
         try {
+            serverActivity = now()
             val started = platform.startServer(peer.ip, roms || peer.flags.romsOn) { line ->
+                serverActivity = now()   // any daemon line, counted or not: the peer is still working with it
                 val e = SyncProgress.daemonLine(line) ?: return@startServer
                 tally.update {
                     when {
@@ -944,12 +952,15 @@ class DeviceSyncController(
             if (!started) return DeviceSyncPage.Failed(link, DeviceSyncText.NO_SERVER)
             show(me, DeviceSyncPage.Syncing(link, peer.ip, SyncRole.SERVER, null, 0, 0, listOf(DeviceSyncText.WAITING_PEER)))
             platform.keepAlive(true, DeviceSyncText.syncingWith(peer.ip, link))
-            val deadline = now() + SERVER_WAIT_MS
+            // An idle timeout, not a deadline from the start: a phone-to-phone run with ROMs over Wi-Fi can take well over
+            // an hour, its daemon logging all the way. Only SERVER_WAIT_MS with neither a daemon line nor a peer message ends it.
+            var peerHeard = now()
             var nextReady = now()
             while (true) {
-                if (now() >= deadline) return DeviceSyncPage.Failed(link, DeviceSyncText.SERVER_TIMEOUT)
+                if (now() - maxOf(peerHeard, serverActivity) >= SERVER_WAIT_MS) return DeviceSyncPage.Failed(link, DeviceSyncText.SERVER_TIMEOUT)
                 if (now() >= nextReady) { sock.send(SyncWire.READY, peer.ip); nextReady = now() + INTERVAL_MS }
                 val d = sock.receive(POLL_MS) ?: continue
+                if (d.sourceIp == peer.ip) peerHeard = now()
                 val m = SyncWire.parse(d.text)
                 if (d.sourceIp == peer.ip && m == SyncMessage.Done) break
                 if (d.sourceIp == peer.ip && m == SyncMessage.Fail) { log("FAIL from ${peer.ip}"); return DeviceSyncPage.Failed(link, DeviceSyncText.PEER_FAILED) }
@@ -990,6 +1001,10 @@ class DeviceSyncController(
         const val READY_WAIT_MS = 30_000L
         /** READYs in a row from one device while searching that mean its ACK was lost (one a second: about 5 s). */
         const val MISSED_ACK_READIES = 5
+        /**
+         * How long a serving phone waits in silence (no daemon log line, no message from the peer) before it gives up
+         * (SERVER_TIMEOUT) and stops its daemon. An idle limit: a long transfer that keeps logging never reaches it.
+         */
         const val SERVER_WAIT_MS = 3_600_000L
         const val DONE_REPEATS = 5
         const val DONE_GAP_MS = 200L

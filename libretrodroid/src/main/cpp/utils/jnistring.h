@@ -38,5 +38,13 @@ private:
     const char* nativeString;
 };
 
+/**
+ * A Java string of [s], text from outside the app (a core, the RetroAchievements server, a netplay peer): NewStringUTF
+ * straight when it is safe there (libretrodroid::Utf8::isJniSafe, the common case: no copy), else NewString of its
+ * UTF-16 (an emoji as its surrogate pair, a stray byte as '?'), so no outside byte can abort a CheckJNI build. Null
+ * [s] gives "".
+ */
+jstring newSafeJString(JNIEnv* env, const char* s);
+inline jstring newSafeJString(JNIEnv* env, const std::string& s) { return newSafeJString(env, s.c_str()); }
 
 #endif //LIBRETRODROID_JNISTRING_H

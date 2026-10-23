@@ -134,6 +134,8 @@ add_library(libretrodroid SHARED
         utils/utils.h
         utils/jnistring.h
         utils/jnistring.cpp
+        utils/utf8.h
+        utils/utf8.cpp
         utils/libretrodroidexception.h
         utils/libretrodroidexception.cpp
         utils/rect.h

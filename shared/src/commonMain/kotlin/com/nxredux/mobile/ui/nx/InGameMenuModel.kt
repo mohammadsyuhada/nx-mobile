@@ -411,11 +411,15 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
      */
     fun setFrontend(values: Map<String, String>, overlays: List<String>, locked: Set<String>, tag: String = "", overlayAvailable: Boolean = true) {
         val tagChanged = tag != frontendTag
+        val hadConsoleRows = consoleRows().isNotEmpty()
         frontendTag = tag
         this.overlayAvailable = overlayAvailable
         frontend = FrontendOptions.fromConfig(values, tag)
         this.overlays = overlays
         frontendLocked = locked
+        // A new lock set (Restore defaults, the Wii's sensors once known) or console may lock or free every Console
+        // Settings row: an open Options page offers the row only while it leads somewhere, never to an empty page.
+        if (consoleRows().isNotEmpty() != hadConsoleRows) rebuildOptions()
         refreshFrontendPages()
         if (tagChanged) fixPanel()   // the panel's header falls back to the console's logo
     }
@@ -500,8 +504,15 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         refreshRoot()
         if (!changed) return
         // Console Settings may come or go with its Bottom screen row (a console whose other rows are all locked).
-        state = state.copy(stack = state.stack.map { p -> if (p.kind == PageKind.Options) rebuilt(p, optionsPage()) else p })
+        rebuildOptions()
         refreshFrontendPages()
+    }
+
+    /** Open Options pages built again (Console Settings offered or not), keeping the selected row and the status footer. */
+    private fun rebuildOptions() {
+        state = state.copy(stack = state.stack.map { p ->
+            if (p.kind == PageKind.Options) rebuilt(p, optionsPage()).copy(footer = statusText()) else p
+        })
     }
 
     private fun changeDisc(delta: Int): MenuEffect? {

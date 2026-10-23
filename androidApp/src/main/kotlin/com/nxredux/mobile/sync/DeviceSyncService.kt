@@ -18,6 +18,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.nxredux.mobile.LaunchActivity
+import com.nxredux.mobile.NotificationIds
 import com.nxredux.mobile.runner.GameActivity
 import com.nxredux.mobile.storage.AndroidSaveTransfer
 import com.swordfish.libretrodroid.NxLog
@@ -78,7 +79,7 @@ class DeviceSyncService : Service() {
     companion object {
         private const val TAG = "NxSyncService"
         private const val CHANNEL = "device-sync"
-        private const val NOTIFICATION_ID = 4102
+        private const val NOTIFICATION_ID = NotificationIds.DEVICE_SYNC
         private const val ACTION_CANCEL = "com.nxredux.mobile.sync.CANCEL"
         private const val TITLE = "Device Sync"
 

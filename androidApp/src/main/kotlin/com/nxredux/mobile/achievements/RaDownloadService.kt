@@ -17,6 +17,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.nxredux.mobile.LaunchActivity
+import com.nxredux.mobile.NotificationIds
 import com.swordfish.libretrodroid.NxLog
 
 /** The notification's pure parts (unit-tested). */
@@ -44,7 +45,7 @@ class RaDownloadService : Service() {
     companion object {
         private const val TAG = "NxRaDownloadService"
         private const val CHANNEL = "achievements"
-        private const val NOTIFICATION_ID = 4102
+        private const val NOTIFICATION_ID = NotificationIds.RA_DOWNLOAD
         private const val ACTION_CANCEL = "com.nxredux.mobile.achievements.CANCEL"
         private const val ACTION_PAUSE = "com.nxredux.mobile.achievements.PAUSE"
 

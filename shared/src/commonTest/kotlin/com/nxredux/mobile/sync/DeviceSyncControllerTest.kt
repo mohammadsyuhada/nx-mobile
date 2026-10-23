@@ -248,6 +248,23 @@ class DeviceSyncControllerTest {
         assertEquals(listOf("stop"), p.serverCalls)
     }
 
+    /** The hour is of silence: daemon lines and the peer's messages each push it back, so a long transfer is never cut. */
+    @Test fun the_server_wait_is_an_idle_timeout() = runTest {
+        val p = FakeSyncPlatform()
+        val c = serving(p)
+        advanceTimeBy(3_000_000); runCurrent()
+        p.logLine!!("2026/10/14 23:28:27 [1] roms recv GB/Big.gb")
+        advanceTimeBy(3_000_000); runCurrent()   // 100 min since the start, 50 since the line
+        assertEquals(SyncRole.SERVER, (c.page.value as DeviceSyncPage.Syncing).role)
+        p.socket.from(handheld, SyncWire.READY); runCurrent()   // a peer message counts too
+        advanceTimeBy(3_000_000); runCurrent()
+        assertEquals(SyncRole.SERVER, (c.page.value as DeviceSyncPage.Syncing).role)
+        assertEquals(emptyList(), p.serverCalls)
+        advanceTimeBy(700_000); runCurrent()   // then an hour of silence
+        assertEquals(DeviceSyncPage.Failed(SyncLink.WIFI, DeviceSyncText.SERVER_TIMEOUT), c.page.value)
+        assertEquals(listOf("stop"), p.serverCalls)
+    }
+
     /** A confirmed stop while serving still stops the server. */
     @Test fun stopping_asks_first_and_a_stopped_server_is_still_stopped() = runTest {
         val p = FakeSyncPlatform().apply { wifi = "192.168.1.5" }
