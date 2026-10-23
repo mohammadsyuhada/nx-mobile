@@ -17,15 +17,24 @@ class UpdateInstallReceiver : BroadcastReceiver() {
         private const val TAG = "NxUpdate"
         const val ACTION = "com.nxredux.mobile.update.INSTALL_STATUS"
 
-        /** A committed session's answer, and whether STARTED was reported. Main thread only (onReceive runs there). */
-        private class Waiting(val onResult: (UpdateInstallResult) -> Unit, var started: Boolean = false)
+        /**
+         * A committed session's answer, whether STARTED was reported, and the confirm screen's intent once asked for (kept for
+         * [AndroidUpdatePlatform.resumeInstall]). Main thread only (onReceive runs there).
+         */
+        private class Waiting(val onResult: (UpdateInstallResult) -> Unit, var started: Boolean = false, var confirm: Intent? = null)
         private val waiting = HashMap<Int, Waiting>()
 
         /** Routes [sessionId]'s statuses to [onResult]; called on the main thread before the commit. */
         fun expect(sessionId: Int, onResult: (UpdateInstallResult) -> Unit) { waiting[sessionId] = Waiting(onResult) }
 
-        /** The commit itself failed: no status will come. */
+        /** The commit itself failed, or the session was abandoned: no status will be passed on. */
         fun forget(sessionId: Int) { waiting.remove(sessionId) }
+
+        /** Whether [sessionId] still waits on a status. */
+        fun waits(sessionId: Int): Boolean = sessionId in waiting
+
+        /** The confirm screen [sessionId]'s status asked for; null before that status came. */
+        fun confirm(sessionId: Int): Intent? = waiting[sessionId]?.confirm
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -41,9 +50,11 @@ class UpdateInstallReceiver : BroadcastReceiver() {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java)
                 if (confirm == null) { finish(id, w, UpdateInstallResult.FAILED, "no confirm intent"); return }
+                w.confirm = Intent(confirm)
                 try {
                     // The install is only committed while an activity is started (busyReason waits on NxApplication.foreground),
-                    // so a visible app may launch this. Leaving the app in the moment between commit and status can still block it.
+                    // so a visible app may launch this. Leaving the app in the moment between commit and status can still block it;
+                    // the next main menu reopens it then ([AndroidUpdatePlatform.resumeInstall]), as it does after Home on the screen.
                     context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 } catch (e: Exception) {
                     finish(id, w, UpdateInstallResult.FAILED, "confirm screen refused (${e::class.java.simpleName})")

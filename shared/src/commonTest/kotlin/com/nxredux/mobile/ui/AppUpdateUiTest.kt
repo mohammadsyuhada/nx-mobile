@@ -121,6 +121,7 @@ class AppUpdateUiTest {
         override fun canInstall() = true
         override fun askInstallPermission() {}
         override fun install(file: UpdateFile, onResult: (UpdateInstallResult) -> Unit) {}
+        override fun resumeInstall() = true
         override fun keepAlive(active: Boolean, text: String?) {}
     }
 

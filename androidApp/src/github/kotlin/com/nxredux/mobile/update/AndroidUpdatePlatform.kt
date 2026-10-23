@@ -144,29 +144,62 @@ class AndroidUpdatePlatform(private val app: Context, private val scope: Corouti
         }
     }
 
+    /** The install's session: [WRITING] while [install] writes it, its id once committed, null when there is none. Main thread only. */
+    private var session: Int? = null
+
     /** Writes [file] into a PackageInstaller session on IO, then commits it on Main; [onResult] is called on Main. */
     override fun install(file: UpdateFile, onResult: (UpdateInstallResult) -> Unit) {
         val installer = app.packageManager.packageInstaller
+        session = WRITING
         scope.launch {
-            val session = try {
+            val written = try {
                 withContext(Dispatchers.IO) { writeSession(installer, File(file.path)) }
             } catch (e: CancellationException) {
+                session = null
                 throw e
             } catch (e: Exception) {
+                session = null
                 NxLog.e(TAG, "install session failed", e)
                 onResult(UpdateInstallResult.FAILED)
                 return@launch
             }
-            UpdateInstallReceiver.expect(session.first, onResult)
+            val id = written.first
+            session = id
+            UpdateInstallReceiver.expect(id) { result ->
+                if (result != UpdateInstallResult.STARTED && session == id) session = null
+                onResult(result)
+            }
             try {
-                session.second.use { it.commit(statusReceiver(session.first)) }
+                written.second.use { it.commit(statusReceiver(id)) }
             } catch (e: Exception) {
-                UpdateInstallReceiver.forget(session.first)
-                runCatching { installer.abandonSession(session.first) }
                 NxLog.e(TAG, "install commit failed", e)
+                dropSession(installer, id)
                 onResult(UpdateInstallResult.FAILED)
             }
         }
+    }
+
+    override fun resumeInstall(): Boolean {
+        val id = session ?: return false
+        if (id == WRITING) return true   // still copying the APK in: the commit follows
+        val installer = app.packageManager.packageInstaller
+        if (installer.getSessionInfo(id) == null || !UpdateInstallReceiver.waits(id)) return dropSession(installer, id)
+        val confirm = UpdateInstallReceiver.confirm(id) ?: return true   // committed; the status asking for the confirm screen is yet to come
+        return try {
+            app.startActivity(Intent(confirm).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        } catch (e: Exception) {
+            NxLog.w(TAG, "confirm screen refused again (${e::class.java.simpleName})")
+            dropSession(installer, id)
+        }
+    }
+
+    /** Abandons [id], whose status no longer reaches the controller; false, for [resumeInstall]. */
+    private fun dropSession(installer: PackageInstaller, id: Int): Boolean {
+        UpdateInstallReceiver.forget(id)
+        runCatching { installer.abandonSession(id) }
+        if (session == id) session = null
+        return false
     }
 
     /** A session holding the APK, with its id; an earlier attempt's leftover session is abandoned first. */
@@ -227,6 +260,8 @@ class AndroidUpdatePlatform(private val app: Context, private val scope: Corouti
 
     private companion object {
         const val TAG = "NxUpdate"
+        /** [session] while the APK is written; PackageInstaller's ids are positive. */
+        const val WRITING = -1
         const val CHUNK = 64 * 1024
         const val PROGRESS_STEP = 256 * 1024L
     }

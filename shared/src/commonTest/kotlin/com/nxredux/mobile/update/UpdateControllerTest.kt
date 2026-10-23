@@ -34,6 +34,9 @@ private class FakeUpdatePlatform(override val dev: Boolean = false) : UpdatePlat
     val installs = ArrayList<String>()
     val keepAlives = ArrayList<Pair<Boolean, String?>>()
     var installResult: ((UpdateInstallResult) -> Unit)? = null
+    /** What `resumeInstall` answers: the session still waits on its confirm screen. */
+    var installPending = true
+    var resumes = 0
 
     override var lastSuccess = 0L
     override var lastFailure = 0L
@@ -52,6 +55,7 @@ private class FakeUpdatePlatform(override val dev: Boolean = false) : UpdatePlat
     override fun canInstall(): Boolean = installAllowed
     override fun askInstallPermission() { permissionAsks++ }
     override fun install(file: UpdateFile, onResult: (UpdateInstallResult) -> Unit) { installs += file.path; installResult = onResult }
+    override fun resumeInstall(): Boolean { resumes++; return installPending }
     override fun keepAlive(active: Boolean, text: String?) { keepAlives += active to text }
 }
 
@@ -306,6 +310,37 @@ class UpdateControllerTest {
         fake.installResult!!(UpdateInstallResult.STARTED)
         assertEquals(UpdateState.Installing(RELEASE), c.state.value)
         assertTrue(fake.discarded.isEmpty())
+    }
+
+    @Test fun an_unanswered_install_reopens_its_confirm_screen_on_the_main_menu() = runTest {
+        val fake = FakeUpdatePlatform()
+        val c = downloaded(fake)
+        fake.installResult!!(UpdateInstallResult.STARTED)
+        c.onMainMenu()   // back from Home with the confirm screen left behind
+        assertEquals(1, fake.resumes)
+        assertEquals(UpdateState.Installing(RELEASE), c.state.value)
+        assertTrue(fake.discarded.isEmpty())
+    }
+
+    @Test fun an_install_whose_session_is_gone_is_available_again() = runTest {
+        val fake = FakeUpdatePlatform().apply { installPending = false }
+        val c = downloaded(fake)
+        fake.installResult!!(UpdateInstallResult.STARTED)
+        c.onMainMenu()
+        assertEquals(UpdateState.Available(RELEASE), c.state.value)
+        assertEquals(listOf("/cache/update.apk"), fake.discarded)
+        assertEquals(false to null, fake.keepAlives.last())
+    }
+
+    @Test fun a_late_install_result_after_the_install_ended_is_ignored() = runTest {
+        val fake = FakeUpdatePlatform().apply { installPending = false }
+        val c = downloaded(fake)
+        val late = fake.installResult!!
+        c.onMainMenu()   // session gone: Available
+        late(UpdateInstallResult.FAILED)
+        late(UpdateInstallResult.CANCELLED)
+        assertEquals(UpdateState.Available(RELEASE), c.state.value)
+        assertEquals(listOf("/cache/update.apk"), fake.discarded)
     }
 
     @Test fun a_release_without_a_digest_skips_the_check() = runTest {

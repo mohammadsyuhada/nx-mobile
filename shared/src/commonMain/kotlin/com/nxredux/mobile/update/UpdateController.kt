@@ -32,6 +32,12 @@ interface UpdatePlatform {
     /** Opens the system screen that allows installs from this app. */
     fun askInstallPermission()
     fun install(file: UpdateFile, onResult: (UpdateInstallResult) -> Unit)
+    /**
+     * The main menu showed while [install]'s session has no answer (the confirm screen left by Home, or its launch
+     * blocked): reopens the confirm screen when the session still waits on it. False when the session is gone, which
+     * this abandons; no result follows for it then.
+     */
+    fun resumeInstall(): Boolean
     /** Keeps the process alive with a notification showing [text] while [active]. */
     fun keepAlive(active: Boolean, text: String?)
     /** Epoch millis of the last good / failed check, 0 for never; persisted. */
@@ -81,7 +87,7 @@ class UpdateController(
     private var job: Job? = null
     /** The Waiting poll; its own field because it starts inside the download [job], before that launch returns. */
     private var poll: Job? = null
-    /** The downloaded APK until the installer has it, so a cancel can delete it. */
+    /** The downloaded APK until the install ends, so a cancel or a failed install can delete it. */
     private var file: UpdateFile? = null
     /** The Waiting state is for the install permission, which only the next [onMainMenu] re-checks. */
     private var awaitingPermission = false
@@ -91,9 +97,13 @@ class UpdateController(
     private val busy: Boolean
         get() = _state.value.let { it is UpdateState.Checking || it is UpdateState.Downloading || it is UpdateState.Waiting || it is UpdateState.Installing }
 
-    /** The main menu showed: checks the feed when due, or retries a waiting install. */
+    /** The main menu showed: checks the feed when due, retries a waiting install, or resumes or drops an unanswered one. */
     fun onMainMenu() {
         val s = _state.value
+        if (s is UpdateState.Installing) {
+            if (!platform.resumeInstall()) { dropFile(); finish(UpdateState.Available(s.release)) }
+            return
+        }
         if (s is UpdateState.Waiting) {
             if (!awaitingPermission) { poll?.cancel(); gate(s.release, s.file); return }
             if (platform.canInstall()) { awaitingPermission = false; gate(s.release, s.file); return }
@@ -227,14 +237,13 @@ class UpdateController(
             waitFor(release, downloaded, PERMISSION_REASON)
             return
         }
-        file = null
-        finish(UpdateState.Installing(release))
+        val installing = UpdateState.Installing(release)
+        finish(installing)
         platform.install(downloaded) { result ->
-            when (result) {
-                UpdateInstallResult.STARTED -> Unit
-                UpdateInstallResult.CANCELLED -> { platform.discard(downloaded); _state.value = UpdateState.Available(release) }
-                UpdateInstallResult.FAILED -> { platform.discard(downloaded); _state.value = UpdateState.Failed("Update failed", release) }
-            }
+            // A late answer, after onMainMenu found the session gone, is for an install that already ended.
+            if (result == UpdateInstallResult.STARTED || _state.value != installing) return@install
+            dropFile()
+            _state.value = if (result == UpdateInstallResult.CANCELLED) UpdateState.Available(release) else UpdateState.Failed("Update failed", release)
         }
     }
 
