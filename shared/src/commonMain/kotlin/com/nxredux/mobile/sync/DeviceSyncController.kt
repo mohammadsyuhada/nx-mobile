@@ -364,6 +364,7 @@ class DeviceSyncController(
         val access = platform.romsAvailable()
         val withRoms = romsOn && access
         log("READY from ${peer.ip}: roms asked $romsOn, access $access")
+        if (!platform.checkSaveFileTimes()) return DeviceSyncPage.Failed(link, DeviceSyncText.NO_SAVE_FILE_TIMES)
         // BIOS runs on every sync both sides can take part in; one that can't skips it with a note, never a failure.
         // Its notes come first on Done.
         val biosNotes = ArrayList<String>()
@@ -957,6 +958,7 @@ class DeviceSyncController(
     ): DeviceSyncPage {
         try {
             serverActivity = now()
+            if (!platform.checkSaveFileTimes()) return DeviceSyncPage.Failed(link, DeviceSyncText.NO_SAVE_FILE_TIMES)
             val started = platform.startServer(peer.ip, roms || peer.flags.romsOn) { line ->
                 serverActivity = now()   // any daemon line, counted or not: the peer is still working with it
                 val e = SyncProgress.daemonLine(line) ?: return@startServer

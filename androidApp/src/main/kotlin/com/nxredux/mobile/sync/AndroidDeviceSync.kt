@@ -71,7 +71,15 @@ class AndroidDeviceSync(
     override fun wifiIp(): String? = WifiNetworks.address(cm)?.address?.hostAddress?.let(SyncWire::ipv4)
     override fun gameScreenAlive() = gameAlive()
     override fun importing() = importingNow()
-    override fun keepAlive(active: Boolean, text: String?) = alive(active, text)
+    /** A run is under way ([keepAlive] true until its false): it holds off the data move ([DataRoot.useBegin]). */
+    @Volatile private var usingData = false
+    override fun keepAlive(active: Boolean, text: String?) {
+        synchronized(this) {
+            if (active && !usingData) { usingData = true; DataRoot.useBegin() }
+            else if (!active && usingData) { usingData = false; DataRoot.useEnd(app) }
+        }
+        alive(active, text)
+    }
     override fun log(message: String) = NxLog.i(TAG, message)
 
     /**
@@ -134,6 +142,12 @@ class AndroidDeviceSync(
         val roms = homeRoms()
         roms.mkdirs()
         SyncFileTimes.check(roms)
+    }
+
+    override suspend fun checkSaveFileTimes(): Boolean = withContext(Dispatchers.IO) {
+        val saves = File(root, "Saves")
+        saves.mkdirs()
+        SyncFileTimes.check(saves)
     }
 
     override suspend fun listRemoteRoms(peerIp: String): Pair<Int, List<String>> {
