@@ -994,12 +994,12 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
     private fun optionsPage() = MenuPage(
         PageKind.Options, "Options",
         buildList {
-            if (consoleRows().isNotEmpty()) add(MenuRow.Submenu(CONSOLE_SETTINGS_LABEL, PageKind.ConsoleSettings))
-            add(MenuRow.Submenu("Frontend", PageKind.Frontend))
-            add(MenuRow.Submenu("Shaders", PageKind.Shaders))
-            add(MenuRow.Submenu("Core Options", PageKind.CoreOptions))
+            if (consoleRows().isNotEmpty()) add(MenuRow.Submenu(CONSOLE_SETTINGS_LABEL, PageKind.ConsoleSettings, CONSOLE_SETTINGS_INFO))
+            add(MenuRow.Submenu("Frontend", PageKind.Frontend, FRONTEND_INFO))
+            add(MenuRow.Submenu("Shaders", PageKind.Shaders, SHADERS_INFO))
+            add(MenuRow.Submenu("Core Options", PageKind.CoreOptions, CORE_OPTIONS_INFO))
             if (cheatsAvailable) add(MenuRow.Submenu(CHEATS_LABEL, PageKind.Cheats, CHEATS_INFO))
-            add(MenuRow.Submenu("Save Changes", PageKind.SaveChanges))
+            add(MenuRow.Submenu("Save Changes", PageKind.SaveChanges, SAVE_CHANGES_INFO))
         },
         footer = statusText(),
     )
@@ -1123,6 +1123,11 @@ class InGameMenuModel(private val gameTitle: String, private val slotCount: Int,
         const val PLAYERS_FOOTER = "Close the menu, then press a button\non a new controller to join."
         const val CHEATS_LABEL = "Cheats"
         const val CHEATS_INFO = "Toggle cheats for this game"
+        const val CONSOLE_SETTINGS_INFO = "Settings for this console's emulator"
+        const val FRONTEND_INFO = "Screen scaling, overlays and on-screen extras"
+        const val SHADERS_INFO = "Screen filters and effects"
+        const val CORE_OPTIONS_INFO = "The emulator's own settings for this console"
+        const val SAVE_CHANGES_INFO = "Save these settings for this console or this game"
         const val CHEAT_KEY_PREFIX = "cheat:"
         const val NO_CHEATS = "No cheats for this game."
         const val ACHIEVEMENTS_LABEL = "Achievements"

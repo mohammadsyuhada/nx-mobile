@@ -57,6 +57,7 @@ import com.nxredux.mobile.ui.nx.NxBackdrop
 import com.nxredux.mobile.ui.nx.NxBackdropStack
 import com.nxredux.mobile.ui.nx.NxButton
 import com.nxredux.mobile.ui.nx.NxRow
+import com.nxredux.mobile.ui.nx.NX_HINT_BAR_ROW_HEIGHT
 import com.nxredux.mobile.ui.nx.NxHintsBand
 import com.nxredux.mobile.ui.nx.NxScreenScaffold
 import com.nxredux.mobile.ui.nx.NxTileGrid
@@ -244,6 +245,9 @@ fun MainMenuScreen(
                     // composition: the row snaps instead of sliding. Vertical: the same items stood on end ([NxBackdropStack]).
                     MenuStyle.CAROUSEL, MenuStyle.BACKDROP -> {
                         val tiles = remember(rows, controllerArt) { gridTiles(rows, controllerArt) }   // the controllers by Layouts → Consoles background
+                        // Centred on the screen, whatever shows: half a shown tab row up, half a shown hint bar down (a
+                        // hidden title's room is in the box already, [titleRoom]).
+                        val shift = mainMenuCarouselShift(chrome.tabRow, barShown = !chrome.emptyBarRoom && !chrome.noBar)
                         slot(keepBarRoom = false) { m ->
                             if (orientation == MenuOrientation.VERTICAL) NxBackdropStack(
                                 null, tiles, selection, onSelect = onSelect, onOpen = onOpen, onLongPress = onLongPress,
@@ -251,6 +255,7 @@ fun MainMenuScreen(
                             ) else NxBackdrop(
                                 null, tiles, selection, onSelect = onSelect, onOpen = onOpen, onLongPress = onLongPress,
                                 captionTitle = NoCaptionTitle, captionInfo = NoCaptionInfo, modifier = m, layoutKey = layoutKey, titleRoom = titleRoom,
+                                centreShift = shift,
                             )
                         }
                     }
@@ -331,6 +336,10 @@ internal fun mainMenuListEdges(tabRow: Boolean, barShown: Boolean): Pair<Float, 
     val top = if (tabRow) 0.25f else 0.5f
     return top to if (barShown) 0.25f else 1f - top
 }
+
+/** How far a main menu Carousel's row moves down so it centres on the screen: half a hint bar, less half a tab row. */
+internal fun mainMenuCarouselShift(tabRow: Boolean, barShown: Boolean): Dp =
+    ((if (barShown) NX_HINT_BAR_ROW_HEIGHT else 0.dp) - (if (tabRow) MENU_TAB_ROW_HEIGHT else 0.dp)) / 2
 
 /** The main menu's rows have no caption block (a console's or collection's count is drawn by the row itself). */
 private val NoCaptionTitle: () -> String? = { null }

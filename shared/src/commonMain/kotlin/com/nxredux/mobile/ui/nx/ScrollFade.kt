@@ -21,18 +21,25 @@ import androidx.compose.ui.unit.dp
  * the page, where a linear fade reads too faint).
  */
 fun Modifier.nxScrollFade(state: ScrollableState, height: Dp = 32.dp, strong: Boolean = false): Modifier =
+    nxEdgeFade({ state.canScrollBackward }, { state.canScrollForward }, height, strong)
+
+/**
+ * [nxScrollFade] for a list that pages rather than scrolls (a window of rows): the top fades while [above] (rows before
+ * the window), the bottom while [below]. Both are read at draw time.
+ */
+fun Modifier.nxEdgeFade(above: () -> Boolean, below: () -> Boolean, height: Dp = 32.dp, strong: Boolean = false): Modifier =
     graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
         .drawWithContent {
             drawContent()
             val fade = height.toPx().coerceAtMost(size.height / 2)
-            if (state.canScrollBackward) {
+            if (above()) {
                 drawRect(
                     brush = Brush.verticalGradient(*fadeStops(strong, toEdge = false), startY = 0f, endY = fade),
                     size = Size(size.width, fade),
                     blendMode = BlendMode.DstIn,
                 )
             }
-            if (state.canScrollForward) {
+            if (below()) {
                 drawRect(
                     brush = Brush.verticalGradient(*fadeStops(strong, toEdge = true), startY = size.height - fade, endY = size.height),
                     topLeft = Offset(0f, size.height - fade),

@@ -7,7 +7,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -19,6 +18,8 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,9 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -217,7 +216,7 @@ private fun InGameMenuContent(
             PageKind.Achievements -> AchievementsBody(page, detail, onSelect, Modifier.weight(1f))
             // Keyed by page so each page gets its own scroll position; whole width, so its name shows in the title row.
             else -> key(page.kind) {
-                RowsBody(page, rowHeight, onSelect, onActivate, onChange, onInfoTruncated, Modifier.weight(1f), title = TitleRow.NAMED)
+                RowsBody(page, rowHeight, onSelect, onActivate, onChange, onInfoTruncated, Modifier.weight(1f))
             }
         }
         // In landscape the menu covers the pad, so each hint is a tap target that sends its button (see
@@ -291,7 +290,7 @@ internal fun menuRowHeight(height: Dp, landscapeHeight: Dp?): Dp {
  * The root list's share of the root's width beside the panel: narrower in [portrait], so the panel gets the room; still
  * wide enough for the longest root row (Continue, the Disc row with its `<  1/2  >`) at the default text size.
  */
-internal fun rootListShare(portrait: Boolean): Float = if (portrait) 0.36f else 0.42f
+internal fun rootListShare(portrait: Boolean): Float = if (portrait) 0.32f else 0.34f
 
 /**
  * The room above the root list's first row, so its pill's centre sits level with the panel's tab words beside it
@@ -360,7 +359,7 @@ private fun SplitBody(
                     PaneBody(panes.left, rowHeight, onSelect, onActivate, onChange, onInfoTruncated, detail, onDismiss, Modifier.alpha(rootListAlpha(state)))
                 } else {
                     val tap: (Int) -> Unit = { i -> split.onParentTap(panes.left.kind, i) }
-                    PaneBody(panes.left, rowHeight, tap, tap, {}, noInfo, detail, {}, Modifier.alpha(UNFOCUSED_ALPHA), title = TitleRow.NONE)
+                    PaneBody(panes.left, rowHeight, tap, tap, {}, noInfo, detail, {}, Modifier.alpha(UNFOCUSED_ALPHA))
                 }
             },
             right = {
@@ -380,7 +379,7 @@ private fun SplitBody(
     }
 }
 
-/** One pane's page: the root list, the Achievements page, or a page of options rows (with [title]'s row). */
+/** One pane's page: the root list, the Achievements page, or a page of options rows. */
 @Composable
 private fun PaneBody(
     page: MenuPage,
@@ -392,7 +391,6 @@ private fun PaneBody(
     detail: AchievementsUi,
     onDismiss: () -> Unit,
     modifier: Modifier,
-    title: TitleRow = TitleRow.ARROWS,
 ) {
     when (page.kind) {
         // At the top, its first row beside the panel's tab row.
@@ -401,27 +399,16 @@ private fun PaneBody(
             contentAlignment = Alignment.TopStart,
         ) { RootList(page, rowHeight, onSelect, onActivate, onChange) }
         PageKind.Achievements -> AchievementsBody(page, detail, onSelect, modifier.fillMaxSize())
-        else -> key(page.kind) { RowsBody(page, rowHeight, onSelect, onActivate, onChange, onInfoTruncated, modifier.fillMaxSize(), title) }
+        else -> key(page.kind) { RowsBody(page, rowHeight, onSelect, onActivate, onChange, onInfoTruncated, modifier.fillMaxSize()) }
     }
 }
 
 /** The wash over the paused frame behind the menu's pages: dark enough that the game shows only faintly. */
-private val MenuWash = Color(0xEB000000)
+private val MenuWash = Color(0xF5000000)
 
 /** Horizontal padding inside a label pill on the root list and the adjust strip (the rows pages use [NxOptionsRow]). */
 private val MenuPillPadding = 10.dp
 
-/** The rows page's title row (its name, the scroll arrows), drawn in the room over the rows: it takes none of theirs. */
-private val PageTitleRow = 18.dp
-
-/** The extra space a named title row ([TitleRow.NAMED]) keeps from the game header above it. */
-private val NamedTitleGap = 12.dp
-
-/** The scroll position of a rows page; [key] is the (selection, rows per page, row count) it was last fitted to. */
-private class RowsWindow {
-    var scroll by mutableIntStateOf(0)
-    var key: Any? = null
-}
 
 /**
  * Full-width rows in a window of whole rows, from the top (level with the root list), with a reserved
@@ -439,7 +426,6 @@ private fun RowsBody(
     onChange: (Int) -> Unit,
     onInfoTruncated: (String, Boolean) -> Unit,
     modifier: Modifier,
-    title: TitleRow = TitleRow.ARROWS,
 ) {
     val density = LocalDensity.current
     // Options rows as on the Settings pages: a list row's pitch, the label one step under the list's, the value smaller.
@@ -456,66 +442,34 @@ private fun RowsBody(
     val descHeight = with(density) { (descLine * infoLines).toDp() } + if (portrait) 8.dp else 12.dp
     val rowInfo = (page.rows.getOrNull(page.selected) as? MenuRow.Option)?.info?.takeIf { it.isNotBlank() }
     val info = page.rows.getOrNull(page.selected)?.info?.takeIf { it.isNotBlank() } ?: page.footer
-    val window = remember { RowsWindow() }
+    val listState = rememberLazyListState()
     val tapOpens = LocalNxTapOpens.current
     // The row margin leaves the labels [innerPad] further in, where the page title's first letter sits ([nxListInset]).
     val sidePad = NxOptionsSidePad
     Column(modifier.fillMaxWidth()) {
         // At the top, as the root list and the panel: the first row level with the list's first row beside it.
         BoxWithConstraints(
-            // A named title (a whole-width page) gets room of its own under the header, so the two don't touch.
-            Modifier.weight(1f).fillMaxWidth()
-                .padding(start = sidePad, end = sidePad, top = rootListTopPad(itemHeight) + if (title == TitleRow.NAMED) NamedTitleGap else 0.dp),
+            Modifier.weight(1f).fillMaxWidth().padding(start = sidePad, end = sidePad, top = rootListTopPad(itemHeight)),
             contentAlignment = Alignment.TopCenter,
         ) {
             val count = page.rows.size
-            val scrolling = count > (maxHeight / itemHeight).toInt()
-            val perPage = if (scrolling) maxOf(1, (maxHeight / itemHeight).toInt()) else count
-            val maxStart = maxOf(0, count - perPage)
-            val fitKey = Triple(page.selected, perPage, count)
-            // A new fit (selection, page size or row count) moves the window the minimum; otherwise it stays where a drag
-            // left it. Read here, recorded once the composition applies, so composing never writes the window.
-            val fitted = if (window.key != fitKey) windowStart(page.selected, window.scroll, perPage, count) else window.scroll
-            val start = fitted.coerceIn(0, maxStart)
-            SideEffect {
-                window.key = fitKey
-                window.scroll = start
-            }
-            val end = minOf(count, start + perPage)
-            val rowPx = with(density) { itemHeight.toPx() }
-            // The page's name only on a whole-width page (two panes show where you are by the dimmed parent); no row at
-            // all on that dimmed parent.
-            if (title != TitleRow.NONE) PageTitle(
-                page.title.takeIf { title == TitleRow.NAMED }, more = if (scrolling) (start > 0) to (end < count) else null,
-                onStep = { d -> window.scroll = (start + d).coerceIn(0, maxStart) },
-            )
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Column(
-                    Modifier.fillMaxWidth().height(itemHeight * (end - start))
-                        .pointerInput(maxStart, rowPx) {
-                            // Touch scroll: each row-height of drag moves the window one row.
-                            var acc = 0f
-                            detectVerticalDragGestures(onDragStart = { acc = 0f }) { change, dy ->
-                                change.consume()
-                                acc += dy
-                                while (acc <= -rowPx && window.scroll < maxStart) { window.scroll++; acc += rowPx }
-                                while (acc >= rowPx && window.scroll > 0) { window.scroll--; acc -= rowPx }
-                                acc = acc.coerceIn(-rowPx, rowPx)
-                            }
-                        },
-                ) {
-                    for (i in start until end) {
-                        key(i) {
-                            val selected = i == page.selected
-                            val row = menuOptionRow(page.rows[i])
-                            NxOptionsRow(
-                                row, selected, itemHeight, labelSize, valueSize, innerPad,
-                                Modifier.clickable { nxTap(i, selected, tapOpens(i), onSelect, onActivate) },
-                                // Tapping the selected option's value cycles it forward (touch equivalent of RIGHT).
-                                onValueClick = if (row.cycleable) { { onChange(1) } } else null,
-                            )
-                        }
-                    }
+            // Whole rows: as many as fit, the list scrolling smoothly under them (the Settings lists' scroll), its first
+            // and last rows fading while more are that way, the selection a row clear of the fades.
+            val shown = minOf(count, maxOf(1, (maxHeight / itemHeight).toInt()))
+            NxKeepSelectedInView(listState, page.selected, count, margin = 1)
+            LazyColumn(
+                Modifier.fillMaxWidth().height(itemHeight * shown).nxScrollFade(listState, height = itemHeight, strong = true),
+                state = listState, flingBehavior = rememberNxRowSnapFling(listState),
+            ) {
+                items(count) { i ->
+                    val selected = i == page.selected
+                    val row = menuOptionRow(page.rows[i])
+                    NxOptionsRow(
+                        row, selected, itemHeight, labelSize, valueSize, innerPad,
+                        Modifier.clickable { nxTap(i, selected, tapOpens(i), onSelect, onActivate) },
+                        // Tapping the selected option's value cycles it forward (touch equivalent of RIGHT).
+                        onValueClick = if (row.cycleable) { { onChange(1) } } else null,
+                    )
                 }
             }
         }
@@ -526,44 +480,7 @@ private fun RowsBody(
     }
 }
 
-/** What a rows page draws in the room over its rows: its name and the scroll arrows, the arrows alone, or nothing. */
-private enum class TitleRow { NAMED, ARROWS, NONE }
 
-/**
- * A rows page's title row, [PageTitleRow] high and laid out as zero high just above the rows (in the room over them, the
- * header's gap): the page's [title] (null: none) in the hint colour, and while it scrolls ([more]: rows above, rows below)
- * up / down arrows at the right, each lit while there is more that way; a tap on one steps the window ([onStep] -1 / +1).
- */
-@Composable
-private fun PageTitle(title: String?, more: Pair<Boolean, Boolean>?, onStep: (Int) -> Unit) {
-    val colors = LocalNxColors.current
-    Row(
-        Modifier
-            // Zero high where it sits, drawn its own height above: outermost, so the whole row moves up.
-            .layout { measurable, constraints ->
-                val p = measurable.measure(constraints.copy(minHeight = 0))
-                layout(p.width, 0) { p.place(0, -p.height) }
-            }
-            .fillMaxWidth().height(PageTitleRow).padding(start = NxOptionsInnerPad, end = NxOptionsInnerPad),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            title.orEmpty(), color = colors.hint, fontFamily = LocalNxFont.current, fontSize = PageTitleSize, lineHeight = PageTitleSize,
-            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
-        )
-        more?.let { (above, below) ->
-            for ((up, lit) in listOf(true to above, false to below)) {
-                Box(
-                    Modifier.size(PageTitleRow * 1.6f, PageTitleRow).clickable(enabled = lit) { onStep(if (up) -1 else 1) },
-                    contentAlignment = Alignment.Center,
-                ) { NxScrollArrow(up, PageArrowWidth, opacity = if (lit) 0.8f else NX_SCROLL_ARROW_ALPHA) }
-            }
-        }
-    }
-}
-
-private val PageTitleSize = 13.sp
-private val PageArrowWidth = 16.dp
 
 /**
  * A rows-page row as an options row: an option shows its value (`< value >` while selected); a submenu and an action a
@@ -652,8 +569,10 @@ private fun AchievementsBody(page: MenuPage, detail: AchievementsUi, onSelect: (
         }
         return
     }
+    // The rows fade where more scrolls in (the lists' cue), the selection a row clear of the fades.
+    val state = rememberFocusedListState(page.selected, margin = 1)
     LazyColumn(
-        modifier.fillMaxWidth(), state = rememberFocusedListState(page.selected),
+        modifier.fillMaxWidth().nxScrollFade(state, height = 56.dp, strong = true), state = state,
         contentPadding = PaddingValues(horizontal = NxOptionsSidePad, vertical = 8.dp),
     ) {
         itemsIndexed(page.rows) { i, row ->

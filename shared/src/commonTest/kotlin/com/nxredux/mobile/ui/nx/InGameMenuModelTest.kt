@@ -1073,7 +1073,7 @@ class InGameMenuModelTest {
             listOf("Console Settings", "Frontend", "Shaders", "Core Options", "Cheats", "Save Changes"),
             m.state.page.rows.map { it.label },
         )
-        assertEquals(MenuRow.Submenu(InGameMenuModel.CONSOLE_SETTINGS_LABEL, PageKind.ConsoleSettings), m.state.page.rows.first())
+        assertEquals(MenuRow.Submenu(InGameMenuModel.CONSOLE_SETTINGS_LABEL, PageKind.ConsoleSettings, InGameMenuModel.CONSOLE_SETTINGS_INFO), m.state.page.rows.first())
     }
 
     /** The in-game Options → Console Settings rows for [tag]. */

@@ -1,5 +1,7 @@
 package com.nxredux.mobile.ui
 
+import com.nxredux.mobile.ui.nx.nxScrollFade
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -133,7 +135,12 @@ private fun ColumnScope.RaPanelBody(p: RaPanel, onRow: (Int) -> Unit, onButton: 
                         val rows = remember(c.achievements, c.badges) {
                             c.achievements.map { r -> raAchievementRow(r, c.badges) }
                         }
-                        NxRichList(rows, p.row, onSelect = onRow, onOpen = onRow, modifier = Modifier.fillMaxSize().padding(start = 8.dp), labelSize = label)
+                        // The rows fade where more scrolls in (the lists' cue), the selection a row clear of the fades.
+                        val listState = rememberLazyListState()
+                        NxRichList(
+                            rows, p.row, onSelect = onRow, onOpen = onRow, listState = listState, labelSize = label, edgeMargin = 1,
+                            modifier = Modifier.fillMaxSize().nxScrollFade(listState, height = 56.dp, strong = true).padding(start = 8.dp),
+                        )
                     }
                 }
             }

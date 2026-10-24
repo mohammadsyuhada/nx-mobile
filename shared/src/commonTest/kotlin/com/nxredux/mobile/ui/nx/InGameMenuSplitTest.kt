@@ -146,7 +146,7 @@ class InGameMenuSplitTest {
 
     @Test fun root_list_narrower_in_portrait() {
         assertTrue(rootListShare(portrait = true) < rootListShare(portrait = false))
-        assertEquals(0.42f, rootListShare(portrait = false))
+        assertEquals(0.34f, rootListShare(portrait = false))
     }
 
     @Test fun root_list_top_pad_centres_first_pill_on_tab_words() {
