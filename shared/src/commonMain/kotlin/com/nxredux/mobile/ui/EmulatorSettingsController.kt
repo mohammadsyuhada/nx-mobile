@@ -51,7 +51,6 @@ object EmulatorRows {
         val core = page.core
         if (category != null) return core.orEmpty().let { CoreOptionFilter.inCategory(it, category) }.map { EmulatorRow.Core(it, inCategory = true) }
         return buildList {
-            if (page.forGame && page.gameFileExists) add(EmulatorRow.UseEmulatorSettings)
             if (page.console.isNotEmpty()) {
                 add(EmulatorRow.Header("Console settings"))
                 page.console.forEach { add(EmulatorRow.Console(it)) }
@@ -72,6 +71,8 @@ object EmulatorRows {
             }
             if (page.console.isNotEmpty() && coreRows.isNotEmpty()) add(EmulatorRow.Gap)   // space between the two groups
             addAll(coreRows)
+            // Last, after a gap: drop this game's own settings for the emulator's.
+            if (page.forGame && page.gameFileExists) { if (isNotEmpty()) add(EmulatorRow.Gap); add(EmulatorRow.UseEmulatorSettings) }
         }
     }
 
