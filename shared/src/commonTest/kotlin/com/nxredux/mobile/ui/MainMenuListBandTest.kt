@@ -6,12 +6,13 @@ import kotlin.test.assertEquals
 
 /** The main menu List band's shade and info per tab ([mainMenuListBand]). */
 class MainMenuListBandTest {
-    @Test fun consolesHasNeitherShadeNorInfo() {
-        assertEquals(MainMenuListBand(shade = false, info = false), mainMenuListBand(MenuCategory.CONSOLES))
+    @Test fun consolesCollectionsAndToolsHaveNeitherShadeNorInfo() {
+        for (c in listOf(MenuCategory.CONSOLES, MenuCategory.COLLECTIONS, MenuCategory.TOOLS))
+            assertEquals(MainMenuListBand(shade = false, info = false), mainMenuListBand(c), "$c")
     }
 
-    @Test fun everyOtherTabKeepsItsShadeAndInfo() {
-        for (c in listOf(MenuCategory.HOME, MenuCategory.COLLECTIONS, MenuCategory.TOOLS, null))
+    @Test fun homeAndATablessListKeepTheirShadeAndInfo() {
+        for (c in listOf(MenuCategory.HOME, null))
             assertEquals(MainMenuListBand(shade = true, info = true), mainMenuListBand(c), "$c")
     }
 }

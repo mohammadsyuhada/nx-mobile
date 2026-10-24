@@ -436,7 +436,7 @@ internal fun PageContent(state: AppState, page: Screen, pageSelection: State<Lis
             // layoutKey: the tab or list laid out, not the Screen: a republish of the same page (a context menu opening or
             // closing, another tab rebuilt) must not snap a carousel or backdrop mid-glide; its own tiles changing still do.
             is Screen.Systems -> {
-                val listBand = mainMenuListBand(s.category)   // Consoles' List band has no shade and no "N games"
+                val listBand = mainMenuListBand(s.category)   // Consoles, Collections and Tools: no List band (no shade, no "N games")
                 MainMenuScreen(
                     s, index, state::tapMainRow, { state.openSelected() }, state::selectTab,
                     onSwipeSelect = state::select, onHint = state::onButton, onLongPress = { state.openContextMenu(it) },
@@ -459,7 +459,7 @@ internal fun PageContent(state: AppState, page: Screen, pageSelection: State<Lis
                     minimalOpening = minimalOpening.value?.takeIf { s.category != null && it.page == s.category },
                     // The page sliding out shows none; nor does a hidden tab row (AppState gives the d-pad back to the content).
                     tabFocus = tabFocus.value && s.menu == null && s.search == null && state.screen.value === s && LocalLauncherChrome.current.tabRow,
-                    bandShade = listBand.shade,
+                    bandShade = listBand.shade, bandInfo = listBand.info,
                     canSearch = state.canSearch,
                     // Per page (s, not the screen now: a sliding-out page keeps its own): the screen carries its hidden tabs
                     // (none over a pushed one), so both follow every rebuild. With none, a long press on a tab word is a plain tap.

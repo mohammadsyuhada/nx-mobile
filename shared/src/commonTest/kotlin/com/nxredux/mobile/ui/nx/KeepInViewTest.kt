@@ -22,4 +22,34 @@ class KeepInViewTest {
         assertEquals(NxKeepInView.ToItem(15, -180), scroll(15, offset = null))                 // below: lands on the last line
         assertEquals(NxKeepInView.ToItem(2, 0), scroll(2, offset = null, lastVisible = 14))    // above: lands on the top line
     }
+
+    // The same viewport with a one-row margin ([nxKeepInViewMargin]): rows 0..9 show of 30, row r at r * 20 - top.
+    private fun margin(selected: Int, top: Int = 0, count: Int = 30) = nxKeepInViewMargin(
+        selected, margin = 1, count = count, offsetOf = { r -> (r * 20 - top).takeIf { it > -20 && it < 200 } },
+        itemSize = 20, viewportStart = 0, viewportEnd = 200, lastVisible = minOf(count - 1, (top + 199) / 20), rowHeight = 20,
+    )
+
+    @Test fun aPartlyShownMarginRowScrollsByItsOverflow() {
+        assertEquals(NxKeepInView.By(10), margin(9, top = 10))            // scrolled 10 px: row 10 half shows
+    }
+
+    @Test fun theMarginKeepsTheRowBelowInView() {
+        assertEquals(NxKeepInView.None, margin(8))                        // row 9 (its margin) fully shows
+        assertEquals(NxKeepInView.ToItem(10, -180), margin(9))            // row 10 just off the bottom: onto the last line
+    }
+
+    @Test fun theMarginKeepsTheRowAboveInView() {
+        assertEquals(NxKeepInView.None, margin(6, top = 100))             // rows 5..14 show; row 5 is the margin
+        assertEquals(NxKeepInView.ToItem(4, 0), margin(5, top = 100))     // row 4 just off the top: onto the top line
+    }
+
+    @Test fun theListsEndsNeedNoMargin() {
+        assertEquals(NxKeepInView.None, margin(0))                        // the first row: nothing above
+        assertEquals(NxKeepInView.None, margin(29, top = 400))            // the last row (rows 20..29 show)
+    }
+
+    @Test fun anOffScreenRowLandsOneRowInFromTheEdge() {
+        assertEquals(NxKeepInView.ToItem(16, -180), margin(15))           // below: its margin row on the last line
+        assertEquals(NxKeepInView.ToItem(1, 0), margin(2, top = 280))     // above: its margin row on the top line
+    }
 }

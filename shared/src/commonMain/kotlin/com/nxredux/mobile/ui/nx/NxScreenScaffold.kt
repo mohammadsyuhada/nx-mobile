@@ -72,6 +72,12 @@ class NxHintsBand(
  * [bodyAlpha]: the body's alpha, read at draw time so it animates with no recomposition (the main menu's dim while its
  * tab row has focus). The list and band are separate layers so the band's reach into the hint bar is not clipped; the
  * hint bar keeps full alpha.
+ * [scrollFade]: the rows fade at the edge they scroll on ([nxScrollFade]) in place of the scroll arrows; the band and
+ * the rows keep the arrows' room, so nothing moves.
+ * [rowEdges]: with a band, gaps above the first row and below the last, in rows (top to bottom); the whole rows that fit
+ * the rest stretch to fill it exactly ([listTopGap] and [listTopEdge] unused).
+ * [rowsLike]: under a [listTopEdge], the row height a [rowEdges] list with these edges would have here, so the rows
+ * match those lists', and its bottom gap; the top gap takes what is left ([nxListFitUnder]'s rowPx, bottomRows).
  * [hideHints]: no hint bar is drawn but its room is kept, so nothing moves. [hintShade] keeps the bar's
  * [NX_HINT_BAR_ALPHA] shade there (with [NxHintsBand.barInfo] drawn on it).
  */
@@ -97,6 +103,9 @@ fun NxScreenScaffold(
     onFirstPill: ((Float) -> Unit)? = null,   // under a listTopEdge: the first pill's top, dp from the list's top (List Home centres its strip by it)
     keepBarRoom: Boolean = true,   // false: hidden hints leave no room either, the body runs to the bottom (a main menu Carousel, centred in what shows)
     header: (@Composable () -> Unit)? = null,   // under the title, above the rows (a page's banner); the rows fit what it leaves
+    scrollFade: Boolean = false,
+    rowEdges: Pair<Float, Float>? = null,
+    rowsLike: Pair<Float, Float>? = null,
 ) {
     val listSelection = selection ?: { selectedIndex }
     val dim = if (bodyAlpha == null) Modifier else Modifier.graphicsLayer { alpha = bodyAlpha() }
@@ -105,7 +114,7 @@ fun NxScreenScaffold(
     val bandPitch = nxOptionsRowHeight(NxListPitch, LocalNxOptionText.current)
     // Up and down side by side, 1 dp apart, whichever applies, packed (a lone arrow leaves no gap): the pair a band draws.
     val arrowPair = @Composable {
-        Row(horizontalArrangement = Arrangement.spacedBy(1.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (!scrollFade) Row(horizontalArrangement = Arrangement.spacedBy(1.dp), verticalAlignment = Alignment.CenterVertically) {
             if (listState.canScrollBackward) NxScrollArrow(up = true, width = NxScrollArrowWidth)
             if (listState.canScrollForward) NxScrollArrow(up = false, width = NxScrollArrowWidth)
         }
@@ -120,10 +129,12 @@ fun NxScreenScaffold(
                 // With a band: the slot (the height less the top gap and the band's reserve) holds exactly N whole rows.
                 val density = LocalDensity.current
                 // Under a listTopEdge the top gap depends on the rows' pill gap, so it is solved with the fit.
-                val edgeFit = if (band != null && listTopEdge != null) with(density) {
+                val edgeFit = rowEdges?.takeIf { band != null }?.let { (top, bottom) -> with(density) { nxListFitEdges(maxHeight.roundToPx(), density.density, top, bottom, bandPitch) } } ?: if (band != null && listTopEdge != null) with(density) {
                     nxListFitUnder(
                         maxHeight.roundToPx(), band.reserve.roundToPx(), density.density, density.fontScale, listTopEdge.value,
                         bandHeight = (band.reserve + band.overlap).value, pitch = bandPitch,
+                        rowPx = rowsLike?.let { (t, b) -> nxListFitEdges(maxHeight.roundToPx(), density.density, t, b, bandPitch).row.roundToPx() },
+                        bottomRows = rowsLike?.second,
                     )
                 } else null
                 val topGap = when {
@@ -179,14 +190,14 @@ fun NxScreenScaffold(
                         val listWidth = maxWidth
                         val listShift = Modifier.padding(start = labelStart?.let { maxOf(0.dp, it - nxListInset()) } ?: 0.dp)
                         Column(Modifier.fillMaxWidth()) {
-                            Box(Modifier.fillMaxWidth().height(slot)) {
+                            Box(Modifier.fillMaxWidth().height(slot).then(if (scrollFade) Modifier.nxScrollFade(listState, height = 56.dp, strong = true) else Modifier)) {
                                 if (rowKind == NxRowKind.OPTIONS) {
                                     NxOptionsList(
                                         rows, selectedIndex, onSelect, onOpen, rowHeight = itemHeight, listText = NxTextSizes.listLabel(rowHeight),
                                         modifier = Modifier.fillMaxSize(), listState = listState, onLongPress = onLongPress,
                                     )
                                 } else if (!showArt) {
-                                    NxList(rows, listSelection, onSelect, onOpen, Modifier.fillMaxSize().then(listShift), listState = listState, rowHeightOverride = rowHeight, onLongPress = onLongPress)
+                                    NxList(rows, listSelection, onSelect, onOpen, Modifier.fillMaxSize().then(listShift), listState = listState, rowHeightOverride = rowHeight, onLongPress = onLongPress, edgeMargin = if (scrollFade) 1 else 0)
                                 } else {
                                     // The list spans the width over the art App draws behind (NX Redux draws titles over it), its
                                     // labels reaching [NX_LABEL_REACH] of the screen.
@@ -195,7 +206,7 @@ fun NxScreenScaffold(
                                     val endPad = with(density) {
                                         nxLabelEndPad(listWidth, insets.getLeft(this, dir).toDp(), insets.getRight(this, dir).toDp(), nxListInset())
                                     }
-                                    NxList(rows, listSelection, onSelect, onOpen, Modifier.fillMaxSize().then(listShift), listState = listState, rowHeightOverride = rowHeight, onLongPress = onLongPress,
+                                    NxList(rows, listSelection, onSelect, onOpen, Modifier.fillMaxSize().then(listShift), listState = listState, rowHeightOverride = rowHeight, onLongPress = onLongPress, edgeMargin = if (scrollFade) 1 else 0,
                                         endPadOverride = if (artBox) maxOf(endPad, listArtLabelEnd(listWidth.value, LocalPortrait.current).dp) else endPad)
                                 }
                             }
@@ -279,10 +290,14 @@ internal fun nxListBalancedGap(edgePx: Float, inkTopPx: Float, rows: Int, rowPx:
  * tall) under an edge [edgeAbove] dp above it. The rows' count and pitch fit the slot left when the first pill sits one
  * pill gap under the edge ([nxListTopGapUnder]). The gap and the row depend on each other, so the gap is solved from the
  * fit without it, then refined once. The rows then shift so the edge-to-first-pill gap equals the last pill's gap to
- * the band's arrows' ink ([nxListBalancedGap], [nxBandArrowInkTop]), keeping their count and pitch.
+ * the band's arrows' ink ([nxListBalancedGap], [nxBandArrowInkTop]), keeping their count and pitch. [rowPx]: the rows
+ * this tall in place of the fit's, as many as fit the slot (at least 2); the balance splits what is left above the
+ * first pill and below the last. With [bottomRows] too, the gap under the last row is that many rows and what is left
+ * goes above the first (never under the edge's least gap).
  */
 internal fun nxListFitUnder(
     heightPx: Int, reservePx: Int, density: Float, fontScale: Float, edgeAbove: Float, bandHeight: Float, pitch: Dp = NxListPitch,
+    rowPx: Int? = null, bottomRows: Float? = null,
 ): NxListEdgeFit {
     var gapPx = 0
     var fit = nxListFit(heightPx - reservePx, density, pitch)
@@ -292,11 +307,28 @@ internal fun nxListFitUnder(
         slotPx = heightPx - gapPx - reservePx
         fit = nxListFit(slotPx, density, pitch)
     }
-    val rows = fit.first
-    val rowPx = slotPx / rows   // the fit's whole-px row
+    if (rowPx != null && bottomRows != null) {
+        val bottomPx = (rowPx * bottomRows).roundToInt()
+        val rows = maxOf(2, (slotPx - bottomPx) / rowPx)
+        return NxListEdgeFit(heightPx - reservePx - bottomPx - rows * rowPx, rows, (rowPx / density).dp, bottomPx + reservePx)
+    }
+    val rows = if (rowPx != null) maxOf(2, slotPx / rowPx) else fit.first
+    val row = rowPx ?: (slotPx / rows)   // the fit's whole-px row
     val inkTopPx = heightPx - reservePx + nxBandArrowInkTop(bandHeight) * density
-    val balanced = nxListBalancedGap(edgeAbove * density, inkTopPx, rows, rowPx)
-    return NxListEdgeFit(balanced, rows, fit.second, maxOf(0, heightPx - balanced - rows * rowPx))
+    val balanced = nxListBalancedGap(edgeAbove * density, inkTopPx, rows, row)
+    return NxListEdgeFit(balanced, rows, if (rowPx != null) (row / density).dp else fit.second, maxOf(0, heightPx - balanced - rows * row))
+}
+
+/**
+ * A list's fit with [top] and [bottom] gaps in rows ([NxScreenScaffold]'s rowEdges): as many rows as fit [heightPx] less
+ * the gaps at [pitch], one fewer (at least 2) so the rows run taller than the pitch, then one whole-px row height so the
+ * rows and both gaps fill it.
+ */
+internal fun nxListFitEdges(heightPx: Int, density: Float, top: Float, bottom: Float, pitch: Dp = NxListPitch): NxListEdgeFit {
+    val rows = maxOf(2, nxRowCountFor(((heightPx - (top + bottom) * pitch.value * density) / density).dp, pitch) - 1)
+    val rowPx = (heightPx / (rows + top + bottom)).toInt()
+    val topPx = (rowPx * top).roundToInt()
+    return NxListEdgeFit(topPx, rows, (rowPx / density).dp, heightPx - topPx - rows * rowPx)
 }
 
 /** Lays its content out [by] taller, the extra above its own top (for a negative list top gap); nothing when [by] is not positive. */
