@@ -1,5 +1,6 @@
 package com.nxredux.mobile.ui
 
+import com.nxredux.mobile.ui.nx.nxModalText
 import com.nxredux.mobile.ui.nx.touchOnly
 import com.nxredux.mobile.runner.CoreRegistry
 import com.nxredux.mobile.ui.nx.touchIcons
@@ -342,7 +343,7 @@ internal fun GameListFrame(
             )
             emptyText?.let {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(it, color = LocalNxColors.current.listText, fontFamily = LocalNxFont.current, fontSize = NxTextSizes.modalText)
+                    Text(it, color = LocalNxColors.current.listText, fontFamily = LocalNxFont.current, fontSize = nxModalText())
                 }
             }
             // Minimal's open: the selected game's band grows over the whole page, then it goes dark.

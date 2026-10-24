@@ -103,6 +103,8 @@ import com.nxredux.mobile.ui.nx.LocalNxOptionText
 import com.nxredux.mobile.ui.nx.LocalNxValueAnchor
 import com.nxredux.mobile.ui.nx.NxValueAnchor
 import com.nxredux.mobile.ui.nx.NxValueDropdown
+import com.nxredux.mobile.ui.nx.NxSettingInfoPopup
+import com.nxredux.mobile.ui.nx.NxSettingPicker
 import com.nxredux.mobile.ui.nx.NxDialog
 import com.nxredux.mobile.ui.nx.NxLoadingOverlay
 import com.nxredux.mobile.ui.nx.NxScreenBackground
@@ -352,7 +354,13 @@ private fun updateText(r: AppRelease): String = "NX Redux ${r.version}" + if (r.
  */
 @Composable
 internal fun BoxScope.PageOverlays(state: AppState, chooser: ValueChooser?, error: String?, notice: String?, valueAnchor: NxValueAnchor) {
-    chooser?.let { c -> NxValueDropdown(c.labels, c.selected, valueAnchor.bounds, onPick = state::chooseValue, onDismiss = state::closeChooser) }
+    chooser?.let { c ->
+        // A Settings touch row's picker (the in-game menu's), else the dropdown at the row's value.
+        if (c.popup) NxSettingPicker(c.title, c.labels, c.current, c.selected, onPick = state::chooseValue, onDismiss = state::closeChooser)
+        else NxValueDropdown(c.labels, c.selected, valueAnchor.bounds, onPick = state::chooseValue, onDismiss = state::closeChooser)
+    }
+    val settingInfo by state.settingInfo.collectAsState()   // a Settings row's full description
+    settingInfo?.let { p -> NxSettingInfoPopup(p.title, p.text, p.scrollSeq, p.scrollDir, onClose = state::closeSettingInfo) }
     // About's Update to: here, so it shows on whichever screen Settings is on (the top one in dual screen).
     val updateConfirm by state.updateConfirm.collectAsState()
     updateConfirm?.let { r ->
@@ -510,7 +518,7 @@ internal fun PageContent(state: AppState, page: Screen, pageSelection: State<Lis
         } }
         (page as? Screen.EmulatorOptions)?.takeIf(::gameSettingsModal)?.let { modal ->
             WithIndex(pageSelection) {
-                GameSettingsModal(modal, it, state::select, { state.openSelected() }, onHint = state::onButton, onClose = state::closeGameSettings)
+                GameSettingsModal(modal, it, state::select, { state.openSelected() }, onHint = state::onButton, onClose = state::closeGameSettings, onSetting = state::settingEvent, onTruncated = state::onSettingInfoTruncated)
             }
         }
     }
@@ -568,10 +576,12 @@ internal fun GamesPage(state: AppState, s: Screen.Games, selection: State<ListSe
 @Composable
 private fun SettingsPage(state: AppState, s: Screen, selection: State<ListSelection>, titled: Boolean) {
     when (s) {
-        is Screen.Settings -> WithIndex(selection) { SettingsScreen(s, it, state::select, { state.openSelected() }, onHint = state::onButton, titled = titled, dialog = !titled) }
+        is Screen.Settings -> WithIndex(selection) {
+            SettingsScreen(s, it, state::select, { state.openSelected() }, onHint = state::onButton, titled = titled, dialog = !titled, onSetting = state::settingEvent, onTruncated = state::onSettingInfoTruncated)
+        }
         is Screen.EmulatorList -> WithIndex(selection) { EmulatorListScreen(s, it, state::select, { state.openSelected() }, onHint = state::onButton, split = titled) }
         is Screen.EmulatorConsoles -> WithIndex(selection) { EmulatorConsolesScreen(s, it, state::select, { state.openSelected() }, onHint = state::onButton) }
-        is Screen.EmulatorOptions -> WithIndex(selection) { EmulatorOptionsScreen(s, it, state::select, { state.openSelected() }, onHint = state::onButton) }
+        is Screen.EmulatorOptions -> WithIndex(selection) { EmulatorOptionsScreen(s, it, state::select, { state.openSelected() }, onHint = state::onButton, onSetting = state::settingEvent, onTruncated = state::onSettingInfoTruncated) }
         is Screen.SettingsMenu -> WithIndex(selection) { SettingsMenuScreen(s, it, state::select, { state.openSelected() }, onHint = state::onButton) }
         is Screen.ToolApps -> {
             // Only the picker showing reports its columns (one sliding out never overwrites the count).

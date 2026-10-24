@@ -57,8 +57,8 @@ import org.jetbrains.compose.resources.painterResource
 /**
  * The game panel, in the in-game menu's look: the header (art or console logo, title, play time, achievement count,
  * clock and battery), the tab words with the underline ([MenuTabRow]), then the current tab: Shortcuts as hollow pill
- * buttons in a grid (4 columns, 2 when narrow; disabled ones dimmed and inert), Achievements as badge rows, Players as
- * the Players page's rows. The controller's [GamePanelState.focus] sits on the accent pill (the tab row's capsule on
+ * buttons in a grid (4 columns, 2 when narrow; disabled ones dimmed and inert), Achievements as badge rows, Cheats as
+ * rows with a switch, Players as the Players page's rows. The controller's [GamePanelState.focus] sits on the accent pill (the tab row's capsule on
  * Tabs). The Game pill (DS/3DS panel-up) sits bottom-right. The dual-screen panel and the in-game menu share it; the
  * menu draws the header itself across its top ([GamePanelHeaderBar]) and the panel with [showHeader] off, on its own
  * surface ([opaque] off: no black box of the panel's own).
@@ -84,6 +84,7 @@ fun GamePanel(
                 when (tab) {
                     GamePanelTab.SHORTCUTS -> ShortcutsTab(state.shortcuts, focused, bottom, onEvent)
                     GamePanelTab.ACHIEVEMENTS -> AchievementsTab(state.achievements, state.badges, focused, bottom)
+                    GamePanelTab.CHEATS -> CheatsTab(state.cheats, state.noCheatsText, focused, bottom, onEvent)
                     GamePanelTab.PLAYERS -> PlayersTab(state.players, state.playerPads, focused, bottom, onEvent)
                 }
             }
@@ -238,6 +239,43 @@ internal fun AchievementRow(title: String, a: RaAchievement, badge: String?, sel
                 a.description, color = if (selected) colors.onAccentMuted else colors.hint, fontFamily = LocalNxFont.current, fontSize = GP_SMALL_SIZE,
                 maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
+        }
+    }
+}
+
+/**
+ * The game's cheats, each with its switch ([NxSwitch]); a tap anywhere on a row flips it ([GamePanelModel.cheatEvent]),
+ * live, as A on the controller's row does. None: [empty] (how to add some), centred.
+ */
+@Composable
+private fun CheatsTab(cheats: List<CheatRow>, empty: String, focused: Int?, bottom: Dp, onEvent: (GamePanelEvent) -> Unit) {
+    val colors = LocalNxColors.current
+    if (cheats.isEmpty()) {
+        Box(Modifier.fillMaxSize().padding(start = GP_GUTTER, end = GP_GUTTER, bottom = bottom), contentAlignment = Alignment.Center) {
+            Text(empty, color = colors.hint, fontFamily = LocalNxFont.current, fontSize = GP_SMALL_SIZE, textAlign = TextAlign.Center)
+        }
+        return
+    }
+    // Item indices are the focus indices and the cheats' own (no header item).
+    val state = rememberFocusedListState(focused, margin = 1)   // fades as the Achievements tab's
+    LazyColumn(
+        Modifier.fillMaxSize().nxScrollFade(state, height = 56.dp, strong = true), state = state,
+        contentPadding = PaddingValues(start = GP_LIST_GUTTER, end = GP_LIST_GUTTER, top = 6.dp, bottom = bottom),
+    ) {
+        itemsIndexed(cheats) { i, c ->
+            val flip = { GamePanelModel.cheatEvent(i, cheats)?.let(onEvent); Unit }
+            val selected = focused == i
+            PanelListRow(selected, Modifier.clickable(onClick = flip)) {
+                Column(Modifier.weight(1f)) {
+                    RowText(c.name, selected)
+                    // The file it came from, when several were merged (two can name a cheat alike).
+                    if (c.source.isNotEmpty()) Text(
+                        c.source, color = if (selected) colors.onAccentMuted else colors.hint, fontFamily = LocalNxFont.current, fontSize = GP_SMALL_SIZE,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                NxSwitch(c.on, onClick = flip, lit = selected)
+            }
         }
     }
 }
